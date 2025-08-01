@@ -1,0 +1,417 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Ongoing Smart Logistics Platform: Code Guidelines
+
+## 1. Project Overview
+
+The Ongoing Smart Logistics Platform is a Next.js-based responsive web application (PWA) leveraging Supabase for backend services. It focuses on optimizing delivery routes, modeling constraints, automating quotes and dispatch recommendations, and providing real-time vehicle tracking and an administrative dashboard. Key technologies include Next.js 15, React, Tailwind CSS, Supabase (PostgreSQL, Auth, Storage), Tmap API, Atlan API, PDFKit, ExcelJS, and Mapbox GL. The architecture utilizes ISR (Incremental Static Regeneration) and Server Actions for optimized rendering and efficient data fetching.
+
+## 2. Core Principles
+
+1.  **Readability and Maintainability:** Code MUST be easily understood and modified by any team member.
+2.  **Performance Optimization:** Prioritize efficient resource utilization and fast user experiences.
+3.  **Robustness and Reliability:** Implement comprehensive error handling and validation to ensure system stability.
+4.  **Security by Design:** Embed security considerations into every stage of development.
+5.  **Scalability and Extensibility:** Design modules to be independent and easily adaptable for future growth.
+
+## 3. Language-Specific Guidelines
+
+### Next.js (React, TypeScript)
+
+#### File Organization and Directory Structure
+
+*   **MUST:** Adhere to the Domain-Driven Organization Strategy as outlined in the TRD.
+    ```
+    /src
+    ├── domains/
+    │   ├── dispatch/          # Dispatch-related logic
+    │   │   ├── components/
+    │   │   ├── hooks/
+    │   │   ├── services/
+    │   │   ├── types/
+    │   │   └── utils/
+    │   ├── quote/             # Quote calculation and document generation
+    │   │   ├── components/
+    │   │   ├── forms/
+    │   │   ├── services/
+    │   │   └── types/
+    │   └── ... (other domains)
+    ├── components/            # Reusable UI components (domain-agnostic)
+    ├── libs/                  # API client wrappers, external service integrations
+    ├── pages/                 # Next.js page components
+    ├── styles/                # Tailwind configuration, global styles
+    └── utils/                 # Common utility functions (e.g., date formatting)
+    ```
+*   **MUST:** Place domain-specific components, hooks, services, types, and utilities within their respective domain folders.
+*   **MUST:** Place truly reusable, domain-agnostic UI components in `src/components`.
+*   **MUST NOT:** Create deeply nested, arbitrary subdirectories without clear logical grouping.
+
+#### Import/Dependency Management
+
+*   **MUST:** Use absolute imports for modules within the `src` directory. Configure `tsconfig.json` for path aliases.
+    ```typescript
+    // MUST: Absolute import for clarity and refactoring ease
+    import { calculateOptimalRoute } from '@/domains/dispatch/services/routeOptimizer';
+    import Button from '@/components/ui/Button';
+    ```
+    ```typescript
+    // MUST NOT: Relative import for modules outside the current domain or component tree
+    // This can lead to brittle paths and refactoring headaches
+    import { calculateOptimalRoute } from '../../../../domains/dispatch/services/routeOptimizer';
+    ```
+*   **MUST:** Group imports by type (e.g., React, external libraries, internal modules).
+    ```typescript
+    // MUST: Organized imports
+    import React from 'react';
+    import { useRouter } from 'next/router';
+    import { useQuery } from '@tanstack/react-query';
+
+    import { fetchUserData } from '@/domains/auth/services/userService';
+    import UserProfileCard from '@/components/user/UserProfileCard';
+    import { formatCurrency } from '@/utils/formatters';
+    ```
+
+#### Error Handling Patterns
+
+*   **MUST:** Use `try-catch` blocks for asynchronous operations that can fail (e.g., API calls, database operations).
+*   **MUST:** Return structured error objects or throw custom error classes for predictable error handling.
+    ```typescript
+    // MUST: Structured error handling in a service function
+    interface RouteOptimizationResult {
+        path: string[];
+        eta: number;
+    }
+
+    interface RouteOptimizationError {
+        code: string;
+        message: string;
+    }
+
+    async function getOptimizedRoute(params: any): Promise<RouteOptimizationResult | RouteOptimizationError> {
+        try {
+            const response = await fetch('/api/optimize-route', { method: 'POST', body: JSON.stringify(params) });
+            if (!response.ok) {
+                const errorData = await response.json();
+                return { code: 'API_ERROR', message: errorData.message || 'Failed to optimize route' };
+            }
+            const data = await response.json();
+            return { path: data.path, eta: data.eta };
+        } catch (error) {
+            console.error('Route optimization failed:', error);
+            return { code: 'NETWORK_ERROR', message: 'Network or unexpected error occurred.' };
+        }
+    }
+    ```
+*   **MUST:** Display user-friendly error messages in the UI.
+*   **MUST:** Log detailed errors to the console or a monitoring service (Vercel Analytics, Supabase Logs) for debugging.
+*   **MUST NOT:** Catch errors and silently fail without logging or user feedback.
+
+### Supabase (PostgreSQL, Edge Functions)
+
+#### Database Schema and Migrations
+
+*   **MUST:** Manage database schema changes using Supabase migrations.
+    ```sql
+    -- MUST: Example migration file (supabase/migrations/TIMESTAMP_create_delivery_routes_table.sql)
+    CREATE TABLE public.delivery_routes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        driver_id UUID REFERENCES auth.users(id),
+        route_data JSONB NOT NULL,
+        optimized_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    ```
+*   **MUST:** Use clear, descriptive names for tables, columns, and constraints.
+*   **MUST:** Define appropriate data types and constraints (e.g., `NOT NULL`, `FOREIGN KEY`).
+*   **MUST:** Add indexes to frequently queried columns to optimize performance.
+
+#### Edge Functions
+
+*   **MUST:** Implement Edge Functions for computationally intensive tasks like route optimization and quote calculation to leverage serverless scalability and reduce client-side load.
+*   **MUST:** Validate all incoming requests to Edge Functions.
+*   **MUST:** Use Supabase client libraries for secure database interactions within Edge Functions.
+    ```typescript
+    // MUST: Example Edge Function (supabase/functions/optimize-route/index.ts)
+    import { createClient } from '@supabase/supabase-js';
+    import { serve } from 'std/http';
+
+    serve(async (req) => {
+        const supabase = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+        );
+
+        if (req.method !== 'POST') {
+            return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405 });
+        }
+
+        try {
+            const { locations, constraints } = await req.json();
+            // Call external Tmap/Atlan API here
+            const optimizedRoute = { path: ['locA', 'locB'], eta: 120 }; // Placeholder
+            return new Response(JSON.stringify(optimizedRoute), {
+                headers: { 'Content-Type': 'application/json' },
+                status: 200,
+            });
+        } catch (error) {
+            console.error('Edge Function error:', error);
+            return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), { status: 500 });
+        }
+    });
+    ```
+
+## 4. Code Style Rules
+
+### MUST Follow:
+
+*   **Consistent Naming Conventions:**
+    *   **Variables/Functions:** `camelCase` (e.g., `userName`, `getOptimizedRoute`).
+    *   **Components:** `PascalCase` (e.g., `UserProfileCard`, `RouteOptimizerForm`).
+    *   **Constants:** `UPPER_SNAKE_CASE` (e.g., `MAX_RETRIES`, `API_KEY`).
+    *   **Types/Interfaces:** `PascalCase` (e.g., `interface UserProfile`, `type RouteData`).
+    *   **Files:** `kebab-case` for components and pages (e.g., `user-profile-card.tsx`, `dispatch-dashboard.tsx`), `camelCase` for utility and service files (e.g., `routeOptimizer.ts`, `formatters.ts`).
+    *   **Rationale:** Enhances readability and predictability, making it easier to identify the purpose of an identifier.
+
+*   **Explicit Typing (TypeScript):**
+    *   **MUST:** Explicitly type function parameters, return values, and complex object structures. Avoid `any` unless absolutely necessary and justified.
+    ```typescript
+    // MUST: Explicit typing
+    interface Location {
+        latitude: number;
+        longitude: number;
+        address: string;
+    }
+
+    function calculateDistance(loc1: Location, loc2: Location): number {
+        // ... calculation
+        return 100;
+    }
+    ```
+    ```typescript
+    // MUST NOT: Implicit any or vague typing
+    function calculateDistance(loc1: any, loc2: any) { // Type inference might be okay for simple cases, but explicit is better for complex objects
+        return 100;
+    }
+    ```
+    *   **Rationale:** Improves code clarity, enables static analysis, and reduces runtime errors.
+
+*   **Component Structure and Props:**
+    *   **MUST:** Define component props using TypeScript interfaces.
+    *   **MUST:** Destructure props at the beginning of the component function.
+    ```typescript
+    // MUST: Clear component props and destructuring
+    interface ButtonProps {
+        onClick: () => void;
+        label: string;
+        variant?: 'primary' | 'secondary';
+        isDisabled?: boolean;
+    }
+
+    const Button: React.FC<ButtonProps> = ({ onClick, label, variant = 'primary', isDisabled = false }) => {
+        return (
+            <button
+                onClick={onClick}
+                className={`btn ${variant}`}
+                disabled={isDisabled}
+            >
+                {label}
+            </button>
+        );
+    };
+    ```
+    *   **Rationale:** Enhances type safety, readability, and makes component usage clear.
+
+*   **Functional Components and Hooks:**
+    *   **MUST:** Prefer functional components over class components.
+    *   **MUST:** Use React Hooks (`useState`, `useEffect`, `useCallback`, `useMemo`, `useRef`, custom hooks) for managing state and side effects.
+    *   **MUST:** Create custom hooks to encapsulate reusable logic and stateful behavior.
+    ```typescript
+    // MUST: Custom hook for reusable logic
+    import { useState, useEffect } from 'react';
+
+    function useDebounce<T>(value: T, delay: number): T {
+        const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+        useEffect(() => {
+            const handler = setTimeout(() => {
+                setDebouncedValue(value);
+            }, delay);
+            return () => {
+                clearTimeout(handler);
+            };
+        }, [value, delay]);
+
+        return debouncedValue;
+    }
+    ```
+    *   **Rationale:** Promotes reusability, improves testability, and aligns with modern React practices.
+
+*   **Tailwind CSS Usage:**
+    *   **MUST:** Apply styles primarily using Tailwind utility classes directly in JSX.
+    *   **MUST:** Create custom components or use `@apply` in `globals.css` for complex, reusable styles that cannot be easily expressed with utility classes.
+    *   **Rationale:** Speeds up UI development and maintains consistency.
+
+### MUST NOT Do:
+
+*   **Avoid Excessive Nesting:**
+    *   **MUST NOT:** Create deeply nested folder structures without clear logical boundaries.
+    *   **MUST NOT:** Nest JSX elements excessively, leading to unreadable component trees.
+    *   **Rationale:** Reduces complexity and improves code readability.
+
+*   **Avoid Large, Monolithic Files:**
+    *   **MUST NOT:** Create single files that contain multiple unrelated components, services, or large amounts of business logic.
+    *   **Rationale:** Improves maintainability, testability, and allows for better code organization. Break down large files into smaller, focused modules.
+    ```typescript
+    // MUST NOT: Monolithic file (e.g., my-feature.ts)
+    // Contains multiple components, hooks, and services in one file.
+    // Break these into separate files within their domain or component folders.
+    // e.g., components/MyFeatureComponent.tsx, hooks/useMyFeatureData.ts, services/myFeatureService.ts
+    ```
+
+*   **Avoid Complex State Management Patterns (Initially):**
+    *   **MUST NOT:** Introduce complex global state management libraries (e.g., Redux, Zustand) unless a clear, proven need arises that cannot be met by React's built-in context API or simple `useState`/`useReducer`.
+    *   **Rationale:** Supabase provides robust data management capabilities, and Next.js Server Actions and React Query (or similar data fetching libraries) can handle most data fetching and caching needs. Over-engineering state management can introduce unnecessary complexity.
+    ```typescript
+    // MUST NOT: Unnecessary complex global state for simple shared data
+    // import { createStore } from 'zustand';
+    // const useGlobalCounter = createStore(...)
+    // For simple shared state, React Context API is often sufficient.
+    ```
+
+*   **Avoid Direct DOM Manipulation:**
+    *   **MUST NOT:** Directly manipulate the DOM using `document.getElementById` or similar methods. Use React's ref system when direct DOM access is unavoidable (e.g., integrating with third-party libraries).
+    *   **Rationale:** Violates React's declarative paradigm and can lead to unpredictable behavior.
+
+*   **Avoid Magic Strings/Numbers:**
+    *   **MUST NOT:** Use hardcoded strings or numbers for configuration, error messages, or critical values without defining them as constants.
+    *   **Rationale:** Improves maintainability, reduces errors, and facilitates internationalization.
+
+## 5. Architecture Patterns
+
+### Component/Module Structure Guidelines
+
+*   **MUST:** Design components to be single-responsibility and highly cohesive. A component should do one thing well.
+*   **MUST:** Separate presentation logic (components) from business logic (services, hooks).
+*   **MUST:** Use `props` for parent-to-child communication.
+*   **MUST:** Use callbacks or context for child-to-parent or cross-component communication.
+*   **MUST:** Leverage Next.js Server Components and Server Actions for data fetching and mutations where appropriate, minimizing client-side JavaScript.
+    ```typescript
+    // MUST: Server Action for data mutation
+    // app/actions.ts
+    'use server';
+
+    import { createClient } from '@/libs/supabase/server';
+
+    export async function createDeliveryRoute(formData: FormData) {
+        const supabase = createClient();
+        const routeData = {
+            origin: formData.get('origin'),
+            destination: formData.get('destination'),
+            // ... other fields
+        };
+
+        const { data, error } = await supabase.from('delivery_routes').insert([routeData]);
+
+        if (error) {
+            console.error('Error inserting route:', error.message);
+            return { success: false, message: error.message };
+        }
+        return { success: true, data };
+    }
+
+    // Usage in a Server Component
+    // <form action={createDeliveryRoute}>...</form>
+    ```
+
+### Data Flow Patterns
+
+*   **Client-Server Communication:**
+    *   **MUST:** Utilize Next.js API Routes for data fetching and mutations that require server-side logic or interaction with external APIs (Tmap, Atlan).
+    *   **MUST:** Use Server Actions for direct database interactions and mutations from Server Components.
+    *   **MUST:** Employ a data fetching library (e.g., React Query, SWR) on the client-side for efficient caching, revalidation, and error handling of API calls.
+    *   **Rationale:** Optimizes data fetching, reduces boilerplate, and improves user experience.
+
+*   **Database Interaction:**
+    *   **MUST:** Use the Supabase JS client library for all database operations.
+    *   **MUST:** Implement row-level security (RLS) policies in Supabase for granular access control.
+    *   **MUST:** Use transactions for operations that require atomicity.
+    ```typescript
+    // MUST: Supabase transaction for atomic operations
+    import { createClient } from '@supabase/supabase-js';
+
+    async function processOrder(orderId: string, userId: string) {
+        const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!); // Use service role key for server-side
+
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .single();
+
+        if (orderError || !order) throw new Error('Order not found');
+
+        // Start transaction (conceptual for Supabase, often handled by service layer or Edge Function)
+        // In Supabase, this might involve a stored procedure or multiple sequential operations with error checks.
+        const { error: updateError } = await supabase
+            .from('orders')
+            .update({ status: 'processed' })
+            .eq('id', orderId);
+
+        if (updateError) throw new Error('Failed to update order status');
+
+        const { error: logError } = await supabase
+            .from('order_logs')
+            .insert([{ order_id: orderId, user_id: userId, event: 'Order Processed' }]);
+
+        if (logError) throw new Error('Failed to log order event');
+
+        return { success: true };
+    }
+    ```
+
+### State Management Conventions
+
+*   **MUST:** Prefer local component state (`useState`, `useReducer`) for UI-specific state.
+*   **MUST:** Use React Context API for sharing moderately complex state across a subtree of components (e.g., theme, user preferences, authentication status).
+*   **MUST:** Use data fetching libraries (React Query/SWR) for managing server-side data and its caching.
+*   **MUST NOT:** Create global state that replicates or duplicates server-side data which should be managed by a data fetching library.
+
+### API Design Standards
+
+*   **MUST:** Design RESTful API routes with clear, descriptive endpoints.
+    *   `GET /api/routes`
+    *   `GET /api/routes/[id]`
+    *   `POST /api/routes`
+    *   `PUT /api/routes/[id]`
+    *   `DELETE /api/routes/[id]`
+*   **MUST:** Use appropriate HTTP status codes for responses (e.g., 200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 404 Not Found, 500 Internal Server Error).
+*   **MUST:** Return consistent JSON response formats for both success and error cases.
+    ```json
+    // MUST: Consistent success response
+    {
+        "success": true,
+        "data": {
+            "id": "uuid-123",
+            "eta": 120,
+            "path": ["locA", "locB"]
+        }
+    }
+
+    // MUST: Consistent error response
+    {
+        "success": false,
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid input parameters",
+            "details": {
+                "field": "locations",
+                "reason": "Must provide at least two locations"
+            }
+        }
+    }
+    ```
+*   **MUST:** Implement input validation on both client and server sides.
+*   **MUST:** Secure API endpoints using JWT tokens and Supabase Auth.
+*   **MUST:** Implement rate limiting for external API calls (Tmap, Atlan) to prevent exceeding quotas.

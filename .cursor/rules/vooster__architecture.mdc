@@ -1,0 +1,182 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Technical Requirements Document (TRD)
+
+## 1. Executive Technical Summary
+- **프로젝트 개요**  
+  “옹고잉 스마트 물류 플랫폼”은 Next.js 기반 반응형 웹(PWA)과 Supabase 백엔드를 활용해 배송 루트 최적화, 제약조건 모델링, 자동 견적·배차 추천, 실시간 차량 위치 추적, 관리자 대시보드, 다국어 지원 기능을 제공. Tmap/Atlan 경로 API로 실시간 교통 반영, PDFKit·ExcelJS로 문서 출력, Mapbox GL로 지도 시각화를 구현.
+- **Core Technology Stack**  
+  Next.js 15, React, Tailwind CSS, Supabase(PostgreSQL/Auth/Storage), Tmap API, Atlan API, PDFKit, ExcelJS, Mapbox GL, Vercel 배포.
+- **Key Technical Objectives**  
+  · API 응답 시간 P95 < 800ms  
+  · 동시 2,000 세션 처리  
+  · 배차·견적 소요시간 70% 감소  
+  · ETA 오차 ±5분 이내 90% 달성  
+  · 실시간 차량 위치 갱신 지연 ≤ 15초  
+  · 다국어 UI 전환 시간 < 200ms
+- **Critical Technical Assumptions**  
+  · Tmap 무료 호출 한도 내 사용  
+  · Supabase Region ap-northeast-1 활용  
+  · Vercel ISR·Server Actions 지원  
+  · 고객사 브라우저 최신 버전 사용
+
+---
+
+## 2. Tech Stack
+
+| Category           | Technology / Library      | Reasoning                                       |
+| ------------------ | ------------------------- | ----------------------------------------------- |
+| 프론트엔드         | Next.js 15 + React        | ISR/Server Actions 기반 빠른 렌더링, PWA 지원, 다국어 지원 |
+| 스타일링           | Tailwind CSS              | 유연한 유틸리티 클래스, 빠른 UI 개발            |
+| 백엔드             | Supabase (Edge Functions) | Auth·DB·Storage 통합, 서버리스 확장성           |
+| 데이터베이스       | PostgreSQL (Supabase)     | 관계형 모델링, 복잡한 쿼리·제약조건 처리 최적   |
+| 인증·보안          | Supabase Auth (JWT, OAuth2) | GDPR·개인정보보호법 준수, 토큰 기반 보안       |
+| 경로 최적화 API    | Tmap API, Atlan API       | 실시간 교통반영, 복수 알고리즘 비교             |
+| 실시간 위치 추적   | Supabase Realtime         | 차량 위치 WebSocket 기반 실시간 구독            |
+| 지도 시각화        | Mapbox GL                 | 고성능 벡터 타일 지도, 인터랙티브 기능 지원     |
+| 문서 생성          | PDFKit, ExcelJS           | 서버사이드 PDF·엑셀 동적 생성                   |
+| 배포·호스팅         | Vercel                     | Next.js 최적화 배포, 글로벌 CDN                  |
+| CI/CD              | GitHub Actions            | 코드 푸시 시 자동 빌드·테스트·배포              |
+| 모니터링·로깅      | Vercel Analytics, Supabase Logs | 오류·성능 모니터링, 쿼리 로그                   |
+
+---
+
+## 3. System Architecture Design
+
+### Top-Level building blocks
+- **Frontend (Next.js + React + Tailwind)**  
+  · ISR 페이지, Server Actions  
+  · PWA 설치 지원, 반응형 UI  
+- **Backend (Supabase Edge Functions)**  
+  · 경로 최적화, 견적 계산 비즈니스 로직  
+  · Auth·Storage 제어  
+- **Database (PostgreSQL)**  
+  · 배송지·제약조건·견적 로그 테이블  
+  · 인덱스 기반 쿼리 최적화  
+- **External API Layer**  
+  · Tmap/Atlan 경로 호출 및 TTL 캐싱  
+- **Document Generator**  
+  · PDFKit/ExcelJS 모듈로 문서 동적 생성  
+- **Map Visualization**  
+  · Mapbox GL 클라이언트 컴포넌트
+
+### Top-Level Component Interaction Diagram
+```mermaid
+graph TD
+  Client[Frontend (Next.js)] -->|API 요청| Backend[Supabase Edge Functions]
+  Backend -->|CRUD| DB[PostgreSQL]
+  Backend -->|경로 요청| TmapAPI[Tmap/Atlan API]
+  Backend -->|문서 생성| DocGen[PDFKit/ExcelJS]
+  Client -->|지도 렌더링| Mapbox[Mapbox GL]
+```
+- 클라이언트는 Next.js API 경로로 배송·견적 요청 전송  
+- Edge Functions에서 DB 조회·경로 API 호출·계산 후 결과 반환  
+- 반환된 데이터로 클라이언트가 지도(Mapbox) 및 UI 업데이트  
+- 견적 요청 시 서버 사이드에서 PDFKit/ExcelJS로 문서 생성 후 다운로드
+
+### Code Organization & Convention
+
+**Domain-Driven Organization Strategy**  
+- **배차 도메인(dispatch)**: 최적경로 계산, Tmap/Atlan 연동  
+- **시간 최적화(time-optimizer)**: 단일 기사 루트 최소화 알고리즘  
+- **제약조건 모델러(constraints)**: JSON 스키마 저장·로드  
+- **견적 도메인(quote)**: 요금제 기반 비용 계산, 문서 출력  
+- **사용자관리(auth)**: 로그인·권한·세션 처리  
+- **대시보드(admin)**: 통계·사용 현황 조회
+
+**Universal File & Folder Structure**
+```
+/
+├── src/
+│   ├── pages/                 # Next.js 페이지
+│   ├── components/            # UI 컴포넌트
+│   ├── domains/
+│   │   ├── dispatch/          # 배차 관련 로직
+│   │   ├── time-optimizer/    # 단일 기사 최적화
+│   │   ├── constraints/       # 제약조건 모델러
+│   │   ├── quote/             # 견적 계산·문서
+│   │   ├── auth/              # 인증·사용자관리
+│   │   └── admin/             # 관리자 대시보드
+│   ├── libs/                  # API 클라이언트 래퍼
+│   ├── styles/                # Tailwind 설정·글로벌 스타일
+│   └── utils/                 # 공통 유틸리티 함수
+├── supabase/
+│   ├── functions/             # Edge Functions 소스
+│   └── migrations/            # DB 스키마 관리
+├── public/                    # 정적 자산
+├── vercel.json                # Vercel 설정
+└── package.json               # 의존성·스크립트
+```
+
+### Data Flow & Communication Patterns
+- **Client-Server Communication**: Next.js API Routes & Server Actions, REST/JSON  
+- **Database Interaction**: Supabase JS 클라이언트, 쿼리 캐싱·인덱스 활용  
+- **External Service Integration**: 경로 결과 TTL 캐싱, 재시도 로직, 장애 격리  
+- **Real-time Communication**: (향후) Supabase Realtime or WebSocket 구독  
+- **Data Synchronization**: 트랜잭션 적용, 견적 로그 이중 기록
+
+---
+
+## 4. Performance & Optimization Strategy
+- ISR & Server Actions 조합으로 페이지 로드 최적화  
+- 경로 API 결과 캐싱(TTL 기반)으로 호출 최소화  
+- DB 인덱스·파티셔닝으로 대량 데이터 조회 가속  
+- 코드 스플리팅, 이미지·지도 타일 lazy loading  
+
+---
+
+## 5. Implementation Roadmap & Milestones
+
+### Phase 1: Foundation (MVP Implementation) – ~M+2
+- Core Infrastructure: Next.js 프로젝트, Supabase 초기 설정  
+- Essential Features: 최적배차, 단일 기사 최적화, 기초 견적 계산  
+- Basic Security: HTTPS, JWT 인증, CORS 설정  
+- Development Setup: GitHub Actions CI/CD, Vercel 배포 파이프라인  
+- Timeline: 8주
+
+### Phase 2: Feature Enhancement – ~M+4
+- Advanced Features: 제약조건 모델러 UI/JSON 스키마, 문서(PDF/Excel) 생성  
+- Performance Optimization: 경로 API 캐싱, 쿼리 튜닝  
+- Enhanced Security: OAuth2 연동, RBAC 기반 권한 관리  
+- Monitoring Implementation: Vercel Analytics, Supabase Logs 대시보드  
+- Timeline: 8주
+
+### Phase 3: Scaling & Optimization – ~M+6
+- Scalability Implementation: Supabase Auto-Scaling, Edge Function 분리  
+- Advanced Integrations: Mapbox GL 고급 기능, Tmap·Atlan 알고리즘 비교, 실시간 차량 위치 추적  
+- Enterprise Features: 관리자 대시보드(통계·알림), 다국어 지원  
+- Compliance & Auditing: GDPR·개인정보보호법 심층 검증  
+- Timeline: 8주
+- Compliance & Auditing: GDPR·개인정보보호법 심층 검증  
+- Timeline: 8주
+
+---
+
+## 6. Risk Assessment & Mitigation Strategies
+
+### Technical Risk Analysis
+- **Technology Risks**: Tmap 무료 호출 한도 초과  
+  ・Mitigation: TTL 기반 경로 캐시, 대체 무료 API 검토  
+- **Performance Risks**: 동시성 급증에 따른 응답 지연  
+  ・Mitigation: ISR & Edge Functions 분리, DB 인덱싱  
+- **Security Risks**: 인증·인가 취약점  
+  ・Mitigation: JWT 검증, OWASP Top10 대응, 정기 보안 점검  
+- **Integration Risks**: 외부 API 장애  
+  ・Mitigation: 서킷 브레이커, 재시도·백오프 정책
+
+### Project Delivery Risks
+- **Timeline Risks**: MVP 지연  
+  ・Contingency: 핵심 기능 우선 순위 재조정  
+- **Resource Risks**: Supabase 기능 미숙  
+  ・Contingency: 문서·커뮤니티 활용, 외부 컨설팅  
+- **Quality Risks**: 테스트 커버리지 부족  
+  ・Contingency: 유닛·통합 테스트 필수화, 코드 리뷰 강화  
+- **Deployment Risks**: 프로덕션 환경 차이  
+  ・Contingency: 스테이징·롤백 전략 수립  
+
+---
+
+> 본 TRD는 PRD 요구사항에 부합하는 최소 실현 가능 아키텍처와 기술 스택을 제시하며, 빠른 출시와 유지보수 용이성을 최우선으로 설계되었습니다.
