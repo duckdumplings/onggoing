@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useTmap } from '@/components/TmapProvider';
 
 interface TmapMapProps {
   center?: { lat: number; lng: number };
@@ -10,127 +11,47 @@ interface TmapMapProps {
   height?: string;
 }
 
-declare global {
-  interface Window {
-    Tmap: any;
-    TmapCallback: () => void;
-  }
-}
-
-export default function TmapMap({
-  center = { lat: 37.5665, lng: 126.9780 },
-  zoom = 10,
+function TmapMapComponent({
+  center = { lat: 37.566826, lng: 126.9786567 },
+  zoom = 15,
   routeData,
   className = "w-full",
   height = "h-96"
 }: TmapMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { isLoaded, error: tmapError } = useTmap();
+  const [isMapInitialized, setIsMapInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
-  const [isContainerReady, setIsContainerReady] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<string>('');
 
-  const addDebugInfo = (info: string) => {
-    setDebugInfo(prev => prev + `\n${new Date().toLocaleTimeString()}: ${info}`);
-  };
-
-  // 컨테이너 준비 상태 확인
+  // 지도 초기화 (한 번만 실행)
   useEffect(() => {
-    const checkContainer = () => {
-      if (mapRef.current) {
-        console.log('지도 컨테이너 준비됨');
-        setIsContainerReady(true);
-      } else {
-        console.log('지도 컨테이너 아직 준비되지 않음');
-        // 100ms 후 다시 확인
-        setTimeout(checkContainer, 100);
-      }
-    };
-
-    checkContainer();
-  }, []);
-
-  // Tmap 스크립트 로드 (콜백 방식)
-  useEffect(() => {
-    const loadTmapScript = () => {
-      return new Promise<void>((resolve, reject) => {
-        if (window.Tmap) {
-          console.log('Tmap 스크립트 이미 로드됨');
-          setIsScriptLoaded(true);
-          resolve();
-          return;
-        }
-
-        const apiKey = process.env.NEXT_PUBLIC_TMAP_API_KEY;
-
-        if (!apiKey) {
-          reject(new Error('Tmap API 키가 설정되지 않았습니다.'));
-          return;
-        }
-
-        console.log(`API 키 확인됨: ${apiKey.substring(0, 10)}...`);
-
-        // 콜백 함수 설정
-        window.TmapCallback = function () {
-          console.log('Tmap 콜백 호출됨 - 초기화 완료');
-          setIsScriptLoaded(true);
-          resolve();
-        };
-
-        const script = document.createElement('script');
-        script.src = `https://apis.openapi.sk.com/tmap/jsv2?version=1&appKey=${apiKey}&callback=TmapCallback`;
-        script.onload = () => {
-          console.log('Tmap 스크립트 로드 완료');
-        };
-        script.onerror = () => reject(new Error('Tmap 스크립트 로드 실패'));
-        document.head.appendChild(script);
-      });
-    };
-
-    loadTmapScript().catch((error) => {
-      console.error('Tmap 스크립트 로드 실패:', error);
-      setError(error instanceof Error ? error.message : 'Tmap 스크립트 로드 실패');
-      setIsLoading(false);
-    });
-  }, []);
-
-  // 지도 초기화
-  useEffect(() => {
-    if (!isScriptLoaded) {
-      console.log('스크립트가 아직 로드되지 않음');
+    if (!isLoaded || !mapRef.current || mapInstance.current) {
       return;
     }
 
-    if (!isContainerReady) {
-      console.log('지도 컨테이너가 아직 준비되지 않음');
-      return;
-    }
-
-    console.log('지도 초기화 시작');
+    console.log('🗺️ Tmapv2 지도 초기화 시작');
 
     const initializeMap = async () => {
       try {
-        setIsLoading(true);
         setError(null);
+        const startTime = Date.now();
 
-        // 기존 지도 인스턴스 정리
-        if (mapInstance.current) {
-          mapInstance.current = null;
-        }
+        console.log(`📍 지도 설정: center(${center.lat}, ${center.lng}), zoom(${zoom})`);
 
-        console.log(`Tmap 지도 초기화 중... center: ${center.lat}, ${center.lng}, zoom: ${zoom}`);
-
-        // Tmap 지도 초기화
-        mapInstance.current = new window.Tmap.Map(mapRef.current, {
-          center: new window.Tmap.LatLng(center.lat, center.lng),
-          zoom: zoom,
+        // Tmapv2 지도 초기화 (공식 방식)
+        mapInstance.current = new window.Tmapv2.Map(mapRef.current, {
+          center: new window.Tmapv2.LatLng(center.lat, center.lng),
           width: "100%",
-          height: "100%"
+          height: "100%",
+          zoom: zoom,
+          zoomControl: true,
+          scrollwheel: true
         });
 
-        console.log('Tmap 지도 초기화 완료');
+        const initTime = Date.now() - startTime;
+        console.log(`✅ Tmapv2 지도 초기화 완료 (${initTime}ms)`);
+        setIsMapInitialized(true);
 
         // 경로 데이터가 있으면 그리기
         if (routeData && routeData.features && routeData.features.length > 0) {
@@ -138,45 +59,39 @@ export default function TmapMap({
 
           routeData.features.forEach((feature: any, index: number) => {
             if (feature.geometry && feature.geometry.coordinates) {
+              // 좌표 배열을 Tmapv2.LatLng 객체로 변환
               const path = feature.geometry.coordinates.map((coord: number[]) =>
-                new window.Tmap.LatLng(coord[1], coord[0])
+                new window.Tmapv2.LatLng(coord[1], coord[0])
               );
 
               // 경로 색상 (여러 경로가 있을 경우 다른 색상 사용)
-              const colors = ['#FF0000', '#00FF00', '#0000FF', '#FFA500', '#800080'];
+              const colors = ['#DD0000', '#00DD00', '#0000DD', '#DDAA00', '#AA00DD'];
               const color = colors[index % colors.length];
 
-              const polyline = new window.Tmap.Polyline({
+              // Tmapv2.Polyline으로 경로 그리기
+              const polyline = new window.Tmapv2.Polyline({
                 path: path,
                 strokeColor: color,
-                strokeWeight: 4,
-                strokeOpacity: 0.8
+                strokeWeight: 6,
+                map: mapInstance.current
               });
-
-              polyline.setMap(mapInstance.current);
 
               // 시작점과 끝점에 마커 추가
               if (path.length > 0) {
                 // 시작점 마커
-                const startMarker = new window.Tmap.Marker({
+                const startMarker = new window.Tmapv2.Marker({
                   position: path[0],
-                  map: mapInstance.current,
-                  icon: new window.Tmap.Icon({
-                    url: 'https://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_s.png',
-                    size: new window.Tmap.Size(24, 24),
-                    anchor: new window.Tmap.Point(12, 12)
-                  })
+                  icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_s.png",
+                  iconSize: new window.Tmapv2.Size(24, 38),
+                  map: mapInstance.current
                 });
 
                 // 끝점 마커
-                const endMarker = new window.Tmap.Marker({
+                const endMarker = new window.Tmapv2.Marker({
                   position: path[path.length - 1],
-                  map: mapInstance.current,
-                  icon: new window.Tmap.Icon({
-                    url: 'https://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_e.png',
-                    size: new window.Tmap.Size(24, 24),
-                    anchor: new window.Tmap.Point(12, 12)
-                  })
+                  icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_e.png",
+                  iconSize: new window.Tmapv2.Size(24, 38),
+                  map: mapInstance.current
                 });
               }
             }
@@ -184,65 +99,140 @@ export default function TmapMap({
         } else {
           console.log('경로 데이터 없음');
         }
-
-        setIsLoading(false);
       } catch (error) {
-        console.error('Tmap 지도 초기화 실패:', error);
+        console.error('Tmapv2 지도 초기화 실패:', error);
         setError(error instanceof Error ? error.message : '지도 로드 실패');
-        setIsLoading(false);
       }
     };
 
-    // 약간의 지연을 두고 초기화 (DOM이 완전히 준비되도록)
-    const timer = setTimeout(initializeMap, 200);
+    initializeMap();
+  }, [isLoaded]); // center, zoom, routeData, isMapInitialized 제거
 
-    return () => {
-      clearTimeout(timer);
-      if (mapInstance.current) {
-        mapInstance.current = null;
+  // 경로 데이터 업데이트 (별도 useEffect)
+  useEffect(() => {
+    if (!mapInstance.current || !routeData || !isMapInitialized) {
+      return;
+    }
+
+    console.log('🔄 경로 데이터 업데이트 시작');
+
+    try {
+      // 기존 경로 및 마커 제거 (실제 구현에서는 기존 요소들을 추적하여 제거)
+
+      // 새로운 경로 데이터 그리기
+      if (routeData.features && routeData.features.length > 0) {
+        console.log(`📍 경로 데이터 그리기: ${routeData.features.length}개 경로`);
+
+        routeData.features.forEach((feature: any, index: number) => {
+          if (feature.geometry && feature.geometry.coordinates) {
+            // 좌표 배열을 Tmapv2.LatLng 객체로 변환
+            const path = feature.geometry.coordinates.map((coord: number[]) =>
+              new window.Tmapv2.LatLng(coord[1], coord[0])
+            );
+
+            // 경로 색상 (여러 경로가 있을 경우 다른 색상 사용)
+            const colors = ['#DD0000', '#00DD00', '#0000DD', '#DDAA00', '#AA00DD'];
+            const color = colors[index % colors.length];
+
+            // Tmapv2.Polyline으로 경로 그리기
+            const polyline = new window.Tmapv2.Polyline({
+              path: path,
+              strokeColor: color,
+              strokeWeight: 6,
+              map: mapInstance.current
+            });
+
+            // 시작점과 끝점에 마커 추가
+            if (path.length > 0) {
+              // 시작점 마커
+              const startMarker = new window.Tmapv2.Marker({
+                position: path[0],
+                icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_s.png",
+                iconSize: new window.Tmapv2.Size(24, 38),
+                map: mapInstance.current
+              });
+
+              // 끝점 마커
+              const endMarker = new window.Tmapv2.Marker({
+                position: path[path.length - 1],
+                icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_e.png",
+                iconSize: new window.Tmapv2.Size(24, 38),
+                map: mapInstance.current
+              });
+            }
+          }
+        });
+      } else {
+        console.log('경로 데이터 없음');
       }
-    };
-  }, [isScriptLoaded, isContainerReady, center, zoom, routeData]);
+    } catch (error) {
+      console.error('경로 데이터 업데이트 실패:', error);
+    }
+  }, [routeData, isMapInitialized]);
 
-  if (error) {
+  // Tmap 스크립트 로드 에러
+  if (tmapError) {
     return (
-      <div className={`${className} bg-red-50 border border-red-200 rounded-lg flex items-center justify-center`} style={{ height }}>
+      <div className={`${className} ${height} bg-gray-100 flex items-center justify-center`}>
         <div className="text-center">
-          <div className="text-red-500 mb-2">⚠️</div>
-          <p className="text-gray-600 text-sm">{error}</p>
-          <details className="mt-4 text-left">
-            <summary className="cursor-pointer text-sm text-gray-500">디버그 정보</summary>
-            <div className="mt-2 p-2 bg-gray-50 rounded text-xs whitespace-pre-wrap">
-              {debugInfo}
-            </div>
-          </details>
+          <div className="text-red-500 text-lg font-semibold mb-2">Tmap 스크립트 로드 실패</div>
+          <div className="text-gray-600 text-sm">{tmapError}</div>
         </div>
       </div>
     );
   }
 
-  if (isLoading) {
+  // 지도 초기화 에러
+  if (error) {
     return (
-      <div className={`${className} bg-gray-100 rounded-lg flex items-center justify-center`} style={{ height }}>
+      <div className={`${className} ${height} bg-gray-100 flex items-center justify-center`}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
-          <p className="text-gray-600 text-sm">
-            {isScriptLoaded ? '지도를 불러오는 중...' : '스크립트를 불러오는 중...'}
-          </p>
-          <details className="mt-4 text-left">
-            <summary className="cursor-pointer text-sm text-gray-500">디버그 정보</summary>
-            <div className="mt-2 p-2 bg-gray-50 rounded text-xs whitespace-pre-wrap">
-              {debugInfo}
-            </div>
-          </details>
+          <div className="text-red-500 text-lg font-semibold mb-2">지도 로드 실패</div>
+          <div className="text-gray-600 text-sm">{error}</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 로딩 중
+  if (!isLoaded) {
+    return (
+      <div className={`${className} ${height} bg-gray-100 flex items-center justify-center`}>
+        <div className="text-center">
+          <div className="text-blue-500 text-lg font-semibold mb-2">🗺️ Tmap 로딩 중...</div>
+          <div className="text-gray-600 text-sm">PostScribe를 통해 지도 API를 불러오는 중입니다</div>
+          <div className="mt-2">
+            <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${className} rounded-lg overflow-hidden border border-gray-200`} style={{ height }}>
-      <div ref={mapRef} className="w-full h-full" />
+    <div className={`${className} ${height} relative`}>
+      <div
+        ref={mapRef}
+        className="w-full h-full"
+        style={{ minHeight: '400px' }}
+      />
     </div>
   );
-} 
+}
+
+// Dynamic Import로 감싸기
+import dynamic from 'next/dynamic';
+
+const TmapMap = dynamic(() => Promise.resolve(TmapMapComponent), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-96 bg-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-blue-500 text-lg font-semibold mb-2">🗺️ 지도 컴포넌트 로딩 중...</div>
+        <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+      </div>
+    </div>
+  )
+});
+
+export default TmapMap; 

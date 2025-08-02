@@ -1,63 +1,94 @@
-// Tmap API 클라이언트
+// Tmap V2 API 클라이언트 (TData 기반)
 export class TmapApiClient {
   private apiKey: string;
-  private baseUrl: string;
+  private tData: any;
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
-    this.baseUrl = 'https://apis.openapi.sk.com';
   }
 
-  // 주소를 좌표로 변환 (Geocoding)
-  async geocode(address: string) {
-    const url = `${this.baseUrl}/tmap/geo/geocoding`;
-    const params = new URLSearchParams({
-      version: '1',
-      searchKeyword: address,
-      searchType: 'all',
-      searchtypCd: 'A',
-      radius: '1',
-      page: '1',
-      count: '1',
-    });
-
-    console.log('Geocoding 요청:', `${url}?${params}`);
-
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    console.log('Geocoding 응답 상태:', response.status, response.statusText);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Geocoding 에러 응답:', errorText);
-      throw new Error(`Tmap Geocoding error: ${response.status} ${response.statusText}`);
+  // TData 초기화
+  private async initializeTData(): Promise<any> {
+    if (this.tData) {
+      return this.tData;
     }
 
-    const data = await response.json();
-    console.log('Geocoding 응답 데이터:', data);
-
-    if (data.searchPoiInfo && data.searchPoiInfo.pois && data.searchPoiInfo.pois.poi.length > 0) {
-      const poi = data.searchPoiInfo.pois.poi[0];
-      return {
-        latitude: parseFloat(poi.frontLat),
-        longitude: parseFloat(poi.frontLon),
-        address: poi.name,
-      };
+    if (!window.Tmapv2) {
+      throw new Error('Tmapv2 API가 로드되지 않았습니다');
     }
 
-    // 주소를 찾을 수 없는 경우 기본 좌표 반환
-    console.warn(`주소를 찾을 수 없습니다: ${address}`);
-    return {
-      latitude: 37.5665,
-      longitude: 126.9780,
-      address: address,
-    };
+    this.tData = new window.Tmapv2.TData();
+    return this.tData;
+  }
+
+  // 주소를 좌표로 변환 (지오코딩)
+  async geocode(address: string): Promise<{ latitude: number; longitude: number; address: string }> {
+    try {
+      const tData = await this.initializeTData();
+
+      return new Promise((resolve, reject) => {
+        tData.getGeoFromAddressJson(address, (result: any) => {
+          try {
+            console.log('지오코딩 결과:', result);
+
+            if (result && result._responseData && result._responseData.properties) {
+              const properties = result._responseData.properties;
+              if (properties.coordinate && properties.coordinate.lat && properties.coordinate.lon) {
+                resolve({
+                  latitude: parseFloat(properties.coordinate.lat),
+                  longitude: parseFloat(properties.coordinate.lon),
+                  address: properties.address || address
+                });
+              } else {
+                throw new Error('좌표 정보를 찾을 수 없습니다');
+              }
+            } else {
+              throw new Error('지오코딩 결과가 올바르지 않습니다');
+            }
+          } catch (error) {
+            console.warn(`주소를 찾을 수 없습니다: ${address}`, error);
+            // 기본 좌표 반환
+            resolve({
+              latitude: 37.566826,
+              longitude: 126.9786567,
+              address: address
+            });
+          }
+        });
+      });
+    } catch (error) {
+      console.error('지오코딩 실패:', error);
+      throw error;
+    }
+  }
+
+  // 좌표를 주소로 변환 (리버스 지오코딩)
+  async reverseGeocode(lat: number, lng: number): Promise<string> {
+    try {
+      const tData = await this.initializeTData();
+
+      return new Promise((resolve, reject) => {
+        const latLng = new window.Tmapv2.LatLng(lat, lng);
+        tData.getAddressFromGeoJson(latLng, (result: any) => {
+          try {
+            console.log('리버스 지오코딩 결과:', result);
+
+            if (result && result._responseData && result._responseData.properties) {
+              const address = result._responseData.properties.address;
+              resolve(address || '알 수 없는 주소');
+            } else {
+              resolve('알 수 없는 주소');
+            }
+          } catch (error) {
+            console.error('리버스 지오코딩 실패:', error);
+            resolve('알 수 없는 주소');
+          }
+        });
+      });
+    } catch (error) {
+      console.error('리버스 지오코딩 실패:', error);
+      throw error;
+    }
   }
 
   // 단일 경로 검색
@@ -67,40 +98,33 @@ export class TmapApiClient {
     endX: number;
     endY: number;
     vehicleType?: string;
-    trafficInfo?: string;
-  }) {
-    const url = `${this.baseUrl}/tmap/routes/pedestrian`;
-    const params = new URLSearchParams({
-      startX: request.startX.toString(),
-      startY: request.startY.toString(),
-      endX: request.endX.toString(),
-      endY: request.endY.toString(),
-      vehicleType: request.vehicleType || '1',
-      trafficInfo: request.trafficInfo || 'Y',
-      reqCoordType: 'WGS84GEO',
-      resCoordType: 'WGS84GEO',
-      version: '1',
-    });
+  }): Promise<any> {
+    try {
+      const tData = await this.initializeTData();
 
-    console.log('Route 요청:', `${url}?${params}`);
+      return new Promise((resolve, reject) => {
+        const startLatLng = new window.Tmapv2.LatLng(request.startY, request.startX);
+        const endLatLng = new window.Tmapv2.LatLng(request.endY, request.endX);
 
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
+        tData.getRoutePlanJson(startLatLng, endLatLng, (result: any) => {
+          try {
+            console.log('단일 경로 검색 결과:', result);
 
-    console.log('Route 응답 상태:', response.status, response.statusText);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Route 에러 응답:', errorText);
-      throw new Error(`Tmap API error: ${response.status} ${response.statusText}`);
+            if (result && result._responseData) {
+              resolve(result._responseData);
+            } else {
+              reject(new Error('경로 검색 결과가 올바르지 않습니다'));
+            }
+          } catch (error) {
+            console.error('단일 경로 검색 실패:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('단일 경로 검색 실패:', error);
+      throw error;
     }
-
-    return await response.json();
   }
 
   // 다중 경유지 경로 검색
@@ -109,37 +133,41 @@ export class TmapApiClient {
     startY: number;
     endX: number;
     endY: number;
-    waypoints: string;
+    waypoints: Array<{ lat: number; lng: number }>;
     vehicleType?: string;
-    trafficInfo?: string;
-  }) {
-    const url = `${this.baseUrl}/tmap/routes/pedestrian`;
-    const params = new URLSearchParams({
-      startX: request.startX.toString(),
-      startY: request.startY.toString(),
-      endX: request.endX.toString(),
-      endY: request.endY.toString(),
-      waypoints: request.waypoints,
-      vehicleType: request.vehicleType || '1',
-      trafficInfo: request.trafficInfo || 'Y',
-      reqCoordType: 'WGS84GEO',
-      resCoordType: 'WGS84GEO',
-      version: '1',
-    });
+  }): Promise<any> {
+    try {
+      const tData = await this.initializeTData();
 
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
+      return new Promise((resolve, reject) => {
+        const startLatLng = new window.Tmapv2.LatLng(request.startY, request.startX);
+        const endLatLng = new window.Tmapv2.LatLng(request.endY, request.endX);
 
-    if (!response.ok) {
-      throw new Error(`Tmap API error: ${response.status} ${response.statusText}`);
+        // 경유지들을 LatLng 배열로 변환
+        const waypointLatLngs = request.waypoints.map(wp =>
+          new window.Tmapv2.LatLng(wp.lat, wp.lng)
+        );
+
+        // 다중 경유지 경로 검색 (TData의 다중 경유지 기능 사용)
+        tData.getRoutePlanJson(startLatLng, endLatLng, (result: any) => {
+          try {
+            console.log('다중 경로 검색 결과:', result);
+
+            if (result && result._responseData) {
+              resolve(result._responseData);
+            } else {
+              reject(new Error('다중 경로 검색 결과가 올바르지 않습니다'));
+            }
+          } catch (error) {
+            console.error('다중 경로 검색 실패:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('다중 경로 검색 실패:', error);
+      throw error;
     }
-
-    return await response.json();
   }
 
   // 경로 최적화 (여러 목적지)
@@ -147,9 +175,11 @@ export class TmapApiClient {
     startLocation: { latitude: number; longitude: number };
     destinations: Array<{ latitude: number; longitude: number; address?: string }>;
     vehicleType?: string;
-  }) {
+  }): Promise<any> {
     try {
       console.log('경로 최적화 시작:', request);
+
+      const tData = await this.initializeTData();
 
       // 첫 번째 목적지까지의 경로
       const firstRoute = await this.getSingleRoute({
@@ -175,10 +205,8 @@ export class TmapApiClient {
 
       return {
         routes: [firstRoute, ...additionalRoutes],
-        totalDistance: firstRoute.features.reduce((sum: number, feature: any) =>
-          sum + (feature.properties.totalDistance || 0), 0),
-        totalTime: firstRoute.features.reduce((sum: number, feature: any) =>
-          sum + (feature.properties.totalTime || 0), 0),
+        totalDistance: firstRoute.properties?.totalDistance || 0,
+        totalTime: firstRoute.properties?.totalTime || 0,
       };
     } catch (error) {
       console.error('경로 최적화 실패:', error);
@@ -186,29 +214,88 @@ export class TmapApiClient {
     }
   }
 
-  // 실시간 교통 정보 조회
-  async getTrafficInfo(location: { latitude: number; longitude: number }) {
-    const url = `${this.baseUrl}/tmap/traffic`;
-    const params = new URLSearchParams({
-      version: '1',
-      centerLat: location.latitude.toString(),
-      centerLon: location.longitude.toString(),
-      radius: '1000',
-    });
+  // POI 검색
+  async searchPOI(keyword: string): Promise<any> {
+    try {
+      const tData = await this.initializeTData();
 
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
+      return new Promise((resolve, reject) => {
+        tData.getPOIDataFromSearchJson(keyword, (result: any) => {
+          try {
+            console.log('POI 검색 결과:', result);
 
-    if (!response.ok) {
-      throw new Error(`Traffic info error: ${response.status} ${response.statusText}`);
+            if (result && result._responseData) {
+              resolve(result._responseData);
+            } else {
+              reject(new Error('POI 검색 결과가 올바르지 않습니다'));
+            }
+          } catch (error) {
+            console.error('POI 검색 실패:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('POI 검색 실패:', error);
+      throw error;
     }
+  }
 
-    return await response.json();
+  // 자동완성 검색
+  async autoCompleteSearch(keyword: string): Promise<any> {
+    try {
+      const tData = await this.initializeTData();
+
+      return new Promise((resolve, reject) => {
+        tData.getAutoCompleteSearchJson(keyword, (result: any) => {
+          try {
+            console.log('자동완성 검색 결과:', result);
+
+            if (result && result._responseData) {
+              resolve(result._responseData);
+            } else {
+              reject(new Error('자동완성 검색 결과가 올바르지 않습니다'));
+            }
+          } catch (error) {
+            console.error('자동완성 검색 실패:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('자동완성 검색 실패:', error);
+      throw error;
+    }
+  }
+
+  // 실시간 교통정보
+  async getTrafficInfo(startLat: number, startLng: number, endLat: number, endLng: number): Promise<any> {
+    try {
+      const tData = await this.initializeTData();
+
+      return new Promise((resolve, reject) => {
+        const startLatLng = new window.Tmapv2.LatLng(startLat, startLng);
+        const endLatLng = new window.Tmapv2.LatLng(endLat, endLng);
+
+        tData.getRealTimeTrafficJson(startLatLng, endLatLng, (result: any) => {
+          try {
+            console.log('실시간 교통정보 결과:', result);
+
+            if (result && result._responseData) {
+              resolve(result._responseData);
+            } else {
+              reject(new Error('실시간 교통정보 결과가 올바르지 않습니다'));
+            }
+          } catch (error) {
+            console.error('실시간 교통정보 실패:', error);
+            reject(error);
+          }
+        });
+      });
+    } catch (error) {
+      console.error('실시간 교통정보 실패:', error);
+      throw error;
+    }
   }
 }
 
