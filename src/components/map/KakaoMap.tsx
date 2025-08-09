@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Map, MapMarker, Polyline, useKakaoLoader } from 'react-kakao-maps-sdk';
 
 interface KakaoMapProps {
@@ -19,16 +19,33 @@ export default function KakaoMap({
   height = "h-96"
 }: KakaoMapProps) {
   // 공식 로더 사용: 환경변수에서 키 주입
-  const [loading] = useKakaoLoader({
+  const [loading, loaderError] = useKakaoLoader({
     appkey: process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY || '',
     libraries: ['services', 'clusterer']
   });
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const computedCenter = useMemo(() => {
+    try {
+      if (routeData && routeData.features && routeData.features.length > 0) {
+        const first = routeData.features[0];
+        const coords = first?.geometry?.coordinates;
+        if (Array.isArray(coords) && coords.length > 0) {
+          return { lat: coords[0][1], lng: coords[0][0] };
+        }
+      }
+    } catch { }
+    return center;
+  }, [routeData, center]);
+
   useEffect(() => {
-    if (loading) return;
-    if (window.kakao && window.kakao.maps) {
+    if (loaderError) {
+      setError(`카카오맵 스크립트 로드 실패: ${String(loaderError)}`);
+      return;
+    }
+    if (loading) return; // 아직 로딩 중
+    if (typeof window !== 'undefined' && (window as any).kakao && (window as any).kakao.maps) {
       setIsLoaded(true);
       setError(null);
     } else {
@@ -36,8 +53,16 @@ export default function KakaoMap({
     }
   }, [loading]);
 
+  const debugInfo = useMemo(() => {
+    const appkey = (process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY || '').slice(0, 6) + '...';
+    return {
+      href: typeof window !== 'undefined' ? window.location.href : '',
+      appkey,
+    };
+  }, []);
+
   // 로딩 중
-  if (!isLoaded) {
+  if (!isLoaded && !error) {
     return (
       <div className={`${className} ${height} bg-gray-100 flex items-center justify-center`}>
         <div className="text-center">
@@ -46,6 +71,7 @@ export default function KakaoMap({
           <div className="mt-2">
             <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
           </div>
+          <div className="mt-3 text-xs text-gray-500">{debugInfo.href} / key {debugInfo.appkey}</div>
         </div>
       </div>
     );
@@ -58,6 +84,7 @@ export default function KakaoMap({
         <div className="text-center">
           <div className="text-red-500 text-lg font-semibold mb-2">지도 로드 실패</div>
           <div className="text-gray-600 text-sm">{error}</div>
+          <div className="mt-2 text-xs text-gray-500">{debugInfo.href} / key {debugInfo.appkey}</div>
         </div>
       </div>
     );
@@ -66,7 +93,7 @@ export default function KakaoMap({
   return (
     <div className={`${className} ${height} relative`}>
       <Map
-        center={center}
+        center={computedCenter}
         level={zoom}
         style={{ width: "100%", height: "100%" }}
       >
