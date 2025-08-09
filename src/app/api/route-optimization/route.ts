@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Tmap 의존성 제거. Nominatim(오픈스트리트맵) 기반 서버사이드 지오코딩으로 대체
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,7 +7,14 @@ export async function POST(request: NextRequest) {
 
     console.log('API 요청 받음:', { origins, destinations, vehicleType });
 
-    // 더 이상 Tmap API 키 필요 없음
+    const tmapKey =
+      process.env.TMAP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY || '';
+    if (!tmapKey) {
+      return NextResponse.json(
+        { error: 'Tmap API 키가 설정되지 않았습니다 (.env.local에 TMAP_API_KEY 또는 NEXT_PUBLIC_TMAP_API_KEY).'},
+        { status: 500 }
+      );
+    }
 
     // 입력 검증
     if (!origins || !destinations || origins.length === 0 || destinations.length === 0) {
@@ -18,76 +24,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 출발지 좌표 변환 (Nominatim)
+    // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const startAddress = typeof origins[0] === 'string' ? origins[0] : origins[0].address;
-    const startLocation = await geocodeWithNominatim(startAddress);
+    const startLocation = await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
     console.log('출발지 좌표:', startLocation);
 
-    // 목적지 좌표 변환 (Nominatim)
+    // 목적지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
       const destAddress = typeof destination === 'string' ? destination : destination.address;
-      const coord = await geocodeWithNominatim(destAddress);
+      const coord = await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
       destinationCoords.push(coord);
     }
 
     console.log('모든 목적지 좌표:', destinationCoords);
 
-    // 경로 최적화 실행 (더미 데이터 사용)
-    console.log('더미 데이터 사용 (Tmap API 호출은 나중에 구현)');
+    // Tmap 자동차 경로안내를 구간별로 호출 (순서 최적화 없음, 입력 순서대로)
+    const segmentFeatures: any[] = [];
+    let totalDistance = 0;
+    let totalTime = 0;
 
-    // 더 현실적인 더미 데이터 생성 (직선 보간)
-    const generateRealisticRoute = (start: any, destinations: any[]) => {
-      const routes = [];
-      let currentPoint = start;
+    let current = startLocation;
+    for (const dest of destinationCoords) {
+      const seg = await getTmapRoute(
+        { x: current.longitude, y: current.latitude },
+        { x: dest.longitude, y: dest.latitude },
+        tmapKey
+      ).catch(() => null);
 
-      for (const dest of destinations) {
-        // 실제 거리에 기반한 좌표 생성
-        const distance = Math.sqrt(
-          Math.pow(dest.longitude - currentPoint.longitude, 2) +
-          Math.pow(dest.latitude - currentPoint.latitude, 2)
-        );
-
-        // 경로 중간점들 생성 (더 자연스러운 경로)
-        const steps = Math.max(3, Math.floor(distance * 100));
-        const coordinates = [];
-
-        for (let i = 0; i <= steps; i++) {
-          const ratio = i / steps;
-          const lat = currentPoint.latitude + (dest.latitude - currentPoint.latitude) * ratio;
-          const lng = currentPoint.longitude + (dest.longitude - currentPoint.longitude) * ratio;
-          coordinates.push([lng, lat]);
+      if (seg && Array.isArray(seg.features)) {
+        // 합산
+        for (const f of seg.features) {
+          if (f?.properties?.totalDistance) totalDistance += f.properties.totalDistance;
+          if (f?.properties?.totalTime) totalTime += f.properties.totalTime;
+          segmentFeatures.push(f);
         }
-
-        routes.push({
-          type: "Feature",
-          properties: {
-            totalDistance: Math.floor(distance * 111000), // km 단위로 변환
-            totalTime: Math.floor(distance * 111000 / 50), // 시속 50km 가정
-          },
-          geometry: {
-            type: "LineString",
-            coordinates: coordinates
-          }
+      } else {
+        // 폴백: 직선 보간 한 구간 추가
+        const coordinates = [
+          [current.longitude, current.latitude],
+          [dest.longitude, dest.latitude],
+        ];
+        const approx = haversineMeters(current.latitude, current.longitude, dest.latitude, dest.longitude);
+        totalDistance += approx;
+        totalTime += Math.floor(approx / (50 * 1000) * 3600); // 50km/h 가정
+        segmentFeatures.push({
+          type: 'Feature',
+          properties: { totalDistance: approx, totalTime: Math.floor(approx / (50 * 1000) * 3600) },
+          geometry: { type: 'LineString', coordinates },
         });
-
-        currentPoint = dest;
       }
-
-      return routes;
-    };
-
-    const routeFeatures = generateRealisticRoute(startLocation, destinationCoords);
-    const totalDistance = routeFeatures.reduce((sum, route) => sum + route.properties.totalDistance, 0);
-    const totalTime = routeFeatures.reduce((sum, route) => sum + route.properties.totalTime, 0);
+      current = dest;
+    }
 
     const routeData = {
-      type: "FeatureCollection",
-      features: routeFeatures,
-      summary: {
-        totalDistance: totalDistance,
-        totalTime: totalTime
-      }
+      type: 'FeatureCollection',
+      features: segmentFeatures,
+      summary: { totalDistance, totalTime },
     };
 
     return NextResponse.json({
@@ -107,7 +100,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 서버사이드 Nominatim 지오코딩
+// 서버사이드 Nominatim 지오코딩 (백업)
 async function geocodeWithNominatim(address: string): Promise<{ latitude: number; longitude: number; address: string }> {
   try {
     const url = new URL('https://nominatim.openstreetmap.org/search');
@@ -141,6 +134,81 @@ async function geocodeWithNominatim(address: string): Promise<{ latitude: number
     // 네트워크/기타 에러 시 기본값
     return { latitude: 37.566535, longitude: 126.9779692, address };
   }
+}
+
+// 서버사이드 Tmap 지오코딩 (우선)
+async function geocodeWithTmap(address: string, appKey: string): Promise<{ latitude: number; longitude: number; address: string }> {
+  const url = new URL('https://apis.openapi.sk.com/tmap/geo/geocoding');
+  url.searchParams.set('version', '1');
+  url.searchParams.set('searchKeyword', address);
+  url.searchParams.set('searchType', 'all');
+  url.searchParams.set('searchtypCd', 'A');
+  url.searchParams.set('radius', '0');
+  url.searchParams.set('page', '1');
+  url.searchParams.set('count', '1');
+  url.searchParams.set('reqCoordType', 'WGS84GEO');
+  url.searchParams.set('resCoordType', 'WGS84GEO');
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { appKey: appKey, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error('Tmap geocoding failed');
+  const data = await res.json();
+  const poi = data?.searchPoiInfo?.pois?.poi?.[0];
+  if (!poi) throw new Error('Address not found');
+  return {
+    latitude: parseFloat(poi.frontLat),
+    longitude: parseFloat(poi.frontLon),
+    address: poi.name || address,
+  };
+}
+
+// Tmap 자동차 경로안내
+async function getTmapRoute(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  appKey: string
+) {
+  const url = 'https://apis.openapi.sk.com/tmap/routes';
+  const body = {
+    startX: String(start.x),
+    startY: String(start.y),
+    endX: String(end.x),
+    endY: String(end.y),
+    reqCoordType: 'WGS84GEO',
+    resCoordType: 'WGS84GEO',
+    searchOption: '0',
+    trafficInfo: 'Y',
+    vehicleType: '1',
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { appKey: appKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Tmap route failed: ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 export async function GET() {

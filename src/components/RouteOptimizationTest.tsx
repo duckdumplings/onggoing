@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
-import KakaoMap from '@/components/map/KakaoMap';
+import TmapMap from '@/components/map/TmapMap';
 
 interface TestLocation {
   address: string;
@@ -208,10 +208,10 @@ export default function RouteOptimizationTest() {
             </Card>
           )}
 
-          {/* 카카오맵 */}
+          {/* Tmap 지도 */}
           <Card variant="basic" className="p-6">
             <h2 className="text-xl font-semibold mb-4">경로 지도</h2>
-            <KakaoMap
+            <TmapMap
               routeData={result}
               height="h-96"
               className="w-full"
