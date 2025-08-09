@@ -1,90 +1,18 @@
 import { serve } from 'https://deno.land/std@0.208.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0';
 
-// Tmap API 클라이언트
-class TmapApiClient {
-  private apiKey: string;
-  private baseUrl: string;
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-    this.baseUrl = 'https://apis.openapi.sk.com';
-  }
-
-  async getMultiRoute(request: {
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    waypoints: string;
-    vehicleType?: string;
-    trafficInfo?: string;
-  }) {
-    const url = `${this.baseUrl}/tmap/routes/pedestrian`;
-    const params = new URLSearchParams({
-      startX: request.startX.toString(),
-      startY: request.startY.toString(),
-      endX: request.endX.toString(),
-      endY: request.endY.toString(),
-      waypoints: request.waypoints,
-      vehicleType: request.vehicleType || '1',
-      trafficInfo: request.trafficInfo || 'Y',
-      reqCoordType: 'WGS84GEO',
-      resCoordType: 'WGS84GEO',
-      version: '1',
-    });
-
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Tmap API error: ${response.status} ${response.statusText}`);
-    }
-
-    return await response.json();
-  }
-
-  async geocode(address: string) {
-    const url = `${this.baseUrl}/tmap/geo/geocoding`;
-    const params = new URLSearchParams({
-      version: '1',
-      searchKeyword: address,
-      searchType: 'all',
-      searchtypCd: 'A',
-      radius: '1',
-      page: '1',
-      count: '1',
-    });
-
-    const response = await fetch(`${url}?${params}`, {
-      method: 'GET',
-      headers: {
-        'appKey': this.apiKey,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Tmap Geocoding error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.searchPoiInfo && data.searchPoiInfo.pois && data.searchPoiInfo.pois.poi.length > 0) {
-      const poi = data.searchPoiInfo.pois.poi[0];
-      return {
-        latitude: parseFloat(poi.frontLat),
-        longitude: parseFloat(poi.frontLon),
-      };
-    }
-
-    throw new Error('Address not found');
-  }
+// Tmap 제거: 간단 지오코딩 유틸 (Nominatim)
+async function geocode(address: string) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', address);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1');
+  const response = await fetch(url.toString(), { headers: { 'User-Agent': 'ai-onggoing-edge/1.0' } });
+  if (!response.ok) throw new Error('Nominatim error');
+  const results = await response.json();
+  const item = Array.isArray(results) && results[0];
+  if (!item) return { latitude: 37.566535, longitude: 126.9779692 };
+  return { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) };
 }
 
 interface Location {
@@ -216,7 +144,7 @@ serve(async (req: Request) => {
   }
 });
 
-// 경로 최적화 함수 (Tmap API 사용)
+// 경로 최적화 함수 (간략 버전, 외부 경로 API 미사용)
 async function optimizeRoutes(
   origins: Location[],
   destinations: Location[],
@@ -229,10 +157,6 @@ async function optimizeRoutes(
     vehicle.is_active && vehicle.type === vehicleType
   );
 
-  // Tmap API 클라이언트 생성
-  const tmapApiKey = Deno.env.get('TMAP_API_KEY') || '';
-  const tmapClient = new TmapApiClient(tmapApiKey);
-
   // 각 차량에게 배정할 목적지 수 계산
   const destinationsPerVehicle = Math.ceil(destinations.length / availableVehicles.length);
 
@@ -243,33 +167,12 @@ async function optimizeRoutes(
 
     if (assignedDestinations.length > 0) {
       try {
-        // 주소를 좌표로 변환
-        const originCoords = await tmapClient.geocode(origins[0].address);
-
-        // 경유지 생성 (첫 번째 목적지를 제외한 나머지)
-        const waypoints = assignedDestinations.slice(1)
-          .map(dest => `${dest.longitude},${dest.latitude}`)
-          .join(';');
-
-        // Tmap API로 경로 계산
-        const routeResponse = await tmapClient.getMultiRoute({
-          startX: originCoords.longitude,
-          startY: originCoords.latitude,
-          endX: assignedDestinations[0].longitude,
-          endY: assignedDestinations[0].latitude,
-          waypoints,
-          vehicleType: '1', // 자동차
-          trafficInfo: 'Y',
-        });
-
-        // 경로 정보 추출
-        const totalDistance = routeResponse.features.reduce((sum: number, feature: any) => {
-          return sum + (feature.properties.totalDistance || 0);
+        // 간단 거리/시간 추정 (직선거리, 시속 50km 가정)
+        const totalDistance = assignedDestinations.reduce((sum, dest, idx) => {
+          const from = idx === 0 ? origins[0] : assignedDestinations[idx - 1];
+          return sum + calculateDistance(from, dest);
         }, 0);
-
-        const totalTime = routeResponse.features.reduce((sum: number, feature: any) => {
-          return sum + (feature.properties.totalTime || 0);
-        }, 0);
+        const totalTime = (totalDistance / 50) * 60; // 분 단위
 
         routes.push({
           driverId: vehicle.id,
@@ -278,21 +181,8 @@ async function optimizeRoutes(
           estimatedDistance: totalDistance,
           estimatedTime: totalTime,
         });
-
       } catch (error) {
-        console.error(`Tmap API error for vehicle ${vehicle.id}:`, error);
-
-        // API 실패 시 기본 계산 사용
-        const estimatedDistance = calculateDistance(origins[0], assignedDestinations[0]);
-        const estimatedTime = estimatedDistance * 2; // km당 2분 가정
-
-        routes.push({
-          driverId: vehicle.id,
-          destinations: assignedDestinations,
-          path: [origins[0], ...assignedDestinations],
-          estimatedDistance,
-          estimatedTime,
-        });
+        console.error(`Route calc error for vehicle ${vehicle.id}:`, error);
       }
     }
   }

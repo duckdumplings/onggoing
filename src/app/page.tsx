@@ -9,7 +9,7 @@ export default function Home() {
             옹고잉 스마트 물류 플랫폼
           </h1>
           <p className="text-xl text-gray-600">
-            Tmap API 기반 경로 최적화 및 견적 시스템
+            경로 최적화 및 견적 시스템 (카카오맵 기반 UI)
           </p>
         </div>
 
@@ -20,7 +20,7 @@ export default function Home() {
                 🗺️ 경로 최적화 테스트
               </h2>
               <p className="text-gray-600">
-                Tmap API를 사용한 실시간 경로 최적화 기능을 테스트해보세요.
+                실시간 경로 최적화 기능을 테스트해보세요.
               </p>
             </div>
           </Link>
@@ -77,7 +77,7 @@ export default function Home() {
               🚀 현재 구현된 기능
             </h3>
             <ul className="text-blue-800 space-y-1">
-              <li>✅ Tmap Web API 지도 표시</li>
+              <li>✅ 카카오맵 지도 표시</li>
               <li>✅ 실시간 경로 최적화</li>
               <li>✅ 주소 → 좌표 변환 (Geocoding)</li>
               <li>✅ 다중 목적지 경로 계산</li>

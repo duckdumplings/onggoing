@@ -1,12 +1,10 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
-import { TmapProvider } from '@/components/TmapProvider'
 
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
-  preload: true,
   fallback: ['system-ui', 'arial']
 })
 
@@ -22,10 +20,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
+      <head></head>
       <body className={inter.className}>
-        <TmapProvider>
-          {children}
-        </TmapProvider>
+        {children}
       </body>
     </html>
   )

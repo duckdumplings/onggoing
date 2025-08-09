@@ -6,7 +6,6 @@
 
 - **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS
 - **Backend**: Supabase (PostgreSQL, Auth, Storage)
-- **External APIs**: Tmap API, Atlan API
 - **Deployment**: Vercel
 
 ## 주요 기능
@@ -16,7 +15,6 @@
 - 📍 **실시간 추적**: 차량 위치 실시간 모니터링
 - 📊 **관리 대시보드**: 운영 현황 및 통계 분석
 - 🌐 **웹앱 중심**: 모든 디바이스에서 최적화된 웹 경험
-- 🗺️ **Tmap 지도 통합**: PostScribe를 통한 안정적인 지도 API 연동
 
 ## 개발 환경 설정
 
@@ -33,8 +31,7 @@ npm install
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 
-# Tmap API Configuration
-NEXT_PUBLIC_TMAP_API_KEY=your_tmap_api_key_here
+NEXT_PUBLIC_KAKAO_MAP_API_KEY=your_kakao_map_api_key_here
 
 # Atlan API Configuration
 NEXT_PUBLIC_ATLAN_API_KEY=your_atlan_api_key_here
@@ -49,8 +46,6 @@ npm run dev
 프로젝트 개발 시 다음 문서를 참조하세요:
 - `docs/design-guide-ia.md` - 디자인 가이드 및 IA 문서
 
-### 5. Tmap API 통합
-PostScribe 라이브러리를 사용하여 Tmap API와 안정적으로 통합되었습니다:
 - `document.write` 에러 완전 해결
 - SSR 환경에서 안전한 스크립트 로딩
 - 15초 타임아웃으로 빠른 에러 감지

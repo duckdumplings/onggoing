@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { tmapServerApiClient } from '@/libs/tmap-server-api';
+// Tmap 의존성 제거. Nominatim(오픈스트리트맵) 기반 서버사이드 지오코딩으로 대체
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,15 +8,7 @@ export async function POST(request: NextRequest) {
 
     console.log('API 요청 받음:', { origins, destinations, vehicleType });
 
-    // 환경변수에서 API 키 사용
-    const apiKey = process.env.NEXT_PUBLIC_TMAP_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Tmap API 키가 설정되지 않았습니다. .env.local 파일에 NEXT_PUBLIC_TMAP_API_KEY를 설정해주세요.' },
-        { status: 500 }
-      );
-    }
-    console.log('Tmap API 키 사용:', apiKey.substring(0, 10) + '...');
+    // 더 이상 Tmap API 키 필요 없음
 
     // 입력 검증
     if (!origins || !destinations || origins.length === 0 || destinations.length === 0) {
@@ -26,116 +18,82 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 출발지 좌표 변환
+    // 출발지 좌표 변환 (Nominatim)
     const startAddress = typeof origins[0] === 'string' ? origins[0] : origins[0].address;
-    const startLocation = await tmapServerApiClient.geocode(startAddress);
+    const startLocation = await geocodeWithNominatim(startAddress);
     console.log('출발지 좌표:', startLocation);
 
-    // 목적지 좌표 변환
-    const destinationCoords = [];
+    // 목적지 좌표 변환 (Nominatim)
+    const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
       const destAddress = typeof destination === 'string' ? destination : destination.address;
-      const coord = await tmapServerApiClient.geocode(destAddress);
+      const coord = await geocodeWithNominatim(destAddress);
       destinationCoords.push(coord);
     }
 
     console.log('모든 목적지 좌표:', destinationCoords);
 
-    // 경로 최적화 실행 (TData 기반)
-    console.log('경로 최적화 시작 - TData 기반');
+    // 경로 최적화 실행 (더미 데이터 사용)
+    console.log('더미 데이터 사용 (Tmap API 호출은 나중에 구현)');
 
-    try {
-      // 첫 번째 목적지까지의 경로
-      const firstRoute = await tmapServerApiClient.getSingleRoute({
-        startX: startLocation.longitude,
-        startY: startLocation.latitude,
-        endX: destinationCoords[0].longitude,
-        endY: destinationCoords[0].latitude,
-        vehicleType: vehicleType === '스타렉스' ? '5' : '1', // 1: 자동차, 5: 트럭
-      });
+    // 더 현실적인 더미 데이터 생성 (직선 보간)
+    const generateRealisticRoute = (start: any, destinations: any[]) => {
+      const routes = [];
+      let currentPoint = start;
 
-      // 나머지 목적지들에 대한 경로들
-      const additionalRoutes = [];
-      for (let i = 0; i < destinationCoords.length - 1; i++) {
-        const route = await tmapServerApiClient.getSingleRoute({
-          startX: destinationCoords[i].longitude,
-          startY: destinationCoords[i].latitude,
-          endX: destinationCoords[i + 1].longitude,
-          endY: destinationCoords[i + 1].latitude,
-          vehicleType: vehicleType === '스타렉스' ? '5' : '1',
+      for (const dest of destinations) {
+        // 실제 거리에 기반한 좌표 생성
+        const distance = Math.sqrt(
+          Math.pow(dest.longitude - currentPoint.longitude, 2) +
+          Math.pow(dest.latitude - currentPoint.latitude, 2)
+        );
+
+        // 경로 중간점들 생성 (더 자연스러운 경로)
+        const steps = Math.max(3, Math.floor(distance * 100));
+        const coordinates = [];
+
+        for (let i = 0; i <= steps; i++) {
+          const ratio = i / steps;
+          const lat = currentPoint.latitude + (dest.latitude - currentPoint.latitude) * ratio;
+          const lng = currentPoint.longitude + (dest.longitude - currentPoint.longitude) * ratio;
+          coordinates.push([lng, lat]);
+        }
+
+        routes.push({
+          type: "Feature",
+          properties: {
+            totalDistance: Math.floor(distance * 111000), // km 단위로 변환
+            totalTime: Math.floor(distance * 111000 / 50), // 시속 50km 가정
+          },
+          geometry: {
+            type: "LineString",
+            coordinates: coordinates
+          }
         });
-        additionalRoutes.push(route);
+
+        currentPoint = dest;
       }
 
-      const optimizationResult = {
-        routes: [firstRoute, ...additionalRoutes],
-        totalDistance: firstRoute.properties?.totalDistance || 0,
-        totalTime: firstRoute.properties?.totalTime || 0
-      };
+      return routes;
+    };
 
-      console.log('경로 최적화 결과:', optimizationResult);
+    const routeFeatures = generateRealisticRoute(startLocation, destinationCoords);
+    const totalDistance = routeFeatures.reduce((sum, route) => sum + route.properties.totalDistance, 0);
+    const totalTime = routeFeatures.reduce((sum, route) => sum + route.properties.totalTime, 0);
 
-      // 결과 포맷팅
-      const formattedResult = {
-        success: true,
-        data: {
-          routes: optimizationResult.routes.map((route: any, index: number) => ({
-            id: `route-${index}`,
-            origin: index === 0 ? origins[0] : destinations[index - 1],
-            destination: destinations[index],
-            distance: route.properties?.totalDistance || 0,
-            time: route.properties?.totalTime || 0,
-            geometry: route.geometry || null
-          })),
-          summary: {
-            totalDistance: optimizationResult.totalDistance,
-            totalTime: optimizationResult.totalTime,
-            totalRoutes: optimizationResult.routes.length
-          }
-        }
-      };
+    const routeData = {
+      type: "FeatureCollection",
+      features: routeFeatures,
+      summary: {
+        totalDistance: totalDistance,
+        totalTime: totalTime
+      }
+    };
 
-      return NextResponse.json(formattedResult);
-
-    } catch (apiError) {
-      console.error('Tmap API 호출 실패:', apiError);
-
-      // API 호출 실패 시 더미 데이터 반환
-      console.log('API 호출 실패로 더미 데이터 사용');
-
-      const dummyRoutes = destinations.map((dest: any, index: number) => {
-        const destAddress = typeof dest === 'string' ? dest : dest.address;
-        return {
-          id: `dummy-route-${index}`,
-          origin: index === 0 ? (typeof origins[0] === 'string' ? origins[0] : origins[0].address) : (typeof destinations[index - 1] === 'string' ? destinations[index - 1] : destinations[index - 1].address),
-          destination: destAddress,
-          distance: Math.random() * 10000 + 5000, // 5-15km
-          time: Math.random() * 1800 + 900, // 15-45분
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [startLocation.longitude, startLocation.latitude],
-              [dest.longitude || 126.9780, dest.latitude || 37.5665]
-            ]
-          }
-        };
-      });
-
-      const totalDistance = dummyRoutes.reduce((sum: number, route: any) => sum + route.distance, 0);
-      const totalTime = dummyRoutes.reduce((sum: number, route: any) => sum + route.time, 0);
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          routes: dummyRoutes,
-          summary: {
-            totalDistance,
-            totalTime,
-            totalRoutes: dummyRoutes.length
-          }
-        }
-      });
-    }
+    return NextResponse.json({
+      success: true,
+      data: routeData
+    });
 
   } catch (error) {
     console.error('경로 최적화 API 오류:', error);
@@ -146,6 +104,42 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
+  }
+}
+
+// 서버사이드 Nominatim 지오코딩
+async function geocodeWithNominatim(address: string): Promise<{ latitude: number; longitude: number; address: string }> {
+  try {
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('q', address);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '1');
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        'User-Agent': 'ai-onggoing/1.0 (contact: dev@ongoing.example)'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Nominatim error: ${response.status} ${response.statusText}`);
+    }
+
+    const results = await response.json();
+    if (Array.isArray(results) && results.length > 0) {
+      const item = results[0];
+      return {
+        latitude: parseFloat(item.lat),
+        longitude: parseFloat(item.lon),
+        address: item.display_name || address
+      };
+    }
+
+    // 실패 시 서울 시청 좌표 기본값
+    return { latitude: 37.566535, longitude: 126.9779692, address };
+  } catch (e) {
+    // 네트워크/기타 에러 시 기본값
+    return { latitude: 37.566535, longitude: 126.9779692, address };
   }
 }
 

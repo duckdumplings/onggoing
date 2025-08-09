@@ -4,17 +4,19 @@ import React, { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Card from '@/components/ui/Card';
-import TmapMap from '@/components/map/TmapMap';
+import KakaoMap from '@/components/map/KakaoMap';
 
 interface TestLocation {
   address: string;
 }
 
 interface OptimizationResult {
-  route: any;
-  totalDistance: number;
-  totalTime: number;
-  optimizedOrder: number[];
+  routes: any[];
+  summary: {
+    totalDistance: number;
+    totalTime: number;
+    totalRoutes: number;
+  };
 }
 
 export default function RouteOptimizationTest() {
@@ -83,7 +85,7 @@ export default function RouteOptimizationTest() {
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold text-center mb-8">
-        Tmap API 경로 최적화 테스트
+        경로 최적화 테스트
       </h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -192,11 +194,11 @@ export default function RouteOptimizationTest() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="font-medium">총 거리:</span>
-                  <span>{(result.totalDistance / 1000).toFixed(1)} km</span>
+                  <span>{(result.summary.totalDistance / 1000).toFixed(1)} km</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">예상 소요시간:</span>
-                  <span>{Math.round(result.totalTime / 60)}분</span>
+                  <span>{Math.round(result.summary.totalTime / 60)}분</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="font-medium">차량 타입:</span>
@@ -206,11 +208,11 @@ export default function RouteOptimizationTest() {
             </Card>
           )}
 
-          {/* Tmap 지도 */}
+          {/* 카카오맵 */}
           <Card variant="basic" className="p-6">
             <h2 className="text-xl font-semibold mb-4">경로 지도</h2>
-            <TmapMap
-              routeData={result?.route}
+            <KakaoMap
+              routeData={result}
               height="h-96"
               className="w-full"
             />
