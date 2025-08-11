@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import AddressAutocomplete, { AddressSelection } from '@/components/AddressAutocomplete';
 import Card from '@/components/ui/Card';
 import TmapMap from '@/components/map/TmapMap';
 
@@ -20,10 +21,10 @@ interface OptimizationResult {
 }
 
 export default function RouteOptimizationTest() {
-  const [origins, setOrigins] = useState<TestLocation[]>([
+  const [origins, setOrigins] = useState<(TestLocation & Partial<AddressSelection>)[]>([
     { address: '서울특별시 강남구 테헤란로 123' }
   ]);
-  const [destinations, setDestinations] = useState<TestLocation[]>([
+  const [destinations, setDestinations] = useState<(TestLocation & Partial<AddressSelection>)[]>([
     { address: '부산광역시 해운대구 해운대로 264' },
     { address: '대구광역시 중구 동성로 789' }
   ]);
@@ -31,6 +32,8 @@ export default function RouteOptimizationTest() {
   const [result, setResult] = useState<OptimizationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [optimizeOrder, setOptimizeOrder] = useState<boolean>(true);
+  const [departureAtLocal, setDepartureAtLocal] = useState<string>(getNowLocalDateTime());
 
   const handleOptimizeRoute = async () => {
     setLoading(true);
@@ -47,6 +50,8 @@ export default function RouteOptimizationTest() {
           origins,
           destinations,
           vehicleType,
+          optimizeOrder,
+          departureAt: toISOFromLocal(departureAtLocal),
         }),
       });
 
@@ -95,13 +100,18 @@ export default function RouteOptimizationTest() {
           <div className="space-y-4">
             {origins.map((origin, index) => (
               <div key={index} className="grid grid-cols-1 gap-4">
-                <Input
+                <AddressAutocomplete
                   label="주소"
-                  value={origin.address}
-                  onChange={(e) => {
-                    const updated = [...origins];
-                    updated[index] = { ...updated[index], address: e.target.value };
-                    setOrigins(updated);
+                  value={origins[index].latitude ? {
+                    name: origins[index].address,
+                    address: origins[index].address,
+                    latitude: origins[index].latitude!,
+                    longitude: origins[index].longitude!
+                  } : null}
+                  onSelect={(s) => {
+                    const updated = [...origins]
+                    updated[index] = { address: s.address, latitude: s.latitude, longitude: s.longitude }
+                    setOrigins(updated)
                   }}
                   placeholder="출발지 주소를 입력하세요"
                 />
@@ -114,10 +124,19 @@ export default function RouteOptimizationTest() {
             {destinations.map((destination, index) => (
               <div key={index} className="grid grid-cols-1 gap-4">
                 <div className="flex gap-2">
-                  <Input
+                  <AddressAutocomplete
                     label={`목적지 ${index + 1}`}
-                    value={destination.address}
-                    onChange={(e) => updateDestination(index, e.target.value)}
+                    value={destinations[index].latitude ? {
+                      name: destinations[index].address,
+                      address: destinations[index].address,
+                      latitude: destinations[index].latitude!,
+                      longitude: destinations[index].longitude!
+                    } : null}
+                    onSelect={(s) => {
+                      const updated = [...destinations]
+                      updated[index] = { address: s.address, latitude: s.latitude, longitude: s.longitude }
+                      setDestinations(updated)
+                    }}
                     placeholder="목적지 주소를 입력하세요"
                   />
                   {destinations.length > 1 && (
@@ -170,6 +189,30 @@ export default function RouteOptimizationTest() {
             </div>
           </div>
 
+          <div className="mt-6 space-y-4">
+            <h2 className="text-xl font-semibold">옵션</h2>
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={optimizeOrder}
+                onChange={(e) => setOptimizeOrder(e.target.checked)}
+              />
+              <span className="text-sm">경유지 순서 최적화</span>
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium mb-1">출발 일시</label>
+                <input
+                  type="datetime-local"
+                  value={departureAtLocal}
+                  onChange={(e) => setDepartureAtLocal(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                />
+                <p className="text-xs text-gray-500 mt-1">오늘 ±12시간 이내는 실시간 교통 적용</p>
+              </div>
+            </div>
+          </div>
+
           <Button
             onClick={handleOptimizeRoute}
             isLoading={loading}
@@ -200,6 +243,24 @@ export default function RouteOptimizationTest() {
                   <span className="font-medium">예상 소요시간:</span>
                   <span>{Math.round(result.summary.totalTime / 60)}분</span>
                 </div>
+                {'engine' in result.summary && (
+                  <div className="flex justify-between">
+                    <span className="font-medium">엔진:</span>
+                    <span>{(result.summary as any).engine}</span>
+                  </div>
+                )}
+                {'usedTraffic' in result.summary && (
+                  <div className="flex justify-between">
+                    <span className="font-medium">교통 반영:</span>
+                    <span>{(result.summary as any).usedTraffic === 'realtime' ? '실시간' : '표준'}</span>
+                  </div>
+                )}
+                {'optimizeOrder' in result.summary && (
+                  <div className="flex justify-between">
+                    <span className="font-medium">순서 최적화:</span>
+                    <span>{(result.summary as any).optimizeOrder ? 'ON' : 'OFF'}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="font-medium">차량 타입:</span>
                   <span>{vehicleType}</span>
@@ -222,3 +283,25 @@ export default function RouteOptimizationTest() {
     </div>
   );
 } 
+
+// YYYY-MM-DDTHH:mm 형식의 로컬 datetime 문자열 반환 (input[type=datetime-local] 기본 포맷)
+function getNowLocalDateTime(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hour = pad(d.getHours());
+  const min = pad(d.getMinutes());
+  return `${year}-${month}-${day}T${hour}:${min}`;
+}
+
+// datetime-local 값을 ISO 문자열로 변환
+function toISOFromLocal(local: string | undefined): string | undefined {
+  if (!local) return undefined;
+  // Safari 호환을 위해 'YYYY-MM-DDTHH:mm' -> 'YYYY-MM-DDTHH:mm:00'
+  const normalized = local.length === 16 ? `${local}:00` : local;
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return undefined;
+  return d.toISOString();
+}

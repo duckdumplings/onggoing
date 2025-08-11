@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { origins, destinations, vehicleType = '레이' } = body;
+    const { origins, destinations, vehicleType = '레이', optimizeOrder = true, departureAt } = body;
 
     console.log('API 요청 받음:', { origins, destinations, vehicleType });
 
@@ -26,30 +26,46 @@ export async function POST(request: NextRequest) {
 
     // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const startAddress = typeof origins[0] === 'string' ? origins[0] : origins[0].address;
-    const startLocation = await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
+    const startLocation = (origins[0] as any).latitude && (origins[0] as any).longitude
+      ? { latitude: (origins[0] as any).latitude, longitude: (origins[0] as any).longitude, address: startAddress }
+      : await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
     console.log('출발지 좌표:', startLocation);
 
     // 목적지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
       const destAddress = typeof destination === 'string' ? destination : destination.address;
-      const coord = await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
+      const preset = (destination as any).latitude && (destination as any).longitude
+        ? { latitude: (destination as any).latitude, longitude: (destination as any).longitude, address: destAddress }
+        : await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
+      const coord = preset
       destinationCoords.push(coord);
     }
 
     console.log('모든 목적지 좌표:', destinationCoords);
 
-    // Tmap 자동차 경로안내를 구간별로 호출 (순서 최적화 없음, 입력 순서대로)
+    // 차량 타입 매핑 (간단 매핑: 레이=1(승용), 스타렉스=2(화물))
+    const vehicleTypeCode = vehicleType === '스타렉스' ? '2' : '1';
+
+    // 출발 시각 기반 교통 반영 결정
+    const usedTraffic = decideTrafficMode(departureAt);
+
+    // 목적지 순서 최적화 (최근접 이웃 휴리스틱)
+    const orderedDestinations = optimizeOrder
+      ? nearestNeighborOrder(startLocation, destinationCoords)
+      : destinationCoords;
+
     const segmentFeatures: any[] = [];
     let totalDistance = 0;
     let totalTime = 0;
 
     let current = startLocation;
-    for (const dest of destinationCoords) {
+    for (const dest of orderedDestinations) {
       const seg = await getTmapRoute(
         { x: current.longitude, y: current.latitude },
         { x: dest.longitude, y: dest.latitude },
-        tmapKey
+        tmapKey,
+        { vehicleTypeCode, trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N' }
       ).catch(() => null);
 
       if (seg && Array.isArray(seg.features)) {
@@ -80,7 +96,7 @@ export async function POST(request: NextRequest) {
     const routeData = {
       type: 'FeatureCollection',
       features: segmentFeatures,
-      summary: { totalDistance, totalTime },
+      summary: { totalDistance, totalTime, engine: optimizeOrder ? 'heuristic-opt' : 'sequential', optimizeOrder, usedTraffic, vehicleTypeCode },
     };
 
     return NextResponse.json({
@@ -168,7 +184,8 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
 async function getTmapRoute(
   start: { x: number; y: number },
   end: { x: number; y: number },
-  appKey: string
+  appKey: string,
+  opts?: { vehicleTypeCode?: string; trafficInfo?: 'Y' | 'N' }
 ) {
   const url = 'https://apis.openapi.sk.com/tmap/routes';
   const body = {
@@ -179,8 +196,8 @@ async function getTmapRoute(
     reqCoordType: 'WGS84GEO',
     resCoordType: 'WGS84GEO',
     searchOption: '0',
-    trafficInfo: 'Y',
-    vehicleType: '1',
+    trafficInfo: opts?.trafficInfo ?? 'Y',
+    vehicleType: opts?.vehicleTypeCode ?? '1',
   };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
@@ -209,6 +226,45 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function decideTrafficMode(departureAt?: string | null): 'realtime' | 'standard' {
+  if (!departureAt) return 'realtime'
+  try {
+    const dep = new Date(departureAt)
+    const now = new Date()
+    // 오늘 ±12시간 범위는 실시간, 그 외는 standard
+    const diff = dep.getTime() - now.getTime()
+    const twelveHours = 12 * 3600 * 1000
+    return Math.abs(diff) <= twelveHours ? 'realtime' : 'standard'
+  } catch {
+    return 'realtime'
+  }
+}
+
+function nearestNeighborOrder(
+  start: { latitude: number; longitude: number },
+  points: Array<{ latitude: number; longitude: number; address: string }>
+) {
+  const remaining = [...points]
+  const ordered: typeof points = []
+  let cur = { lat: start.latitude, lng: start.longitude }
+  while (remaining.length) {
+    let bestIdx = 0
+    let bestDist = Number.POSITIVE_INFINITY
+    for (let i = 0; i < remaining.length; i++) {
+      const p = remaining[i]
+      const d = haversineMeters(cur.lat, cur.lng, p.latitude, p.longitude)
+      if (d < bestDist) {
+        bestDist = d
+        bestIdx = i
+      }
+    }
+    const [chosen] = remaining.splice(bestIdx, 1)
+    ordered.push(chosen)
+    cur = { lat: chosen.latitude, lng: chosen.longitude }
+  }
+  return ordered
 }
 
 export async function GET() {
