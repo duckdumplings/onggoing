@@ -6,6 +6,7 @@ interface TmapMapProps {
   center?: { lat: number; lng: number };
   zoom?: number;
   routeData?: any; // Tmap REST or GeoJSON 유사 구조 { features: [...] }
+  waypoints?: { lat: number; lng: number; label?: string }[];
   className?: string;
   height?: string;
 }
@@ -14,6 +15,7 @@ export default function TmapMap({
   center = { lat: 37.566535, lng: 126.9779692 },
   zoom = 14,
   routeData,
+  waypoints,
   className = 'w-full',
   height = 'h-96',
 }: TmapMapProps) {
@@ -67,9 +69,9 @@ export default function TmapMap({
   useEffect(() => {
     if (!ready || !iframeRef.current || !routeData) return;
     // 임베드된 iframe에 postMessage로 경로 그리기 전달
-    const message = { type: 'route', routeData, center };
+    const message = { type: 'route', routeData, center, waypoints };
     iframeRef.current.contentWindow?.postMessage(message, '*');
-  }, [ready, routeData]);
+  }, [ready, routeData, waypoints?.length]);
 
   if (error) {
     return (

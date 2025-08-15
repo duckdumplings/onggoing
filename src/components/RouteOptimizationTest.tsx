@@ -21,12 +21,12 @@ interface OptimizationResult {
 }
 
 export default function RouteOptimizationTest() {
-  const [origins, setOrigins] = useState<(TestLocation & Partial<AddressSelection>)[]>([
-    { address: '서울특별시 강남구 테헤란로 123' }
+  const [origins, setOrigins] = useState<(TestLocation & Partial<AddressSelection> & { name?: string })[]>([
+    { address: '서울특별시 강남구 테헤란로 123', name: undefined }
   ]);
-  const [destinations, setDestinations] = useState<(TestLocation & Partial<AddressSelection>)[]>([
-    { address: '부산광역시 해운대구 해운대로 264' },
-    { address: '대구광역시 중구 동성로 789' }
+  const [destinations, setDestinations] = useState<(TestLocation & Partial<AddressSelection> & { name?: string })[]>([
+    { address: '부산광역시 해운대구 해운대로 264', name: undefined },
+    { address: '대구광역시 중구 동성로 789', name: undefined }
   ]);
   const [vehicleType, setVehicleType] = useState<'레이' | '스타렉스'>('레이');
   const [result, setResult] = useState<OptimizationResult | null>(null);
@@ -34,6 +34,7 @@ export default function RouteOptimizationTest() {
   const [error, setError] = useState<string | null>(null);
   const [optimizeOrder, setOptimizeOrder] = useState<boolean>(true);
   const [departureAtLocal, setDepartureAtLocal] = useState<string>(getNowLocalDateTime());
+  const [useRealtimeTraffic, setUseRealtimeTraffic] = useState<boolean>(true);
 
   const handleOptimizeRoute = async () => {
     setLoading(true);
@@ -52,6 +53,7 @@ export default function RouteOptimizationTest() {
           vehicleType,
           optimizeOrder,
           departureAt: toISOFromLocal(departureAtLocal),
+          useRealtimeTraffic,
         }),
       });
 
@@ -103,14 +105,14 @@ export default function RouteOptimizationTest() {
                 <AddressAutocomplete
                   label="주소"
                   value={origins[index].latitude ? {
-                    name: origins[index].address,
+                    name: origins[index].name || origins[index].address,
                     address: origins[index].address,
                     latitude: origins[index].latitude!,
                     longitude: origins[index].longitude!
                   } : null}
                   onSelect={(s) => {
                     const updated = [...origins]
-                    updated[index] = { address: s.address, latitude: s.latitude, longitude: s.longitude }
+                    updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
                     setOrigins(updated)
                   }}
                   placeholder="출발지 주소를 입력하세요"
@@ -127,27 +129,28 @@ export default function RouteOptimizationTest() {
                   <AddressAutocomplete
                     label={`목적지 ${index + 1}`}
                     value={destinations[index].latitude ? {
-                      name: destinations[index].address,
+                      name: destinations[index].name || destinations[index].address,
                       address: destinations[index].address,
                       latitude: destinations[index].latitude!,
                       longitude: destinations[index].longitude!
                     } : null}
                     onSelect={(s) => {
                       const updated = [...destinations]
-                      updated[index] = { address: s.address, latitude: s.latitude, longitude: s.longitude }
+                      updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
                       setDestinations(updated)
                     }}
                     placeholder="목적지 주소를 입력하세요"
                   />
                   {destinations.length > 1 && (
-                    <Button
-                      variant="danger"
-                      size="sm"
+                    <button
+                      type="button"
                       onClick={() => removeDestination(index)}
-                      className="mt-8"
+                      className="mt-8 h-8 w-8 flex items-center justify-center rounded border border-red-300 text-red-600 hover:bg-red-50"
+                      aria-label={`목적지 ${index + 1} 삭제`}
+                      title="삭제"
                     >
-                      삭제
-                    </Button>
+                      ×
+                    </button>
                   )}
                 </div>
               </div>
@@ -210,6 +213,14 @@ export default function RouteOptimizationTest() {
                 />
                 <p className="text-xs text-gray-500 mt-1">오늘 ±12시간 이내는 실시간 교통 적용</p>
               </div>
+              <label className="flex items-center gap-3 md:mt-6">
+                <input
+                  type="checkbox"
+                  checked={useRealtimeTraffic}
+                  onChange={(e) => setUseRealtimeTraffic(e.target.checked)}
+                />
+                <span className="text-sm">실시간 교통상황 반영</span>
+              </label>
             </div>
           </div>
 
@@ -243,12 +254,6 @@ export default function RouteOptimizationTest() {
                   <span className="font-medium">예상 소요시간:</span>
                   <span>{Math.round(result.summary.totalTime / 60)}분</span>
                 </div>
-                {'engine' in result.summary && (
-                  <div className="flex justify-between">
-                    <span className="font-medium">엔진:</span>
-                    <span>{(result.summary as any).engine}</span>
-                  </div>
-                )}
                 {'usedTraffic' in result.summary && (
                   <div className="flex justify-between">
                     <span className="font-medium">교통 반영:</span>
@@ -274,6 +279,14 @@ export default function RouteOptimizationTest() {
             <h2 className="text-xl font-semibold mb-4">경로 지도</h2>
             <TmapMap
               routeData={result}
+              waypoints={[
+                ...origins
+                  .filter((o) => typeof o.latitude === 'number' && typeof o.longitude === 'number')
+                  .map((o) => ({ lat: o.latitude as number, lng: o.longitude as number })),
+                ...destinations
+                  .filter((d) => typeof d.latitude === 'number' && typeof d.longitude === 'number')
+                  .map((d) => ({ lat: d.latitude as number, lng: d.longitude as number })),
+              ]}
               height="h-96"
               className="w-full"
             />
@@ -282,7 +295,7 @@ export default function RouteOptimizationTest() {
       </div>
     </div>
   );
-} 
+}
 
 // YYYY-MM-DDTHH:mm 형식의 로컬 datetime 문자열 반환 (input[type=datetime-local] 기본 포맷)
 function getNowLocalDateTime(): string {

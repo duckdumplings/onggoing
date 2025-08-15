@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { createSupabaseClient, createSupabaseServerClient } from '@/supabase/config';
+import { createSupabaseClient, createSupabaseServerClient } from '../../supabase/config';
 
 // 데이터베이스 타입 정의
 export interface Database {

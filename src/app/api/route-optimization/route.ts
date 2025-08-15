@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { origins, destinations, vehicleType = '레이', optimizeOrder = true, departureAt } = body;
+    const { origins, destinations, vehicleType = '레이', optimizeOrder = true, departureAt, useRealtimeTraffic } = body;
 
     console.log('API 요청 받음:', { origins, destinations, vehicleType });
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
-    const startAddress = typeof origins[0] === 'string' ? origins[0] : origins[0].address;
+    const startAddress = typeof origins[0] === 'string' ? origins[0] : (origins[0] as any).name || (origins[0] as any).address;
     const startLocation = (origins[0] as any).latitude && (origins[0] as any).longitude
       ? { latitude: (origins[0] as any).latitude, longitude: (origins[0] as any).longitude, address: startAddress }
       : await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // 목적지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
-      const destAddress = typeof destination === 'string' ? destination : destination.address;
+      const destAddress = typeof destination === 'string' ? destination : ((destination as any).name || (destination as any).address);
       const preset = (destination as any).latitude && (destination as any).longitude
         ? { latitude: (destination as any).latitude, longitude: (destination as any).longitude, address: destAddress }
         : await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
@@ -47,8 +47,10 @@ export async function POST(request: NextRequest) {
     // 차량 타입 매핑 (간단 매핑: 레이=1(승용), 스타렉스=2(화물))
     const vehicleTypeCode = vehicleType === '스타렉스' ? '2' : '1';
 
-    // 출발 시각 기반 교통 반영 결정
-    const usedTraffic = decideTrafficMode(departureAt);
+    // 출발 시각 기반 교통 반영 결정 (토글이 우선)
+    const usedTraffic = typeof useRealtimeTraffic === 'boolean'
+      ? (useRealtimeTraffic ? 'realtime' : 'standard')
+      : decideTrafficMode(departureAt);
 
     // 목적지 순서 최적화 (최근접 이웃 휴리스틱)
     const orderedDestinations = optimizeOrder
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
       : destinationCoords;
 
     const segmentFeatures: any[] = [];
+    const waypoints: Array<{ latitude: number; longitude: number }> = [];
     let totalDistance = 0;
     let totalTime = 0;
 
@@ -75,6 +78,7 @@ export async function POST(request: NextRequest) {
           if (f?.properties?.totalTime) totalTime += f.properties.totalTime;
           segmentFeatures.push(f);
         }
+        waypoints.push({ latitude: dest.latitude, longitude: dest.longitude });
       } else {
         // 폴백: 직선 보간 한 구간 추가
         const coordinates = [
@@ -89,6 +93,7 @@ export async function POST(request: NextRequest) {
           properties: { totalDistance: approx, totalTime: Math.floor(approx / (50 * 1000) * 3600) },
           geometry: { type: 'LineString', coordinates },
         });
+        waypoints.push({ latitude: dest.latitude, longitude: dest.longitude });
       }
       current = dest;
     }
@@ -96,7 +101,8 @@ export async function POST(request: NextRequest) {
     const routeData = {
       type: 'FeatureCollection',
       features: segmentFeatures,
-      summary: { totalDistance, totalTime, engine: optimizeOrder ? 'heuristic-opt' : 'sequential', optimizeOrder, usedTraffic, vehicleTypeCode },
+      summary: { totalDistance, totalTime, optimizeOrder, usedTraffic, vehicleTypeCode },
+      waypoints,
     };
 
     return NextResponse.json({

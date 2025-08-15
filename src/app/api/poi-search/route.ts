@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 
     const data = await res.json()
     const pois = data?.searchPoiInfo?.pois?.poi || []
-    const suggestions: Suggestion[] = pois.slice(0, 10).map((p: any) => {
+    const suggestions: (Suggestion & { label: string })[] = pois.slice(0, 10).map((p: any) => {
       const road = p?.newAddressList?.newAddress?.[0]?.fullAddressRoad
       const jibun = [p.upperAddrName, p.middleAddrName, p.lowerAddrName, p.detailAddrName]
         .filter(Boolean)
@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
         address: road || jibun,
         latitude: parseFloat(p.noorLat ?? p.frontLat ?? p.newLat ?? p.lat),
         longitude: parseFloat(p.noorLon ?? p.frontLon ?? p.newLon ?? p.lon),
+        label: p.name ? `${p.name} · ${road || jibun}` : (road || jibun)
       }
     }).filter((s: Suggestion) => Number.isFinite(s.latitude) && Number.isFinite(s.longitude))
 
@@ -68,5 +69,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ suggestions: [] }, { status: 200 })
   }
 }
+
 
 

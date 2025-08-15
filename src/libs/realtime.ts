@@ -1,5 +1,6 @@
+import React from 'react';
 import { supabase } from './supabase-client';
-import type { DispatchRoute, Driver, DeliveryTracking } from './supabase-client';
+import type { DispatchRoute } from './supabase-client';
 
 // 실시간 이벤트 타입
 export type RealtimeEvent =
@@ -16,7 +17,7 @@ export class RealtimeManager {
   private subscriptions: Map<string, any> = new Map();
 
   // 기사 위치 업데이트 구독
-  subscribeToDriverLocation(driverId: string, callback: RealtimeCallback<Driver>) {
+  subscribeToDriverLocation(driverId: string, callback: RealtimeCallback<{ id: string; current_location_lat: number | null; current_location_lng: number | null }>) {
     const channel = supabase
       .channel(`driver_location_${driverId}`)
       .on(
@@ -27,8 +28,8 @@ export class RealtimeManager {
           table: 'drivers',
           filter: `id=eq.${driverId}`,
         },
-        (payload) => {
-          callback(payload.new as Driver);
+        (payload: any) => {
+          callback(payload.new as any);
         }
       )
       .subscribe();
@@ -49,7 +50,7 @@ export class RealtimeManager {
           table: 'dispatch_routes',
           filter: `id=eq.${routeId}`,
         },
-        (payload) => {
+        (payload: any) => {
           callback(payload.new as DispatchRoute);
         }
       )
@@ -60,7 +61,7 @@ export class RealtimeManager {
   }
 
   // 배송 추적 업데이트 구독
-  subscribeToDeliveryTracking(routeId: string, callback: RealtimeCallback<DeliveryTracking>) {
+  subscribeToDeliveryTracking(routeId: string, callback: RealtimeCallback<any>) {
     const channel = supabase
       .channel(`delivery_tracking_${routeId}`)
       .on(
@@ -71,8 +72,8 @@ export class RealtimeManager {
           table: 'delivery_tracking',
           filter: `route_id=eq.${routeId}`,
         },
-        (payload) => {
-          callback(payload.new as DeliveryTracking);
+        (payload: any) => {
+          callback(payload.new as any);
         }
       )
       .subscribe();
@@ -93,7 +94,7 @@ export class RealtimeManager {
           table: 'quotes',
           filter: `id=eq.${quoteId}`,
         },
-        (payload) => {
+        (payload: any) => {
           callback(payload.new);
         }
       )
@@ -104,7 +105,7 @@ export class RealtimeManager {
   }
 
   // 모든 활성 기사 위치 구독
-  subscribeToAllDriverLocations(callback: RealtimeCallback<Driver>) {
+  subscribeToAllDriverLocations(callback: RealtimeCallback<{ id: string; current_location_lat: number | null; current_location_lng: number | null }>) {
     const channel = supabase
       .channel('all_driver_locations')
       .on(
@@ -115,8 +116,8 @@ export class RealtimeManager {
           table: 'drivers',
           filter: 'is_active=eq.true',
         },
-        (payload) => {
-          callback(payload.new as Driver);
+        (payload: any) => {
+          callback(payload.new as any);
         }
       )
       .subscribe();
@@ -136,7 +137,7 @@ export class RealtimeManager {
           schema: 'public',
           table: 'dispatch_routes',
         },
-        (payload) => {
+        (payload: any) => {
           callback(payload.new as DispatchRoute);
         }
       )
@@ -214,7 +215,7 @@ export const useRouteStatus = (routeId: string) => {
 
 // React 훅: 배송 추적 구독
 export const useDeliveryTracking = (routeId: string) => {
-  const [tracking, setTracking] = React.useState<DeliveryTracking | null>(null);
+  const [tracking, setTracking] = React.useState<any | null>(null);
 
   React.useEffect(() => {
     const unsubscribe = realtimeManager.subscribeToDeliveryTracking(routeId, (trackingData) => {
@@ -233,10 +234,10 @@ export const useAllDriverLocations = () => {
 
   React.useEffect(() => {
     const unsubscribe = realtimeManager.subscribeToAllDriverLocations((driver) => {
-      if (driver.current_location_lat && driver.current_location_lng) {
+      if (typeof driver.current_location_lat === 'number' && typeof driver.current_location_lng === 'number') {
         setDriverLocations(prev => new Map(prev).set(driver.id, {
-          lat: driver.current_location_lat,
-          lng: driver.current_location_lng,
+          lat: driver.current_location_lat as number,
+          lng: driver.current_location_lng as number,
         }));
       }
     });
