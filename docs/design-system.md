@@ -1,4 +1,78 @@
 # 디자인 시스템
+## iOS Glass 디자인 가이드(신규)
+
+본 프로젝트는 지도 중심 SaaS 전환과 함께 iOS 글래스(유리질감) 스타일을 기본 테마로 채택한다. 글래스 UI는 반투명 배경, 블러, 미세한 보더/하이라이트, 소프트 섀도우, 고채도 포인트 컬러를 특징으로 한다.
+
+### 디자인 토큰
+- 색상
+  - `--glass-surface`: rgba(255,255,255,0.6)
+  - `--glass-border`: rgba(255,255,255,0.35)
+  - `--glass-highlight`: rgba(255,255,255,0.8)
+  - `--glass-shadow`: 0 10px 30px rgba(2, 6, 23, 0.08)
+  - `--primary`: #2563eb
+- 효과
+  - `--backdrop-blur`: blur(16px)
+  - `--ring`: 1px solid rgba(255,255,255,0.4)
+
+### Tailwind 설정 예시
+```ts
+// tailwind.config.ts (발췌)
+theme: {
+  extend: {
+    colors: {
+      primary: {
+        500: '#2563eb',
+        600: '#1d4ed8'
+      }
+    },
+    boxShadow: {
+      glass: '0 10px 30px rgba(2, 6, 23, 0.08)'
+    },
+    backdropBlur: {
+      xl: '16px'
+    },
+    backgroundColor: {
+      'glass-surface': 'rgba(255,255,255,0.6)'
+    },
+    borderColor: {
+      'glass': 'rgba(255,255,255,0.35)'
+    }
+  }
+}
+```
+
+### 유틸리티 클래스(Globals)
+```css
+/* src/app/globals.css (발췌) */
+.glass-panel {
+  @apply bg-glass-surface backdrop-blur-xl border border-glass shadow-glass rounded-2xl;
+}
+.glass-card {
+  @apply glass-panel p-4 md:p-6;
+}
+.glass-button-primary {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 font-semibold text-white bg-primary-500 hover:bg-primary-600 shadow-glass;
+}
+.glass-floating {
+  @apply glass-panel ring-1 ring-white/40;
+}
+```
+
+### 컴포넌트 가이드
+- 패널(`glass-panel`)을 좌측 기능 패널 및 지도 오버레이 카드 기본 스타일로 사용
+- 버튼은 `glass-button-primary`를 1차 CTA에 적용, 보조는 투명/라이트 변형 사용
+- 섀도/블러는 과도하지 않게 유지하여 가독성 확보
+
+### 접근성 주의사항
+- 반투명 배경 대비 이슈를 방지하기 위해 텍스트는 최소 WCAG AA 대비를 보장
+- 배경 이미지/지도 위 텍스트에는 반투명 오버레이를 추가하여 대비 확보
+
+### 통화 표기(KRW 고정)
+- 정책: MVP 기간 동안 통화는 KRW 고정
+- 포맷: `₩${value.toLocaleString('ko-KR')}` (소수점 제거, 천단위 구분)
+- API: 응답에 `currency: "KRW"`, `formattedTotal`(선택) 포함 가능
+- 문서/화면의 모든 금액 표기는 위 규칙을 따른다
+
 ## Ongoing Smart Logistics Platform
 
 > **버전**: 1.0  

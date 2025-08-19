@@ -74,6 +74,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
 
   useEffect(() => {
     if (value) setQuery(value.name || value.address)
+    else setQuery('')
   }, [value])
 
   return (
@@ -85,22 +86,18 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         onFocus={() => setOpen(suggestions.length > 0)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="w-full border rounded px-3 py-2"
-        // 첫 클릭 시 즉시 선택 가능하도록: mousedown에서 blur 방지
-        onMouseDown={(e) => {
-          // 입력 클릭 시 드롭다운 유지
-          if (open) e.preventDefault()
-        }}
+        className="w-full h-11 border rounded px-3"
       />
       {loading && <div className="absolute right-2 top-9 text-xs text-gray-500">검색중...</div>}
       {open && (
-        <ul className="absolute z-10 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto">
+        <ul className="absolute z-10 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto" role="listbox">
           {suggestions.map((s, i) => (
             <li
               key={`${s.address}-${i}`}
-              // 항목 클릭 시 포커스/블러 타이밍 이슈 방지: mousedown에서 기본동작 막기
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => handleSelect(s)}
+              role="option"
+              onPointerDown={(e) => { e.preventDefault(); handleSelect(s) }}
+              onMouseDown={(e) => { e.preventDefault(); handleSelect(s) }}
+              onClick={(e) => { e.preventDefault(); handleSelect(s) }}
               className={`px-3 py-2 cursor-pointer ${i === highlight ? 'bg-gray-100' : ''}`}
             >
               <div className="text-sm font-medium">{s.name || s.label || s.address}</div>
