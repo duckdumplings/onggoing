@@ -191,17 +191,17 @@ async function getTmapRoute(
   start: { x: number; y: number },
   end: { x: number; y: number },
   appKey: string,
-  opts?: { vehicleTypeCode?: string; trafficInfo?: 'Y' | 'N' }
+  opts?: { vehicleTypeCode?: string; trafficInfo?: 'Y' | 'N'; departureAt?: string | null }
 ) {
   const url = 'https://apis.openapi.sk.com/tmap/routes';
-  const body = {
+  const body: any = {
     startX: String(start.x),
     startY: String(start.y),
     endX: String(end.x),
     endY: String(end.y),
     reqCoordType: 'WGS84GEO',
     resCoordType: 'WGS84GEO',
-    searchOption: '0',
+    searchOption: opts?.trafficInfo === 'N' ? '1' : '0',
     trafficInfo: opts?.trafficInfo ?? 'Y',
     vehicleType: opts?.vehicleTypeCode ?? '1',
   };
@@ -215,7 +215,14 @@ async function getTmapRoute(
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`Tmap route failed: ${res.status}`);
-    return await res.json();
+    const result = await res.json();
+    console.log('Tmap API response:', {
+      status: res.status,
+      featuresCount: result.features?.length,
+      trafficInfo: body.trafficInfo,
+      searchOption: body.searchOption
+    });
+    return result;
   } finally {
     clearTimeout(timeout);
   }

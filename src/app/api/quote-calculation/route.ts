@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { perJobBasePrice, STOP_FEE, fuelSurchargeHourly, pickHourlyRate } from '@/domains/quote/pricing'
+import { perJobBasePrice, perJobRegularPrice, STOP_FEE, fuelSurchargeHourly, pickHourlyRate } from '@/domains/quote/pricing'
 
 type QuoteInput = {
   distance: number // meters
@@ -37,6 +37,16 @@ export async function POST(req: NextRequest) {
     const vehicleWeight = vehicleType === '스타렉스' ? weightStarex : weightRay
     const dwellTotalMin = dwellMinutes.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0)
 
+    // 디버그: 체류시간 계산 확인
+    console.log('Dwell time debug:', {
+      dwellMinutes,
+      dwellTotalMin,
+      stopsCount,
+      scheduleType,
+      inputLength: dwellMinutes.length,
+      expectedLength: stopsCount + 1 // 출발지 제외한 목적지 수
+    })
+
     const km = distance / 1000
     const driveMinutes = Math.ceil(time / 60)
     const totalMinutes = driveMinutes + dwellTotalMin
@@ -69,20 +79,41 @@ export async function POST(req: NextRequest) {
     // 2) 단건(구간표 + 초과km, 경유지 정액, 정기/비정기 구분)
     const perJobBase = perJobBasePrice(vehicleKey, km)
     const perJobStopFee = STOP_FEE[vehicleKey] * Math.max(0, stopsCount)
-    // 정기/비정기 가산(환경변수, 기본 1.0)
-    const perJobRegularFactor = Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.0)
-    const rawSum = perJobBase + perJobStopFee
-    const perJobBasicTotal = Math.round(rawSum * (scheduleType === 'regular' ? perJobRegularFactor : 1))
-    // 표시용 분해값(정기 가산 반영시 합계가 정확히 일치하도록 배분)
-    let baseEffective: number = perJobBase
-    let stopFeeEffective: number = perJobStopFee
-    if (scheduleType === 'regular') {
-      const scale = rawSum > 0 ? perJobBasicTotal / rawSum : 1
-      baseEffective = Math.round(perJobBase * scale)
-      stopFeeEffective = perJobBasicTotal - baseEffective
-    }
 
-    const perJobTotal = perJobBasicTotal
+    // 디버그: 단건 요금 계산 확인
+    console.log('Per-job pricing debug:', {
+      km,
+      vehicleKey,
+      scheduleType,
+      perJobBase,
+      perJobStopFee,
+      stopsCount,
+      regularFactor: scheduleType === 'regular' ? Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2) : 1,
+      regularBase: scheduleType === 'regular' ? perJobRegularPrice(vehicleKey, km) : null,
+      regularStopFee: scheduleType === 'regular' ? (vehicleKey === 'ray' ? STOP_FEE.starex * Math.max(0, stopsCount) : Math.round(perJobStopFee * (Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2)))) : null
+    })
+
+    // 정기/비정기 구분: 정기는 요금표 기반, 비정기는 기본 요금
+    let perJobTotal: number
+    let baseEffective: number
+    let stopFeeEffective: number
+
+    if (scheduleType === 'regular') {
+      // 정기 요금: 요금표 기반으로 계산
+      const regularBase = perJobRegularPrice(vehicleKey, km)
+      // 레이 정기는 스타렉스 경유지 정액 사용, 스타렉스 정기는 기본 경유지 정액 + 가산율
+      const regularStopFee = vehicleKey === 'ray'
+        ? STOP_FEE.starex * Math.max(0, stopsCount)  // 레이 정기: 스타렉스 경유지 정액
+        : Math.round(perJobStopFee * (Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2)))  // 스타렉스 정기: 기본 + 가산율
+      perJobTotal = regularBase + regularStopFee
+      baseEffective = regularBase
+      stopFeeEffective = regularStopFee
+    } else {
+      // 비정기 요금: 기본 요금
+      perJobTotal = perJobBase + perJobStopFee
+      baseEffective = perJobBase
+      stopFeeEffective = perJobStopFee
+    }
 
     return NextResponse.json({
       success: true,
@@ -133,7 +164,7 @@ export async function POST(req: NextRequest) {
           baseEffective: baseEffective,
           stopFeeEffective: stopFeeEffective,
           scheduleType,
-          regularFactor: scheduleType === 'regular' ? perJobRegularFactor : 1,
+          regularFactor: scheduleType === 'regular' ? Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2) : 1,
         }
       }
     })

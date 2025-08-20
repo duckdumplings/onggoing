@@ -1,7 +1,6 @@
 import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import QuoteCalculatorPanel from '@/components/panels/QuoteCalculatorPanel';
-import RouteResultsCard from '@/components/panels/RouteResultsCard';
 
 export default function Home() {
   return (
@@ -12,10 +11,15 @@ export default function Home() {
           <h1 className="text-xl font-bold text-gray-900">옹고잉 물류</h1>
           <p className="text-xs text-gray-600">스마트 경로 최적화 플랫폼</p>
         </header>
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+        {/* 통합 기능 패널 - 스크롤 영역 */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <RouteOptimizerPanel />
+
+          {/* 섹션 구분선 */}
+          <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
+
+          <QuoteCalculatorPanel />
         </div>
-        <QuoteCalculatorPanel />
       </aside>
 
       {/* 모바일 상단 패널 */}
@@ -27,9 +31,6 @@ export default function Home() {
       {/* 우측 지도 */}
       <main className="flex-1 relative">
         <TmapMainMap />
-        <div className="absolute bottom-6 right-6 w-80 hidden md:block">
-          <RouteResultsCard />
-        </div>
       </main>
     </div>
   );

@@ -90,4 +90,23 @@ export function perJobBasePrice(vehicle: Vehicle, km: number): number {
   return Math.round(base + overKm * PER_JOB_OVERAGE_PER_KM[vehicle]);
 }
 
+export function perJobRegularPrice(vehicle: Vehicle, km: number): number {
+  // 정기 요금: 레이 정기는 스타렉스 요금표 사용, 스타렉스 정기는 기본 요금 + 가산율
+  if (vehicle === 'ray') {
+    // 레이 정기: 스타렉스 요금표 그대로 사용
+    for (const r of PER_JOB_TABLE) {
+      if (km >= r.fromKm && km <= r.toKm) return r.starex;
+    }
+    // 초과분
+    const last = PER_JOB_TABLE[PER_JOB_TABLE.length - 1];
+    const overKm = Math.max(0, km - last.toKm);
+    return Math.round(last.starex + overKm * PER_JOB_OVERAGE_PER_KM.starex);
+  } else {
+    // 스타렉스 정기: 기본 요금에 정기 가산율 적용
+    const basePrice = perJobBasePrice(vehicle, km);
+    const regularFactor = Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2);
+    return Math.round(basePrice * regularFactor);
+  }
+}
+
 

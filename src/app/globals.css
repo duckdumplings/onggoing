@@ -28,3 +28,19 @@ body {
     text-wrap: balance;
   }
 }
+
+@layer components {
+
+  /* iOS Glass Design */
+  .glass-panel {
+    @apply bg-white/80 backdrop-blur-md border border-white/40 shadow-lg rounded-xl;
+  }
+
+  .glass-card {
+    @apply bg-white/60 backdrop-blur-sm border border-white/30 shadow-sm rounded-lg;
+  }
+
+  .glass-overlay {
+    @apply bg-black/20 backdrop-blur-sm;
+  }
+}

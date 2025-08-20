@@ -52,7 +52,7 @@ export default function QuoteCalculatorPanel() {
   }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, scheduleType, stopsCount, dwellMinutes.join(',')]);
 
   return (
-    <section className="glass-card border-b border-white/40 max-h-[40vh] overflow-y-auto">
+    <section className="glass-card border-b border-white/40 bg-gradient-to-br from-green-50/30 to-emerald-50/30 transition-all duration-300" data-section="quote">
       <div className="p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-gray-900">💰 자동 견적</h3>
@@ -83,17 +83,42 @@ export default function QuoteCalculatorPanel() {
           <div className="bg-blue-50 rounded-lg p-3 text-sm">
             {activeTab === 'summary' && (
               <div>
-                <div className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">
-                  {plans?.hourly?.total && plans?.perJob?.total
-                    ? `${plans.hourly.total > plans.perJob.total ? '추천 · 시간당 · ' + plans.hourly.formatted : '추천 · 단건 · ' + plans.perJob.formatted}`
-                    : (total ?? '—')}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+                  <div className="text-center">
+                    <div className="text-xs text-blue-600 font-medium mb-1">추천 요금제</div>
+                    <div className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+                      {plans?.hourly?.total && plans?.perJob?.total
+                        ? (plans.hourly.total > plans.perJob.total ? '시간당 요금제' : '단건 요금제')
+                        : '—'}
+                    </div>
+                    <div className="text-lg md:text-xl font-semibold text-blue-600 mt-1">
+                      {plans?.hourly?.total && plans?.perJob?.total
+                        ? (plans.hourly.total > plans.perJob.total ? plans.hourly.formatted : plans.perJob.formatted)
+                        : (total ?? '—')}
+                    </div>
+                  </div>
                 </div>
-                <ul className="mt-2 text-blue-800 space-y-1">
-                  <li>차종: {vehicle === 'starex' ? '스타렉스' : '레이'}</li>
-                  <li>총 운행시간: {(detail?.driveMinutes ?? 0) + (detail?.dwellTotalMinutes ?? 0)}분 (주행 {detail?.driveMinutes ?? 0}· 체류 {detail?.dwellTotalMinutes ?? 0})</li>
-                  <li>주행거리: {(detail?.km ?? 0).toFixed?.(1)}km</li>
+                <ul className="mt-3 text-blue-800 space-y-2">
+                  <li className="flex justify-between">
+                    <span>차종:</span>
+                    <span className="font-medium">{vehicle === 'starex' ? '스타렉스' : '레이'}</span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span>총 운행시간:</span>
+                    <span className="font-medium">{(detail?.driveMinutes ?? 0) + (detail?.dwellTotalMinutes ?? 0)}분</span>
+                  </li>
+                  <li className="text-sm text-gray-600 pl-2">
+                    주행 {detail?.driveMinutes ?? 0}분 · 체류 {detail?.dwellTotalMinutes ?? 0}분
+                  </li>
+                  <li className="flex justify-between">
+                    <span>주행거리:</span>
+                    <span className="font-medium">{(detail?.km ?? 0).toFixed?.(1)}km</span>
+                  </li>
                   {detail?.fuel && (
-                    <li>예상 유류비(참고): ₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</li>
+                    <li className="flex justify-between">
+                      <span>예상 유류비:</span>
+                      <span className="font-medium">₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</span>
+                    </li>
                   )}
                 </ul>
               </div>
