@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
 export default function QuoteCalculatorPanel() {
-  const { routeData, dwellMinutes } = useRouteOptimization();
+  const { routeData, dwellMinutes, destinations } = useRouteOptimization();
   const [total, setTotal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +15,7 @@ export default function QuoteCalculatorPanel() {
   const [bulk, setBulk] = useState(false);
   const [scheduleType, setScheduleType] = useState<'regular' | 'ad-hoc'>('ad-hoc');
 
-  const stopsCount = useMemo(() => Math.max(0, (dwellMinutes?.length || 0) - 1), [dwellMinutes]);
+  const stopsCount = useMemo(() => Math.max(0, (destinations?.length || 0) - 2), [destinations]);
 
   useEffect(() => {
     if (!routeData?.summary) return;
@@ -130,9 +130,6 @@ export default function QuoteCalculatorPanel() {
                 </div>
                 <div>기본요금(구간): ₩{(plans.perJob.base ?? 0).toLocaleString('ko-KR')}</div>
                 <div>경유지 정액({stopsCount}개): ₩{(plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}</div>
-                {plans.perJob.bulk ? (
-                  <div className="mt-1">벌크 적용 → 레이기준: ₩{(plans.perJob.bulkRay ?? 0).toLocaleString('ko-KR')}, 스타렉스기준: ₩{(plans.perJob.bulkStarex ?? 0).toLocaleString('ko-KR')}</div>
-                ) : null}
                 <div className="mt-1 font-semibold">단건 총액: {plans.perJob.formatted}</div>
               </div>
             )}
