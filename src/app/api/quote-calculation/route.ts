@@ -6,6 +6,8 @@ type QuoteInput = {
   time: number // seconds
   vehicleType?: string
   dwellMinutes?: number[] // per-stop dwell/handling minutes
+  stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
+  bulk?: boolean // 단건 벌크 여부(시간당에는 미적용)
 }
 
 export async function POST(req: NextRequest) {
@@ -16,6 +18,8 @@ export async function POST(req: NextRequest) {
     const vehicleType = String(body.vehicleType || '레이')
     const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
+    const stopsCount = Number.isFinite(body.stopsCount as any) ? Number(body.stopsCount) : dwellMinutes.length
+    const isBulk = Boolean(body.bulk)
 
     if (!Number.isFinite(distance) || !Number.isFinite(time)) {
       return NextResponse.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'distance/time invalid' } }, { status: 400 })
@@ -48,8 +52,32 @@ export async function POST(req: NextRequest) {
 
     const formattedTotal = `₩${totalPrice.toLocaleString('ko-KR')}`
 
+    // 추가: 요금제별 계산
+    // 1) 시간당(30분 올림, 최소 120분, 유류비 할증표만 적용, 벌크 미적용)
+    const billMinutes = Math.max(120, Math.ceil((driveMinutes + dwellTotalMin) / 30) * 30)
+    const ratePerHour = pickHourlyRate(vehicleKey, billMinutes)
+    const hourlyBase = ratePerHour * (billMinutes / 60)
+    const hourlyFuelSurcharge = fuelSurchargeHourly(vehicleKey, km)
+    const hourlyTotal = Math.round(hourlyBase + hourlyFuelSurcharge)
+
+    // 2) 단건(구간표 + 초과km, 경유지 정액, 벌크 적용 가능)
+    const perJobBase = perJobBasePrice(vehicleKey, km)
+    const perJobStopFee = STOP_FEE[vehicleKey] * Math.max(0, stopsCount)
+    const perJobBasicTotal = perJobBase + perJobStopFee
+    // 벌크 로직(시간당 미적용): Ray_bulk = Starex_basic, Starex_bulk = Starex_basic*(1+r)
+    // r = (S_basic - R_basic)/R_basic
+    const rayBasic = perJobBasePrice('ray', km) + STOP_FEE['ray'] * Math.max(0, stopsCount)
+    const starexBasic = perJobBasePrice('starex', km) + STOP_FEE['starex'] * Math.max(0, stopsCount)
+    const r = rayBasic > 0 ? (starexBasic - rayBasic) / rayBasic : 0
+    const perJobBulkRay = starexBasic
+    const perJobBulkStarex = Math.round(starexBasic * (1 + r))
+    const perJobTotal = isBulk
+      ? (vehicleKey === 'ray' ? perJobBulkRay : perJobBulkStarex)
+      : perJobBasicTotal
+
     return NextResponse.json({
       success: true,
+      // 기존 UI 호환: 기본표시는 시간당 총액
       quote: {
         totalPrice,
         formattedTotal,
@@ -77,6 +105,26 @@ export async function POST(req: NextRequest) {
         distance,
         time,
         dwellMinutes
+      },
+      plans: {
+        hourly: {
+          total: hourlyTotal,
+          formatted: `₩${hourlyTotal.toLocaleString('ko-KR')}`,
+          billMinutes,
+          ratePerHour,
+          fuelSurcharge: hourlyFuelSurcharge,
+        },
+        perJob: {
+          total: perJobTotal,
+          formatted: `₩${perJobTotal.toLocaleString('ko-KR')}`,
+          base: perJobBase,
+          stopFee: perJobStopFee,
+          bulk: isBulk,
+          bulkRay: perJobBulkRay,
+          bulkStarex: perJobBulkStarex,
+          rayBasic,
+          starexBasic,
+        }
       }
     })
   } catch (e: any) {
