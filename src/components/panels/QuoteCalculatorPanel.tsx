@@ -92,8 +92,11 @@ export default function QuoteCalculatorPanel() {
                 <div className="text-lg font-bold text-blue-900 flex items-center gap-2">
                   {total ?? '—'}
                   {plans?.hourly?.total && plans?.perJob?.total && (
-                    <span className="ml-2 text-xs text-blue-700 font-semibold">
-                      추천 요금제: {plans.hourly.total > plans.perJob.total ? '시간당' : '단건'}
+                    <span className="inline-flex items-center gap-1 ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      <span className="font-semibold">추천</span>
+                      <span>
+                        {plans.hourly.total > plans.perJob.total ? '시간당' : '단건'} · {plans.hourly.total > plans.perJob.total ? plans.hourly.formatted : plans.perJob.formatted}
+                      </span>
                     </span>
                   )}
                 </div>
