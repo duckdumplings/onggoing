@@ -8,6 +8,7 @@ export default function QuoteCalculatorPanel() {
   const [total, setTotal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any | null>(null);
 
   useEffect(() => {
     if (!routeData?.summary) return;
@@ -28,6 +29,7 @@ export default function QuoteCalculatorPanel() {
         const data = await res.json();
         if (data?.success) {
           setTotal(data.quote.formattedTotal);
+          setDetail(data.quote.breakdown);
         } else {
           setError(data?.error?.message || '견적 계산 실패');
         }
@@ -49,7 +51,21 @@ export default function QuoteCalculatorPanel() {
         {total && !loading && !error ? (
           <div className="bg-blue-50 rounded-lg p-3">
             <div className="text-lg font-bold text-blue-900">{total}</div>
-            <div className="text-xs text-blue-700">경로 최적화 결과 기반 임시 계산</div>
+            <div className="mt-2 text-xs text-blue-700">
+              {detail?.planName} · 차량가중치 {detail?.vehicleWeight}
+            </div>
+            <ul className="mt-2 text-xs text-blue-800 space-y-1">
+              <li>주행거리: {(detail?.km ?? 0).toFixed?.(1)}km</li>
+              <li>주행시간: {detail?.driveMinutes ?? 0}분</li>
+              <li>총 체류시간: {detail?.dwellTotalMinutes ?? 0}분</li>
+              <li>기본료: ₩{(detail?.baseRate ?? 0).toLocaleString('ko-KR')}</li>
+              <li>거리요금(₩{detail?.perKm ?? 0}/km): ₩{(detail?.distanceCharge ?? 0).toLocaleString('ko-KR')}</li>
+              <li>시간요금(₩{detail?.perMin ?? 0}/분): ₩{(detail?.timeCharge ?? 0).toLocaleString('ko-KR')}</li>
+              <li>체류요금(₩{detail?.perMin ?? 0}/분): ₩{(detail?.dwellCharge ?? 0).toLocaleString('ko-KR')}</li>
+              {detail?.fuel && (
+                <li>예상 유류비: {detail.fuel.liters}L × ₩{detail.fuel.fuelPricePerL.toLocaleString('ko-KR')} = ₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</li>
+              )}
+            </ul>
           </div>
         ) : (
           <div className="text-sm text-gray-500">경로 최적화 후 자동 계산됩니다</div>

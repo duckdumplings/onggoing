@@ -19,11 +19,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'distance/time invalid' } }, { status: 400 })
     }
 
-    // 기본 단가 (임시 정책): 차량 가중치, 거리/km, 시간/분
-    const vehicleWeight = vehicleType === '스타렉스' ? 1.2 : 1.0
-    const baseRate = 3000 // 기본료
-    const perKm = 100 // km당
-    const perMin = 50 // 분당(주행)
+    // 단가/가중치/연료비: 환경변수 기반(없으면 기본값)
+    const baseRate = Number(process.env.QUOTE_BASE_RATE ?? 3000) // 기본료
+    const perKm = Number(process.env.QUOTE_PER_KM ?? 100) // km당 요금
+    const perMin = Number(process.env.QUOTE_PER_MIN ?? 50) // 분당(주행)
+    const weightRay = Number(process.env.VEHICLE_WEIGHT_RAY ?? 1.0)
+    const weightStarex = Number(process.env.VEHICLE_WEIGHT_STAREX ?? 1.2)
+    const fuelPricePerL = Number(process.env.FUEL_PRICE_PER_L ?? 1650) // KRW/L
+    const fuelEfficiencyKmPerL = Number(process.env.FUEL_EFFICIENCY_KM_PER_L ?? 10) // km/L
+
+    const vehicleWeight = vehicleType === '스타렉스' ? weightStarex : weightRay
     const dwellTotalMin = dwellMinutes.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0)
 
     const km = distance / 1000
@@ -36,6 +41,9 @@ export async function POST(req: NextRequest) {
     const subtotal = baseRate + distanceCharge + timeCharge + dwellCharge
     const totalPrice = Math.round(subtotal * vehicleWeight)
 
+    const liters = fuelEfficiencyKmPerL > 0 ? km / fuelEfficiencyKmPerL : 0
+    const fuelCost = Math.round(liters * fuelPricePerL)
+
     const formattedTotal = `₩${totalPrice.toLocaleString('ko-KR')}`
 
     return NextResponse.json({
@@ -45,11 +53,24 @@ export async function POST(req: NextRequest) {
         formattedTotal,
         currency: 'KRW',
         breakdown: {
+          planName: '기본+거리/시간 혼합 요금',
           baseRate,
+          perKm,
+          perMin,
+          vehicleType,
+          vehicleWeight,
           distanceCharge,
           timeCharge,
           dwellCharge,
-          vehicleWeight
+          km,
+          driveMinutes,
+          dwellTotalMinutes: dwellTotalMin,
+          fuel: {
+            liters: Number(liters.toFixed(2)),
+            fuelEfficiencyKmPerL,
+            fuelPricePerL,
+            fuelCost
+          }
         },
         distance,
         time,
