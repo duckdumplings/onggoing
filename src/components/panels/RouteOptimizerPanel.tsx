@@ -13,7 +13,16 @@ import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-ki
 
 export default function RouteOptimizerPanel() {
   const [collapsed, setCollapsed] = useState(false);
-  const { optimizeRouteWith, optimizeRoute, isLoading, setOrigins, setDestinations, destinations, origins, error } = useRouteOptimization();
+  const {
+    optimizeRouteWith,
+    isLoading,
+    setOrigins,
+    setDestinations,
+    destinations,
+    origins,
+    error,
+    setDwellMinutes,
+  } = useRouteOptimization();
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
@@ -127,7 +136,10 @@ export default function RouteOptimizerPanel() {
                       />
                       <div className="mt-1">
                         <label className="text-xs text-gray-600 mr-2">체류시간</label>
-                        <input type="number" min={0} step={5} defaultValue={10} className="w-24 h-8 border rounded px-2 text-sm" />
+                        <input type="number" min={0} step={5} defaultValue={10} className="w-24 h-8 border rounded px-2 text-sm" onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value || '0', 10));
+                          setDwellMinutes((Array.from({ length: Math.max(idx + 1, 0) }, (_, i) => i)).map((i) => (i === idx ? val : 10)));
+                        }} />
                         <span className="ml-1 text-xs text-gray-500">분</span>
                       </div>
                     </div>

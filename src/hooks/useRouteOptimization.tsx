@@ -35,11 +35,13 @@ export interface RouteOptimizationState {
   vehicleType: '레이' | '스타렉스' | string;
   options: OptimizationOptions;
   waypoints: Coordinate[];
+  dwellMinutes: number[];
   setOrigins: (c: Coordinate | null) => void;
   setDestinations: (list: Coordinate[]) => void;
   setVehicleType: (v: RouteOptimizationState['vehicleType']) => void;
   setOptions: (o: Partial<OptimizationOptions>) => void;
   setRouteData: (d: RouteData | null) => void;
+  setDwellMinutes: (list: number[]) => void;
   optimizeRoute: () => Promise<void>;
   optimizeRouteWith: (override?: Partial<{
     origins: Coordinate | null;
@@ -62,6 +64,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
 
@@ -147,6 +150,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
   const waypoints = useMemo(() => [origins, ...destinations].filter(Boolean) as Coordinate[], [origins, destinations]);
 
+  const setDwellMinutes = (list: number[]) => setDwellMinutesState(list);
+
   const value: RouteOptimizationState = {
     origins,
     destinations,
@@ -156,11 +161,13 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     vehicleType,
     options,
     waypoints,
+    dwellMinutes: dwellMinutesState,
     setOrigins,
     setDestinations,
     setVehicleType,
     setOptions,
     setRouteData,
+    setDwellMinutes,
     optimizeRoute,
     optimizeRouteWith,
     retry,
