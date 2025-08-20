@@ -12,7 +12,6 @@ export default function QuoteCalculatorPanel() {
   const [plans, setPlans] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'settings'>('summary');
   const [vehicle, setVehicle] = useState<'ray' | 'starex'>('ray');
-  const [bulk, setBulk] = useState(false);
   const [scheduleType, setScheduleType] = useState<'regular' | 'ad-hoc'>('ad-hoc');
 
   const stopsCount = useMemo(() => Math.max(0, (destinations?.length || 0) - 1), [destinations]);
@@ -32,7 +31,6 @@ export default function QuoteCalculatorPanel() {
             vehicleType: vehicle === 'starex' ? '스타렉스' : '레이',
             dwellMinutes,
             stopsCount,
-            bulk,
             scheduleType
           })
         });
@@ -51,7 +49,7 @@ export default function QuoteCalculatorPanel() {
       }
     };
     call();
-  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, bulk, scheduleType, stopsCount, dwellMinutes.join(',')]);
+  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, scheduleType, stopsCount, dwellMinutes.join(',')]);
 
   return (
     <section className="glass-card border-b border-white/40 max-h-[40vh] overflow-y-auto">
@@ -68,10 +66,6 @@ export default function QuoteCalculatorPanel() {
               <option value="ray">레이</option>
               <option value="starex">스타렉스</option>
             </select>
-            <label className="flex items-center gap-1 text-xs text-gray-700">
-              <input type="checkbox" className="accent-blue-600" checked={bulk} onChange={(e) => setBulk(e.target.checked)} />
-              단건 벌크
-            </label>
           </div>
         </div>
 
@@ -123,10 +117,10 @@ export default function QuoteCalculatorPanel() {
                   </label>
                 </div>
                 <div>
-                  기본요금(구간): {plans.perJob.isBulkAndRegular || plans.perJob.bulk ? '??' : `₩${(plans.perJob.baseEffective ?? plans.perJob.base ?? 0).toLocaleString('ko-KR')}`}
+                  기본요금(구간): ₩{(plans.perJob.baseEffective ?? plans.perJob.base ?? 0).toLocaleString('ko-KR')}
                 </div>
                 <div>
-                  경유지 정액({stopsCount}개): {plans.perJob.isBulkAndRegular || plans.perJob.bulk ? '??' : `₩${(plans.perJob.stopFeeEffective ?? plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}`}
+                  경유지 정액({stopsCount}개): ₩{(plans.perJob.stopFeeEffective ?? plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}
                 </div>
                 <div className="mt-1 font-semibold">단건 총액: {plans.perJob.formatted}</div>
               </div>

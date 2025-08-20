@@ -7,7 +7,6 @@ type QuoteInput = {
   vehicleType?: string
   dwellMinutes?: number[] // per-stop dwell/handling minutes
   stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
-  bulk?: boolean // 단건 벌크 여부(시간당에는 미적용)
   scheduleType?: 'regular' | 'ad-hoc' // 단건: 정기/비정기
 }
 
@@ -20,7 +19,6 @@ export async function POST(req: NextRequest) {
     const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
     const stopsCount = Number.isFinite(body.stopsCount as any) ? Number(body.stopsCount) : dwellMinutes.length
-    const isBulk = Boolean(body.bulk)
     const scheduleType = (body.scheduleType as 'regular' | 'ad-hoc') || 'ad-hoc'
 
     if (!Number.isFinite(distance) || !Number.isFinite(time)) {
@@ -91,13 +89,7 @@ export async function POST(req: NextRequest) {
     const perJobBulkRay = starexBasic
     const perJobBulkStarex = Math.round(starexBasic * (1 + r))
 
-    // 정기+벌크 동시 적용 시 계산 불가능
-    const isBulkAndRegular = isBulk && scheduleType === 'regular'
-    const perJobTotal = isBulkAndRegular
-      ? 0 // 계산 불가능
-      : (isBulk)
-        ? (vehicleKey === 'ray' ? perJobBulkRay : perJobBulkStarex)
-        : perJobBasicTotal
+    const perJobTotal = perJobBasicTotal
 
     return NextResponse.json({
       success: true,
@@ -142,19 +134,19 @@ export async function POST(req: NextRequest) {
         },
         perJob: {
           total: perJobTotal,
-          formatted: isBulkAndRegular ? '??' : `₩${perJobTotal.toLocaleString('ko-KR')}`,
+          formatted: `₩${perJobTotal.toLocaleString('ko-KR')}`,
           base: perJobBase,
           stopFee: perJobStopFee,
-          baseEffective: isBulkAndRegular ? null : (isBulk ? null : (baseEffective as number)),
-          stopFeeEffective: isBulkAndRegular ? null : (isBulk ? null : (stopFeeEffective as number)),
-          bulk: isBulk,
+          baseEffective: baseEffective,
+          stopFeeEffective: stopFeeEffective,
+          bulk: false, // 벌크 로직 제거
           bulkRay: perJobBulkRay,
           bulkStarex: perJobBulkStarex,
           rayBasic,
           starexBasic,
           scheduleType,
           regularFactor: scheduleType === 'regular' ? perJobRegularFactor : 1,
-          isBulkAndRegular,
+          isBulkAndRegular: false, // 벌크 로직 제거
         }
       }
     })
