@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { perJobBasePrice, STOP_FEE, fuelSurchargeHourly, pickHourlyRate } from '@/domains/quote/pricing'
 
 type QuoteInput = {
   distance: number // meters
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest) {
     const distance = Number(body.distance || 0)
     const time = Number(body.time || 0)
     const vehicleType = String(body.vehicleType || '레이')
+    const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
 
     if (!Number.isFinite(distance) || !Number.isFinite(time)) {
