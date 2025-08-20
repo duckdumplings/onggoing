@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
 export default function QuoteCalculatorPanel() {
@@ -9,10 +9,16 @@ export default function QuoteCalculatorPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
+  const [plans, setPlans] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'settings'>('summary');
+  const [vehicle, setVehicle] = useState<'ray' | 'starex'>('ray');
+  const [bulk, setBulk] = useState(false);
+
+  const stopsCount = useMemo(() => Math.max(0, (dwellMinutes?.length || 0)), [dwellMinutes]);
 
   useEffect(() => {
     if (!routeData?.summary) return;
-    const { totalDistance, totalTime, vehicleTypeCode } = routeData.summary as any;
+    const { totalDistance, totalTime } = routeData.summary as any;
     const call = async () => {
       setLoading(true); setError(null);
       try {
@@ -22,14 +28,17 @@ export default function QuoteCalculatorPanel() {
           body: JSON.stringify({
             distance: totalDistance,
             time: totalTime,
-            vehicleType: vehicleTypeCode === '2' ? '스타렉스' : '레이',
-            dwellMinutes
+            vehicleType: vehicle === 'starex' ? '스타렉스' : '레이',
+            dwellMinutes,
+            stopsCount,
+            bulk
           })
         });
         const data = await res.json();
         if (data?.success) {
           setTotal(data.quote.formattedTotal);
           setDetail(data.quote.breakdown);
+          setPlans(data.plans);
         } else {
           setError(data?.error?.message || '견적 계산 실패');
         }
@@ -40,35 +49,79 @@ export default function QuoteCalculatorPanel() {
       }
     };
     call();
-  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, routeData?.summary?.vehicleTypeCode, dwellMinutes.join(',')]);
+  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, bulk, stopsCount, dwellMinutes.join(',')]);
 
   return (
     <section className="glass-card border-b border-white/40 max-h-[40vh] overflow-y-auto">
       <div className="p-4">
-        <h3 className="font-semibold text-gray-900 mb-2">💰 자동 견적</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-semibold text-gray-900">💰 자동 견적</h3>
+          <div className="flex items-center gap-2">
+            <select
+              value={vehicle}
+              onChange={(e) => setVehicle(e.target.value as 'ray' | 'starex')}
+              className="h-8 border rounded px-2 text-sm"
+              aria-label="차종 선택"
+            >
+              <option value="ray">레이</option>
+              <option value="starex">스타렉스</option>
+            </select>
+            <label className="flex items-center gap-1 text-xs text-gray-700">
+              <input type="checkbox" className="accent-blue-600" checked={bulk} onChange={(e) => setBulk(e.target.checked)} />
+              단건 벌크
+            </label>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-3 text-sm">
+          <button className={`px-3 py-1 rounded ${activeTab==='summary'?'bg-blue-600 text-white':'bg-gray-100'}`} onClick={()=>setActiveTab('summary')}>요약</button>
+          <button className={`px-3 py-1 rounded ${activeTab==='hourly'?'bg-blue-600 text-white':'bg-gray-100'}`} onClick={()=>setActiveTab('hourly')}>시간당</button>
+          <button className={`px-3 py-1 rounded ${activeTab==='perjob'?'bg-blue-600 text-white':'bg-gray-100'}`} onClick={()=>setActiveTab('perjob')}>단건</button>
+          <button className={`px-3 py-1 rounded ${activeTab==='settings'?'bg-blue-600 text-white':'bg-gray-100'}`} onClick={()=>setActiveTab('settings')}>설정</button>
+        </div>
         {loading && <div className="text-sm text-gray-500">계산 중…</div>}
         {error && <div className="text-sm text-red-600">{error}</div>}
-        {total && !loading && !error ? (
-          <div className="bg-blue-50 rounded-lg p-3">
-            <div className="text-lg font-bold text-blue-900">{total}</div>
-            <div className="mt-2 text-xs text-blue-700">
-              {detail?.planName} · 차량가중치 {detail?.vehicleWeight}
-            </div>
-            <ul className="mt-2 text-xs text-blue-800 space-y-1">
-              <li>주행거리: {(detail?.km ?? 0).toFixed?.(1)}km</li>
-              <li>주행시간: {detail?.driveMinutes ?? 0}분</li>
-              <li>총 체류시간: {detail?.dwellTotalMinutes ?? 0}분</li>
-              <li>기본료: ₩{(detail?.baseRate ?? 0).toLocaleString('ko-KR')}</li>
-              <li>거리요금(₩{detail?.perKm ?? 0}/km): ₩{(detail?.distanceCharge ?? 0).toLocaleString('ko-KR')}</li>
-              <li>시간요금(₩{detail?.perMin ?? 0}/분): ₩{(detail?.timeCharge ?? 0).toLocaleString('ko-KR')}</li>
-              <li>체류요금(₩{detail?.perMin ?? 0}/분): ₩{(detail?.dwellCharge ?? 0).toLocaleString('ko-KR')}</li>
-              {detail?.fuel && (
-                <li>예상 유류비: {detail.fuel.liters}L × ₩{detail.fuel.fuelPricePerL.toLocaleString('ko-KR')} = ₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</li>
-              )}
-            </ul>
+
+        {!loading && !error && (
+          <div className="bg-blue-50 rounded-lg p-3 text-sm">
+            {activeTab==='summary' && (
+              <div>
+                <div className="text-lg font-bold text-blue-900">{total ?? '—'}</div>
+                <ul className="mt-2 text-blue-800 space-y-1">
+                  <li>차종: {vehicle==='starex'?'스타렉스':'레이'}</li>
+                  <li>주행거리: {(detail?.km ?? 0).toFixed?.(1)}km</li>
+                  <li>주행시간: {detail?.driveMinutes ?? 0}분, 체류: {detail?.dwellTotalMinutes ?? 0}분</li>
+                  {detail?.fuel && (
+                    <li>예상 유류비(참고): ₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+            {activeTab==='hourly' && plans?.hourly && (
+              <div>
+                <div>과금시간: {plans.hourly.billMinutes}분 (30분 올림, 최소 120분)</div>
+                <div>시간당 단가: ₩{(plans.hourly.ratePerHour ?? 0).toLocaleString('ko-KR')}</div>
+                <div>유류비 할증: ₩{(plans.hourly.fuelSurcharge ?? 0).toLocaleString('ko-KR')}</div>
+                <div className="mt-1 font-semibold">시간당 총액: {plans.hourly.formatted}</div>
+              </div>
+            )}
+            {activeTab==='perjob' && plans?.perJob && (
+              <div>
+                <div>기본요금(구간): ₩{(plans.perJob.base ?? 0).toLocaleString('ko-KR')}</div>
+                <div>경유지 정액({stopsCount}개): ₩{(plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}</div>
+                {plans.perJob.bulk ? (
+                  <div className="mt-1">벌크 적용 → 레이기준: ₩{(plans.perJob.bulkRay ?? 0).toLocaleString('ko-KR')}, 스타렉스기준: ₩{(plans.perJob.bulkStarex ?? 0).toLocaleString('ko-KR')}</div>
+                ) : null}
+                <div className="mt-1 font-semibold">단건 총액: {plans.perJob.formatted}</div>
+              </div>
+            )}
+            {activeTab==='settings' && (
+              <div>
+                <div className="text-xs text-gray-700">현재 환경설정(유류가, 연비 등)은 .env 기반입니다. 추후 업로드/모달로 대체 예정.</div>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="text-sm text-gray-500">경로 최적화 후 자동 계산됩니다</div>
         )}
       </div>
     </section>
