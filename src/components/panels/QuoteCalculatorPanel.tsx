@@ -15,7 +15,7 @@ export default function QuoteCalculatorPanel() {
   const [bulk, setBulk] = useState(false);
   const [scheduleType, setScheduleType] = useState<'regular' | 'ad-hoc'>('ad-hoc');
 
-  const stopsCount = useMemo(() => Math.max(0, (destinations?.length || 0) - 2), [destinations]);
+  const stopsCount = useMemo(() => Math.max(0, (destinations?.length || 0) - 1), [destinations]);
 
   useEffect(() => {
     if (!routeData?.summary) return;
@@ -51,7 +51,7 @@ export default function QuoteCalculatorPanel() {
       }
     };
     call();
-  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, bulk, stopsCount, dwellMinutes.join(',')]);
+  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, bulk, scheduleType, stopsCount, dwellMinutes.join(',')]);
 
   return (
     <section className="glass-card border-b border-white/40 max-h-[40vh] overflow-y-auto">
@@ -89,7 +89,7 @@ export default function QuoteCalculatorPanel() {
           <div className="bg-blue-50 rounded-lg p-3 text-sm">
             {activeTab === 'summary' && (
               <div>
-                <div className="text-lg font-bold text-blue-900 flex items-center gap-2">
+                <div className="text-xl md:text-2xl font-extrabold text-gray-900 tracking-tight">
                   {plans?.hourly?.total && plans?.perJob?.total
                     ? `${plans.hourly.total > plans.perJob.total ? '추천 · 시간당 · ' + plans.hourly.formatted : '추천 · 단건 · ' + plans.perJob.formatted}`
                     : (total ?? '—')}
