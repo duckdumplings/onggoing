@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
 
     const km = distance / 1000
     const driveMinutes = Math.ceil(time / 60)
+    const totalMinutes = driveMinutes + dwellTotalMin
 
     const distanceCharge = km * perKm
     const timeCharge = driveMinutes * perMin
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     // 추가: 요금제별 계산
     // 1) 시간당(30분 올림, 최소 120분, 유류비 할증표만 적용, 벌크 미적용)
-    const billMinutes = Math.max(120, Math.ceil((driveMinutes + dwellTotalMin) / 30) * 30)
+    const billMinutes = Math.max(120, Math.ceil(totalMinutes / 30) * 30)
     const ratePerHour = pickHourlyRate(vehicleKey, billMinutes)
     const hourlyBase = ratePerHour * (billMinutes / 60)
     // 포함거리 = 10km * 과금시간(시간)
@@ -89,9 +90,14 @@ export async function POST(req: NextRequest) {
     const r = rayBasic > 0 ? (starexBasic - rayBasic) / rayBasic : 0
     const perJobBulkRay = starexBasic
     const perJobBulkStarex = Math.round(starexBasic * (1 + r))
-    const perJobTotal = (isBulk)
-      ? (vehicleKey === 'ray' ? perJobBulkRay : perJobBulkStarex)
-      : perJobBasicTotal
+
+    // 정기+벌크 동시 적용 시 계산 불가능
+    const isBulkAndRegular = isBulk && scheduleType === 'regular'
+    const perJobTotal = isBulkAndRegular
+      ? 0 // 계산 불가능
+      : (isBulk)
+        ? (vehicleKey === 'ray' ? perJobBulkRay : perJobBulkStarex)
+        : perJobBasicTotal
 
     return NextResponse.json({
       success: true,
@@ -113,6 +119,8 @@ export async function POST(req: NextRequest) {
           km,
           driveMinutes,
           dwellTotalMinutes: dwellTotalMin,
+          totalMinutes,
+          dwellMinutes,
           fuel: {
             liters: Number(liters.toFixed(2)),
             fuelEfficiencyKmPerL,
@@ -134,11 +142,11 @@ export async function POST(req: NextRequest) {
         },
         perJob: {
           total: perJobTotal,
-          formatted: `₩${perJobTotal.toLocaleString('ko-KR')}`,
+          formatted: isBulkAndRegular ? '??' : `₩${perJobTotal.toLocaleString('ko-KR')}`,
           base: perJobBase,
           stopFee: perJobStopFee,
-          baseEffective: isBulk ? null : (baseEffective as number),
-          stopFeeEffective: isBulk ? null : (stopFeeEffective as number),
+          baseEffective: isBulkAndRegular ? null : (isBulk ? null : (baseEffective as number)),
+          stopFeeEffective: isBulkAndRegular ? null : (isBulk ? null : (stopFeeEffective as number)),
           bulk: isBulk,
           bulkRay: perJobBulkRay,
           bulkStarex: perJobBulkStarex,
@@ -146,6 +154,7 @@ export async function POST(req: NextRequest) {
           starexBasic,
           scheduleType,
           regularFactor: scheduleType === 'regular' ? perJobRegularFactor : 1,
+          isBulkAndRegular,
         }
       }
     })

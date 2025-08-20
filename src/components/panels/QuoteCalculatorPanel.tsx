@@ -123,10 +123,10 @@ export default function QuoteCalculatorPanel() {
                   </label>
                 </div>
                 <div>
-                  기본요금(구간): {plans.perJob.bulk ? '??' : `₩${(plans.perJob.baseEffective ?? plans.perJob.base ?? 0).toLocaleString('ko-KR')}`}
+                  기본요금(구간): {plans.perJob.isBulkAndRegular || plans.perJob.bulk ? '??' : `₩${(plans.perJob.baseEffective ?? plans.perJob.base ?? 0).toLocaleString('ko-KR')}`}
                 </div>
                 <div>
-                  경유지 정액({stopsCount}개): {plans.perJob.bulk ? '??' : `₩${(plans.perJob.stopFeeEffective ?? plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}`}
+                  경유지 정액({stopsCount}개): {plans.perJob.isBulkAndRegular || plans.perJob.bulk ? '??' : `₩${(plans.perJob.stopFeeEffective ?? plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}`}
                 </div>
                 <div className="mt-1 font-semibold">단건 총액: {plans.perJob.formatted}</div>
               </div>
