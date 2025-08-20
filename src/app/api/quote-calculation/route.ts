@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const r = rayBasic > 0 ? (starexBasic - rayBasic) / rayBasic : 0
     const perJobBulkRay = starexBasic
     const perJobBulkStarex = Math.round(starexBasic * (1 + r))
-    const perJobTotal = isBulk
+    const perJobTotal = (isBulk || scheduleType === 'regular')
       ? (vehicleKey === 'ray' ? perJobBulkRay : perJobBulkStarex)
       : perJobBasicTotal
 
