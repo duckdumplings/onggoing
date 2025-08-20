@@ -90,15 +90,9 @@ export default function QuoteCalculatorPanel() {
             {activeTab === 'summary' && (
               <div>
                 <div className="text-lg font-bold text-blue-900 flex items-center gap-2">
-                  {total ?? '—'}
-                  {plans?.hourly?.total && plans?.perJob?.total && (
-                    <span className="inline-flex items-center gap-1 ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                      <span className="font-semibold">추천</span>
-                      <span>
-                        {plans.hourly.total > plans.perJob.total ? '시간당' : '단건'} · {plans.hourly.total > plans.perJob.total ? plans.hourly.formatted : plans.perJob.formatted}
-                      </span>
-                    </span>
-                  )}
+                  {plans?.hourly?.total && plans?.perJob?.total
+                    ? `${plans.hourly.total > plans.perJob.total ? '추천 · 시간당 · ' + plans.hourly.formatted : '추천 · 단건 · ' + plans.perJob.formatted}`
+                    : (total ?? '—')}
                 </div>
                 <ul className="mt-2 text-blue-800 space-y-1">
                   <li>차종: {vehicle === 'starex' ? '스타렉스' : '레이'}</li>
