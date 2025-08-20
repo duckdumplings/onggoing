@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 
 export default function RouteResultsCard() {
   const { routeData } = useRouteOptimization();

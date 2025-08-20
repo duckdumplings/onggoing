@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 
 export default function QuoteCalculatorPanel() {
   const { routeData, dwellMinutes, destinations } = useRouteOptimization();

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import TmapMap from './TmapMap';
-import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 
 export default function TmapMainMap() {
   const { routeData, waypoints, isLoading, options } = useRouteOptimization();
