@@ -13,6 +13,7 @@ export default function QuoteCalculatorPanel() {
   const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'settings'>('summary');
   const [vehicle, setVehicle] = useState<'ray' | 'starex'>('ray');
   const [bulk, setBulk] = useState(false);
+  const [scheduleType, setScheduleType] = useState<'regular'|'ad-hoc'>('ad-hoc');
 
   const stopsCount = useMemo(() => Math.max(0, (dwellMinutes?.length || 0)), [dwellMinutes]);
 
@@ -31,7 +32,8 @@ export default function QuoteCalculatorPanel() {
             vehicleType: vehicle === 'starex' ? '스타렉스' : '레이',
             dwellMinutes,
             stopsCount,
-            bulk
+            bulk,
+            scheduleType
           })
         });
         const data = await res.json();
@@ -108,8 +110,19 @@ export default function QuoteCalculatorPanel() {
             )}
             {activeTab==='perjob' && plans?.perJob && (
               <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="flex items-center gap-1 text-xs text-gray-700">
+                    <input type="radio" name="schedule" checked={scheduleType==='ad-hoc'} onChange={()=>setScheduleType('ad-hoc')} /> 비정기(하루)
+                  </label>
+                  <label className="flex items-center gap-1 text-xs text-gray-700">
+                    <input type="radio" name="schedule" checked={scheduleType==='regular'} onChange={()=>setScheduleType('regular')} /> 정기(일주일+)
+                  </label>
+                </div>
                 <div>기본요금(구간): ₩{(plans.perJob.base ?? 0).toLocaleString('ko-KR')}</div>
                 <div>경유지 정액({stopsCount}개): ₩{(plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}</div>
+                {scheduleType==='regular' && (
+                  <div>정기 가산율: ×{plans.perJob.regularFactor}</div>
+                )}
                 {plans.perJob.bulk ? (
                   <div className="mt-1">벌크 적용 → 레이기준: ₩{(plans.perJob.bulkRay ?? 0).toLocaleString('ko-KR')}, 스타렉스기준: ₩{(plans.perJob.bulkStarex ?? 0).toLocaleString('ko-KR')}</div>
                 ) : null}

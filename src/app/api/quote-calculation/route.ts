@@ -8,6 +8,7 @@ type QuoteInput = {
   dwellMinutes?: number[] // per-stop dwell/handling minutes
   stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
   bulk?: boolean // 단건 벌크 여부(시간당에는 미적용)
+  scheduleType?: 'regular' | 'ad-hoc' // 단건: 정기/비정기
 }
 
 export async function POST(req: NextRequest) {
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
     const stopsCount = Number.isFinite(body.stopsCount as any) ? Number(body.stopsCount) : dwellMinutes.length
     const isBulk = Boolean(body.bulk)
+    const scheduleType = (body.scheduleType as 'regular' | 'ad-hoc') || 'ad-hoc'
 
     if (!Number.isFinite(distance) || !Number.isFinite(time)) {
       return NextResponse.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'distance/time invalid' } }, { status: 400 })
@@ -57,13 +59,20 @@ export async function POST(req: NextRequest) {
     const billMinutes = Math.max(120, Math.ceil((driveMinutes + dwellTotalMin) / 30) * 30)
     const ratePerHour = pickHourlyRate(vehicleKey, billMinutes)
     const hourlyBase = ratePerHour * (billMinutes / 60)
-    const hourlyFuelSurcharge = fuelSurchargeHourly(vehicleKey, km)
+    // 포함거리 = 10km * 과금시간(시간)
+    const includedKm = 10 * (billMinutes / 60)
+    const surchargeKm = Math.max(0, km - includedKm)
+    const bins = Math.ceil(surchargeKm / 10)
+    const binCharge = vehicleKey === 'ray' ? 2000 : 2800
+    const hourlyFuelSurcharge = bins * binCharge
     const hourlyTotal = Math.round(hourlyBase + hourlyFuelSurcharge)
 
     // 2) 단건(구간표 + 초과km, 경유지 정액, 벌크 적용 가능)
     const perJobBase = perJobBasePrice(vehicleKey, km)
     const perJobStopFee = STOP_FEE[vehicleKey] * Math.max(0, stopsCount)
-    const perJobBasicTotal = perJobBase + perJobStopFee
+    // 정기/비정기 가산(환경변수, 기본 1.0)
+    const perJobRegularFactor = Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.0)
+    const perJobBasicTotal = Math.round((perJobBase + perJobStopFee) * (scheduleType === 'regular' ? perJobRegularFactor : 1))
     // 벌크 로직(시간당 미적용): Ray_bulk = Starex_basic, Starex_bulk = Starex_basic*(1+r)
     // r = (S_basic - R_basic)/R_basic
     const rayBasic = perJobBasePrice('ray', km) + STOP_FEE['ray'] * Math.max(0, stopsCount)
@@ -124,6 +133,8 @@ export async function POST(req: NextRequest) {
           bulkStarex: perJobBulkStarex,
           rayBasic,
           starexBasic,
+          scheduleType,
+          regularFactor: scheduleType === 'regular' ? perJobRegularFactor : 1,
         }
       }
     })
