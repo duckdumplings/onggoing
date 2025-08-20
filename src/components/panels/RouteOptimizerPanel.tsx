@@ -240,8 +240,22 @@ export default function RouteOptimizerPanel() {
               const finalDest = useExplicitDestination && destinationSelection
                 ? [...dedup, { lat: destinationSelection.latitude, lng: destinationSelection.longitude }]
                 : dedup;
+              
+              // 체류시간 수집 (입력란에서 현재 값들을 가져와서 설정)
+              const dwellInputs = document.querySelectorAll('input[type="number"]');
+              const collectedDwellMinutes: number[] = [];
+              dwellInputs.forEach((input, idx) => {
+                const value = parseInt((input as HTMLInputElement).value || '10', 10);
+                collectedDwellMinutes[idx] = Math.max(0, value);
+              });
+              setDwellMinutes(collectedDwellMinutes);
+              
               setDestinations(finalDest);
-              await optimizeRouteWith({ destinations: finalDest, options: { useExplicitDestination } });
+              await optimizeRouteWith({ 
+                destinations: finalDest, 
+                options: { useExplicitDestination },
+                dwellMinutes: collectedDwellMinutes
+              });
             }}
             disabled={isLoading}
             className="glass-button-primary w-full h-12 text-base !bg-blue-600 !text-white !rounded-lg"

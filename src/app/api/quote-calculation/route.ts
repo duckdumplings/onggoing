@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const hourlyFuelSurcharge = bins * binCharge
     const hourlyTotal = Math.round(hourlyBase + hourlyFuelSurcharge)
 
-    // 2) 단건(구간표 + 초과km, 경유지 정액, 벌크 적용 가능)
+    // 2) 단건(구간표 + 초과km, 경유지 정액, 정기/비정기 구분)
     const perJobBase = perJobBasePrice(vehicleKey, km)
     const perJobStopFee = STOP_FEE[vehicleKey] * Math.max(0, stopsCount)
     // 정기/비정기 가산(환경변수, 기본 1.0)
@@ -74,20 +74,13 @@ export async function POST(req: NextRequest) {
     const rawSum = perJobBase + perJobStopFee
     const perJobBasicTotal = Math.round(rawSum * (scheduleType === 'regular' ? perJobRegularFactor : 1))
     // 표시용 분해값(정기 가산 반영시 합계가 정확히 일치하도록 배분)
-    let baseEffective: number | null = perJobBase
-    let stopFeeEffective: number | null = perJobStopFee
+    let baseEffective: number = perJobBase
+    let stopFeeEffective: number = perJobStopFee
     if (scheduleType === 'regular') {
       const scale = rawSum > 0 ? perJobBasicTotal / rawSum : 1
       baseEffective = Math.round(perJobBase * scale)
       stopFeeEffective = perJobBasicTotal - baseEffective
     }
-    // 벌크 로직(시간당 미적용): Ray_bulk = Starex_basic, Starex_bulk = Starex_basic*(1+r)
-    // r = (S_basic - R_basic)/R_basic
-    const rayBasic = perJobBasePrice('ray', km) + STOP_FEE['ray'] * Math.max(0, stopsCount)
-    const starexBasic = perJobBasePrice('starex', km) + STOP_FEE['starex'] * Math.max(0, stopsCount)
-    const r = rayBasic > 0 ? (starexBasic - rayBasic) / rayBasic : 0
-    const perJobBulkRay = starexBasic
-    const perJobBulkStarex = Math.round(starexBasic * (1 + r))
 
     const perJobTotal = perJobBasicTotal
 
@@ -139,14 +132,8 @@ export async function POST(req: NextRequest) {
           stopFee: perJobStopFee,
           baseEffective: baseEffective,
           stopFeeEffective: stopFeeEffective,
-          bulk: false, // 벌크 로직 제거
-          bulkRay: perJobBulkRay,
-          bulkStarex: perJobBulkStarex,
-          rayBasic,
-          starexBasic,
           scheduleType,
           regularFactor: scheduleType === 'regular' ? perJobRegularFactor : 1,
-          isBulkAndRegular: false, // 벌크 로직 제거
         }
       }
     })

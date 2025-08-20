@@ -48,6 +48,7 @@ export interface RouteOptimizationState {
     destinations: Coordinate[];
     vehicleType: RouteOptimizationState['vehicleType'];
     options: Partial<OptimizationOptions>;
+    dwellMinutes: number[];
   }>) => Promise<void>;
   retry: () => Promise<void>;
   cancel: () => void;
@@ -72,11 +73,12 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setOptionsState(prev => ({ ...prev, ...o }));
   }, []);
 
-  const buildPayload = useCallback((ovr?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions> }>) => {
+  const buildPayload = useCallback((ovr?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
     const o = ovr?.origins ?? origins;
     const d = ovr?.destinations ?? destinations;
     const v = ovr?.vehicleType ?? vehicleType;
     const opt = { ...options, ...(ovr?.options || {}) };
+    const dm = ovr?.dwellMinutes ?? dwellMinutesState;
     const originPayload = o ? [{ latitude: o.lat, longitude: o.lng, address: 'origin' }] : [];
     const destPayload = d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: 'dest' }));
     return {
@@ -86,10 +88,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       optimizeOrder: opt.optimizeOrder,
       useRealtimeTraffic: opt.useRealtimeTraffic,
       departureAt: opt.departureAt,
+      dwellMinutes: dm,
     };
-  }, [origins, destinations, vehicleType, options]);
+  }, [origins, destinations, vehicleType, options, dwellMinutesState]);
 
-  const optimizeRouteWith = useCallback(async (override?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions> }>) => {
+  const optimizeRouteWith = useCallback(async (override?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
     const payload = buildPayload(override);
     lastPayloadRef.current = payload;
     if (!payload.origins?.length || !payload.destinations?.length) {
