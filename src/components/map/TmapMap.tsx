@@ -29,10 +29,7 @@ export default function TmapMap({
     let mounted = true;
 
     // 환경변수 디버깅
-    const tmapApiKey = process.env.NEXT_PUBLIC_TMAP_API_KEY;
-    console.log('[TmapMap] TMAP API KEY:', tmapApiKey ? 'EXISTS' : 'MISSING');
-    console.log('[TmapMap] TMAP API KEY length:', tmapApiKey?.length || 0);
-    console.log('[TmapMap] All NEXT_PUBLIC env vars:', Object.keys(process.env).filter(k => k.startsWith('NEXT_PUBLIC')));
+    console.log('[TmapMap] TMAP API KEY:', process.env.NEXT_PUBLIC_TMAP_API_KEY ? 'EXISTS' : 'MISSING');
 
     // iframe 기반 임베드로 전환하여 document.write 문제 회피
     if (containerRef.current && !iframeRef.current) {

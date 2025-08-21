@@ -1,13 +1,18 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const appKey = 'uqc0pLn7QEapOY2lzIIjFvhYUpLw4IG1f7ZWNgB8' // 임시 하드코딩으로 테스트
-  
+  const appKey = process.env.NEXT_PUBLIC_TMAP_API_KEY || ''
+
   // 디버깅용 로그 (프로덕션에서는 제거 필요)
-  console.log('[tmap-embed] API Key exists:', appKey ? 'YES' : 'NO')
+  console.log('[tmap-embed] API Key exists:', !!appKey)
   console.log('[tmap-embed] API Key length:', appKey.length)
   console.log('[tmap-embed] Process env keys:', Object.keys(process.env).filter(k => k.startsWith('NEXT_PUBLIC')))
-  
+
+  if (!appKey) {
+    console.error('[tmap-embed] TMAP API key not found in environment variables')
+    return new NextResponse('TMAP API key not configured', { status: 500 })
+  }
+
   const html = `<!doctype html>
 <html lang="ko">
 <head>
