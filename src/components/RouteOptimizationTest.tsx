@@ -111,9 +111,11 @@ export default function RouteOptimizationTest() {
                     longitude: origins[index].longitude!
                   } : null}
                   onSelect={(s) => {
-                    const updated = [...origins]
-                    updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
-                    setOrigins(updated)
+                    if (s) {
+                      const updated = [...origins]
+                      updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
+                      setOrigins(updated)
+                    }
                   }}
                   placeholder="출발지 주소를 입력하세요"
                 />
@@ -135,9 +137,11 @@ export default function RouteOptimizationTest() {
                       longitude: destinations[index].longitude!
                     } : null}
                     onSelect={(s) => {
-                      const updated = [...destinations]
-                      updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
-                      setDestinations(updated)
+                      if (s) {
+                        const updated = [...destinations]
+                        updated[index] = { name: s.name, address: s.address, latitude: s.latitude, longitude: s.longitude }
+                        setDestinations(updated)
+                      }
                     }}
                     placeholder="목적지 주소를 입력하세요"
                   />

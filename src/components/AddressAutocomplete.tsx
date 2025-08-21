@@ -13,7 +13,7 @@ interface Props {
   label: string
   placeholder?: string
   value?: AddressSelection | null
-  onSelect: (v: AddressSelection) => void
+  onSelect: (v: AddressSelection | null) => void
 }
 
 export default function AddressAutocomplete({ label, placeholder, value, onSelect }: Props) {
@@ -23,6 +23,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   const [loading, setLoading] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
   const [highlight, setHighlight] = useState(0)
+  const [isEditing, setIsEditing] = useState(false) // 수정 모드 상태 추가
 
   const debouncedQuery = useDebounce(query, 300)
 
@@ -55,13 +56,16 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   }, [debouncedQuery])
 
   const handleSelect = (s: AddressSelection) => {
+    console.log('[AddressAutocomplete] handleSelect called with:', s)
     onSelect(s)
     // 입력란에는 상호명이 있으면 상호명 우선 표시
     const label = s.name && s.name.trim().length > 0 ? s.name : (s.address || '')
+    console.log('[AddressAutocomplete] Setting query to:', label)
     setQuery(label)
     setOpen(false)
     setSuggestions([]) // 선택 후 제안 목록 비우기
     setHighlight(0) // 하이라이트 초기화
+    setIsEditing(false) // 수정 모드 해제
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -74,25 +78,45 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       setHighlight((h) => Math.max(h - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      handleSelect(suggestions[highlight])
+      console.log('[AddressAutocomplete] Enter pressed:', {
+        highlight,
+        suggestionsLength: suggestions.length,
+        selectedItem: suggestions[highlight]
+      })
+
+      // 안전한 인덱스 체크
+      if (highlight >= 0 && highlight < suggestions.length && suggestions[highlight]) {
+        handleSelect(suggestions[highlight])
+      } else {
+        console.warn('[AddressAutocomplete] Invalid highlight index or empty suggestion')
+      }
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
   }
 
   useEffect(() => {
-    // 선택된 상태가 아닐 때만 드롭다운 열기
-    if (suggestions.length > 0 && !value) {
+    // 수정 모드일 때만 드롭다운 열기 (재열림 방지)
+    if (suggestions.length > 0 && isEditing) {
       setOpen(true)
+      setHighlight(0) // 드롭다운이 열릴 때만 하이라이트 초기화
+      console.log('[AddressAutocomplete] Dropdown opened with suggestions:', suggestions.length)
     } else {
       setOpen(false)
     }
-    setHighlight(0)
-  }, [suggestions, value])
+  }, [suggestions, isEditing])
 
   useEffect(() => {
-    if (value) setQuery(value.name || value.address)
-    else setQuery('')
+    console.log('[AddressAutocomplete] value changed:', value)
+    if (value) {
+      const newQuery = value.name || value.address
+      console.log('[AddressAutocomplete] Setting query from value:', newQuery)
+      setQuery(newQuery)
+    } else {
+      // value가 null로 변경되는 것을 방지
+      console.log('[AddressAutocomplete] Ignoring null value change to prevent UI reset')
+      // setQuery('') // 주석 처리하여 query 상태 유지
+    }
   }, [value])
 
   return (
@@ -100,10 +124,22 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          const newValue = e.target.value
+          setQuery(newValue)
+
+          // 입력값이 기존 선택과 다르면 수정 모드 활성화
+          if (value && newValue !== (value.name || value.address)) {
+            setIsEditing(true)
+            onSelect(null) // 선택 초기화
+          } else if (!value && newValue.length >= 2) {
+            // 새로운 검색 시작
+            setIsEditing(true)
+          }
+        }}
         onFocus={() => {
-          // 선택된 상태가 아니고 제안이 있을 때만 드롭다운 열기
-          if (!value && suggestions.length > 0) {
+          // 수정 모드일 때만 드롭다운 열기
+          if (suggestions.length > 0 && isEditing) {
             setOpen(true)
           }
         }}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 import WaypointList from './WaypointList';
@@ -10,10 +10,8 @@ export default function RouteOptimizerPanel() {
   const {
     optimizeRouteWith,
     isLoading,
-    setOrigins,
     setDestinations,
     destinations,
-    origins,
     error,
     setDwellMinutes,
     options,
@@ -22,6 +20,15 @@ export default function RouteOptimizerPanel() {
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
+
+  // originSelection이 변경될 때 origins 동기화 - 제거
+  // useEffect(() => {
+  //   if (originSelection) {
+  //     setOrigins({ lat: originSelection.latitude, lng: originSelection.longitude });
+  //   } else {
+  //     setOrigins(null);
+  //   }
+  // }, [originSelection, setOrigins]);
   const [waypoints, setWaypoints] = useState<Array<{ id: string; selection: AddressSelection | null; dwellTime: number }>>([
     { id: 'waypoint-1', selection: null, dwellTime: 10 },
     { id: 'waypoint-2', selection: null, dwellTime: 10 }
@@ -64,17 +71,8 @@ export default function RouteOptimizerPanel() {
     Math.abs(a.lat - b.lat) <= eps && Math.abs(a.lng - b.lng) <= eps;
 
   const displayOriginValue: AddressSelection | null = useMemo(() => {
-    if (originSelection) return originSelection;
-    if (origins) {
-      return {
-        name: '',
-        address: `${origins.lat.toFixed(5)}, ${origins.lng.toFixed(5)}`,
-        latitude: origins.lat,
-        longitude: origins.lng,
-      };
-    }
-    return null;
-  }, [originSelection, origins]);
+    return originSelection;
+  }, [originSelection]);
 
   return (
     <section className="glass-card border-b border-white/40 bg-gradient-to-br from-blue-50/30 to-indigo-50/30">
@@ -101,7 +99,6 @@ export default function RouteOptimizerPanel() {
                 value={displayOriginValue}
                 onSelect={(v) => {
                   setOriginSelection(v);
-                  setOrigins({ lat: v.latitude, lng: v.longitude });
                 }}
               />
             </div>
@@ -312,7 +309,7 @@ export default function RouteOptimizerPanel() {
           <button
             onClick={async () => {
               setLocalError(null);
-              if (!origins) {
+              if (!originSelection) {
                 setLocalError('출발지를 먼저 선택하세요.');
                 return;
               }
@@ -355,6 +352,7 @@ export default function RouteOptimizerPanel() {
               setDestinations(finalDest);
 
               await optimizeRouteWith({
+                origins: originSelection ? { lat: originSelection.latitude, lng: originSelection.longitude } : null,
                 destinations: finalDest,
                 options: {
                   useExplicitDestination,
