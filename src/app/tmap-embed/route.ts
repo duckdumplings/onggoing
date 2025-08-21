@@ -1,16 +1,26 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const appKey = process.env.NEXT_PUBLIC_TMAP_API_KEY || ''
+  // 환경변수 디버깅 강화
+  const nextPublicKey = process.env.NEXT_PUBLIC_TMAP_API_KEY
+  const tmapKey = process.env.TMAP_API_KEY
+  const appKey = nextPublicKey || tmapKey || ''
 
   // 디버깅용 로그 (프로덕션에서는 제거 필요)
-  console.log('[tmap-embed] API Key exists:', !!appKey)
-  console.log('[tmap-embed] API Key length:', appKey.length)
-  console.log('[tmap-embed] Process env keys:', Object.keys(process.env).filter(k => k.startsWith('NEXT_PUBLIC')))
-
+  console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY exists:', !!nextPublicKey)
+  console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY length:', nextPublicKey?.length || 0)
+  console.log('[tmap-embed] TMAP_API_KEY exists:', !!tmapKey)
+  console.log('[tmap-embed] TMAP_API_KEY length:', tmapKey?.length || 0)
+  console.log('[tmap-embed] Final key exists:', !!appKey)
+  console.log('[tmap-embed] Final key length:', appKey.length)
+  console.log('[tmap-embed] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
+  
   if (!appKey) {
-    console.error('[tmap-embed] TMAP API key not found in environment variables')
-    return new NextResponse('TMAP API key not configured', { status: 500 })
+    console.error('[tmap-embed] TMAP API key not found in any environment variable')
+    return new NextResponse('TMAP API key not configured. Please check Vercel environment variables.', { 
+      status: 500,
+      headers: { 'Content-Type': 'text/plain' }
+    })
   }
 
   const html = `<!doctype html>

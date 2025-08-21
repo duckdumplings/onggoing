@@ -24,18 +24,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ suggestions: cached.data }, { status: 200 })
   }
 
-  const tmapKey = process.env.NEXT_PUBLIC_TMAP_API_KEY || process.env.TMAP_API_KEY || ''
-
-  // 디버깅 로그 추가
+  // 환경변수 디버깅 강화
+  const nextPublicKey = process.env.NEXT_PUBLIC_TMAP_API_KEY
+  const tmapKey = process.env.TMAP_API_KEY
+  const finalKey = nextPublicKey || tmapKey || ''
+  
   console.log('[POI Search] Query:', q)
-  console.log('[POI Search] TMAP Key exists:', !!tmapKey)
-  console.log('[POI Search] TMAP Key length:', tmapKey.length)
+  console.log('[POI Search] NEXT_PUBLIC_TMAP_API_KEY exists:', !!nextPublicKey)
+  console.log('[POI Search] NEXT_PUBLIC_TMAP_API_KEY length:', nextPublicKey?.length || 0)
+  console.log('[POI Search] TMAP_API_KEY exists:', !!tmapKey)
+  console.log('[POI Search] TMAP_API_KEY length:', tmapKey?.length || 0)
+  console.log('[POI Search] Final key exists:', !!finalKey)
+  console.log('[POI Search] Final key length:', finalKey.length)
+  console.log('[POI Search] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
 
-  if (!tmapKey) {
-    console.error('[POI Search] No TMAP key found in environment variables')
+  if (!finalKey) {
+    console.error('[POI Search] No TMAP key found in any environment variable')
     return NextResponse.json({
-      error: 'TMAP API key not configured',
-      suggestions: []
+      error: 'TMAP API key not configured. Please check Vercel environment variables.',
+      suggestions: [],
+      debug: {
+        nextPublicExists: !!nextPublicKey,
+        tmapExists: !!tmapKey,
+        envKeys: Object.keys(process.env).filter(k => k.includes('TMAP'))
+      }
     }, { status: 500 })
   }
 
@@ -49,7 +61,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.set('count', '10')
 
     const res = await fetch(url.toString(), {
-      headers: { appKey: tmapKey, 'Content-Type': 'application/json' },
+      headers: { appKey: finalKey, 'Content-Type': 'application/json' },
       next: { revalidate: 0 },
     })
 
