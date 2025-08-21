@@ -7,6 +7,7 @@ interface TmapMapProps {
   zoom?: number;
   routeData?: any; // Tmap REST or GeoJSON 유사 구조 { features: [...] }
   waypoints?: { lat: number; lng: number; label?: string }[];
+  useExplicitDestination?: boolean;
   className?: string;
   height?: string;
 }
@@ -16,6 +17,7 @@ export default function TmapMap({
   zoom = 14,
   routeData,
   waypoints,
+  useExplicitDestination = false,
   className = 'w-full',
   height = 'h-96',
 }: TmapMapProps) {
@@ -71,10 +73,22 @@ export default function TmapMap({
   // 경로 그리기
   useEffect(() => {
     if (!ready || !iframeRef.current || !routeData) return;
+
+    // 출발지와 도착지 정보를 포함한 waypoints 데이터 생성
+    const enhancedWaypoints = waypoints?.map((waypoint, index) => {
+      if (index === 0) {
+        return { ...waypoint, label: '출발' };
+      } else if (index === waypoints.length - 1 && useExplicitDestination) {
+        return { ...waypoint, label: '도착' };
+      } else {
+        return { ...waypoint, label: String(index) };
+      }
+    });
+
     // 임베드된 iframe에 postMessage로 경로 그리기 전달
-    const message = { type: 'route', routeData, center, waypoints };
+    const message = { type: 'route', routeData, center, waypoints: enhancedWaypoints };
     iframeRef.current.contentWindow?.postMessage(message, '*');
-  }, [ready, routeData, waypoints?.length]);
+  }, [ready, routeData, waypoints?.length, useExplicitDestination]);
 
   if (error) {
     return (

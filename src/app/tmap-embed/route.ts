@@ -14,10 +14,10 @@ export async function GET() {
   console.log('[tmap-embed] Final key exists:', !!appKey)
   console.log('[tmap-embed] Final key length:', appKey.length)
   console.log('[tmap-embed] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
-  
+
   if (!appKey) {
     console.error('[tmap-embed] TMAP API key not found in any environment variable')
-    return new NextResponse('TMAP API key not configured. Please check Vercel environment variables.', { 
+    return new NextResponse('TMAP API key not configured. Please check Vercel environment variables.', {
       status: 500,
       headers: { 'Content-Type': 'text/plain' }
     })
@@ -45,7 +45,35 @@ export async function GET() {
       polylines=[];markers=[];infoWindows=[];
     }
     function badge(latLng, text){
-      return new window.Tmapv2.InfoWindow({ position: latLng, content: '<div style="background:#1f2937;color:#fff;border-radius:12px;padding:2px 6px;font-size:12px;">'+text+'</div>', type: 2, map: map });
+      var isSpecial = text === '출발' || text === '도착';
+      var bgColor = text === '출발' ? '#3B82F6' : text === '도착' ? '#EF4444' : '#1F2937';
+      var borderColor = text === '출발' ? '#2563EB' : text === '도착' ? '#DC2626' : '#374151';
+      var shadowColor = text === '출발' ? 'rgba(59, 130, 246, 0.3)' : text === '도착' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(31, 41, 55, 0.3)';
+      
+      var content = '<div style="' +
+        'background:' + bgColor + ';' +
+        'color:#fff;' +
+        'border-radius:50%;' +
+        'width:' + (isSpecial ? '28px' : '20px') + ';' +
+        'height:' + (isSpecial ? '28px' : '20px') + ';' +
+        'font-size:' + (isSpecial ? '10px' : '8px') + ';' +
+        'font-weight:' + (isSpecial ? '600' : '500') + ';' +
+        'font-family:Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;' +
+        'box-shadow:0 2px 6px ' + shadowColor + ', 0 1px 2px rgba(0,0,0,0.1);' +
+        'display:flex;' +
+        'align-items:center;' +
+        'justify-content:center;' +
+        'letter-spacing:0.025em;' +
+        'text-shadow:0 1px 2px rgba(0,0,0,0.1);' +
+        '">' + text + '</div>';
+      
+      return new window.Tmapv2.InfoWindow({ 
+        position: latLng, 
+        content: content, 
+        type: 2, 
+        map: map,
+        offset: new window.Tmapv2.Point(0, -8)
+      });
     }
     function drawRoute(routeData, waypoints){
       if(!routeData) return; var features=routeData.features||[]; var T=window.Tmapv2; clearMap();
@@ -59,13 +87,14 @@ export async function GET() {
         });
         polylines.push(new T.Polyline({path:path,strokeColor:'#FF1744',strokeWeight:5,map:map}));
       }
-      // 숫자 배지는 경유지 개수만큼만 출력
+      // waypoints 배지 출력 (출발/도착/경유지)
       if(Array.isArray(waypoints)){
         for(var j=0;j<waypoints.length;j++){
           var w=waypoints[j];
           if(typeof w.lat==='number' && typeof w.lng==='number'){
             var ll=new T.LatLng(w.lat,w.lng);
-            infoWindows.push(badge(ll, String(j+1)));
+            var label = w.label || String(j+1);
+            infoWindows.push(badge(ll, label));
             if(w.lat<minLat)minLat=w.lat; if(w.lat>maxLat)maxLat=w.lat; if(w.lng<minLng)minLng=w.lng; if(w.lng>maxLng)maxLng=w.lng;
           }
         }

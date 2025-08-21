@@ -6,7 +6,7 @@ export default function Home() {
   return (
     <div className="h-screen bg-gray-50 flex">
       {/* 좌측 패널 */}
-      <aside className="w-96 hidden md:flex flex-col p-4 gap-3 bg-white/60 backdrop-blur-xl border-r border-white/40">
+      <aside className="hidden md:flex flex-col p-4 gap-3 bg-white/60 backdrop-blur-xl border-r border-white/40" style={{ width: '28rem' }}>
         <header className="px-2 pb-1">
           <h1 className="text-xl font-bold text-gray-900">옹고잉 물류</h1>
           <p className="text-xs text-gray-600">스마트 경로 최적화 플랫폼</p>

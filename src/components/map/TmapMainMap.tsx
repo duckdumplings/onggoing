@@ -9,7 +9,13 @@ export default function TmapMainMap() {
 
   return (
     <div className="relative w-full h-full">
-      <TmapMap routeData={routeData as any} waypoints={waypoints as any} className="w-full" height="h-full" />
+      <TmapMap
+        routeData={routeData as any}
+        waypoints={waypoints as any}
+        useExplicitDestination={options?.useExplicitDestination}
+        className="w-full"
+        height="h-full"
+      />
 
       {/* 우측 하단 오버레이 - 경로 정보 */}
       {routeData?.summary && (
