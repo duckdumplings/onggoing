@@ -68,7 +68,11 @@ export async function POST(request: NextRequest) {
         { x: current.longitude, y: current.latitude },
         { x: dest.longitude, y: dest.latitude },
         tmapKey,
-        { vehicleTypeCode, trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N' }
+        {
+          vehicleTypeCode,
+          trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
+          departureAt: departureAt || null
+        }
       ).catch(() => null);
 
       if (seg && Array.isArray(seg.features)) {
@@ -186,43 +190,114 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
   };
 }
 
-// Tmap 자동차 경로안내
+// Tmap 자동차 경로안내 (타임머신 기능 포함)
 async function getTmapRoute(
   start: { x: number; y: number },
   end: { x: number; y: number },
   appKey: string,
   opts?: { vehicleTypeCode?: string; trafficInfo?: 'Y' | 'N'; departureAt?: string | null }
 ) {
-  const url = 'https://apis.openapi.sk.com/tmap/routes';
-  const body: any = {
-    startX: String(start.x),
-    startY: String(start.y),
-    endX: String(end.x),
-    endY: String(end.y),
-    reqCoordType: 'WGS84GEO',
-    resCoordType: 'WGS84GEO',
-    searchOption: opts?.trafficInfo === 'N' ? '1' : '0',
-    trafficInfo: opts?.trafficInfo ?? 'Y',
-    vehicleType: opts?.vehicleTypeCode ?? '1',
-  };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
+
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { appKey: appKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`Tmap route failed: ${res.status}`);
-    const result = await res.json();
-    console.log('Tmap API response:', {
-      status: res.status,
-      featuresCount: result.features?.length,
-      trafficInfo: body.trafficInfo,
-      searchOption: body.searchOption
-    });
-    return result;
+    // 출발시간이 설정된 경우 타임머신 API 사용
+    if (opts?.departureAt) {
+      const url = 'https://apis.openapi.sk.com/tmap/routes/prediction?version=1';
+
+      // ISO 8601 형식으로 변환 (예: 2024-12-01T14:00:00+0900)
+      // 입력된 시간을 한국 시간대로 직접 변환
+      const departureDate = new Date(opts.departureAt);
+
+      // 한국 시간대로 변환 (YYYY-MM-DDTHH:MM:SS+0900)
+      const year = departureDate.getFullYear();
+      const month = String(departureDate.getMonth() + 1).padStart(2, '0');
+      const day = String(departureDate.getDate()).padStart(2, '0');
+      const hours = String(departureDate.getHours()).padStart(2, '0');
+      const minutes = String(departureDate.getMinutes()).padStart(2, '0');
+      const seconds = String(departureDate.getSeconds()).padStart(2, '0');
+
+      const predictionTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+0900`;
+
+      const body = {
+        routesInfo: {
+          departure: {
+            name: 'start',
+            lon: String(start.x),
+            lat: String(start.y)
+          },
+          destination: {
+            name: 'end',
+            lon: String(end.x),
+            lat: String(end.y)
+          },
+          predictionType: 'departure',
+          predictionTime: predictionTime
+        }
+      };
+
+      console.log('타임머신 API 호출:', {
+        predictionTime,
+        originalTime: opts.departureAt,
+        departureDate: departureDate.toISOString(),
+        localTime: departureDate.toString()
+      });
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          appKey: appKey,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) throw new Error(`Tmap prediction failed: ${res.status}`);
+      const result = await res.json();
+
+      console.log('타임머신 API 응답:', {
+        status: res.status,
+        featuresCount: result.features?.length,
+        totalTime: result.features?.[0]?.properties?.totalTime
+      });
+
+      return result;
+    } else {
+      // 실시간 교통정보 사용 시 기존 API
+      const url = 'https://apis.openapi.sk.com/tmap/routes';
+      const body: any = {
+        startX: String(start.x),
+        startY: String(start.y),
+        endX: String(end.x),
+        endY: String(end.y),
+        reqCoordType: 'WGS84GEO',
+        resCoordType: 'WGS84GEO',
+        searchOption: opts?.trafficInfo === 'N' ? '1' : '0',
+        trafficInfo: opts?.trafficInfo ?? 'Y',
+        vehicleType: opts?.vehicleTypeCode ?? '1',
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { appKey: appKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) throw new Error(`Tmap route failed: ${res.status}`);
+      const result = await res.json();
+
+      console.log('일반 API 응답:', {
+        status: res.status,
+        featuresCount: result.features?.length,
+        trafficInfo: body.trafficInfo,
+        searchOption: body.searchOption
+      });
+
+      return result;
+    }
   } finally {
     clearTimeout(timeout);
   }

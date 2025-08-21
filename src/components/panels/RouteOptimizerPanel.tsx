@@ -33,13 +33,32 @@ export default function RouteOptimizerPanel() {
   // 자동순서최적화 상태
   const [optimizeOrder, setOptimizeOrder] = useState(false);
 
-  // 날짜/시간 설정
+  // 날짜/시간 설정 - 한국 시간 기준
   const [departureDateTime, setDepartureDateTime] = useState(() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() + 30); // 30분 후로 기본 설정
-    return now.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM 형식
+
+    // 한국 시간대로 변환 (YYYY-MM-DDTHH:MM 형식)
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   });
   const [useRealtimeTraffic, setUseRealtimeTraffic] = useState(true);
+
+  // 주말인 경우 다음주 월요일로 조정하는 헬퍼 함수
+  const getNextWeekday = (date: Date): Date => {
+    const day = date.getDay(); // 0 = 일요일, 6 = 토요일
+    if (day === 0) { // 일요일인 경우 월요일로
+      date.setDate(date.getDate() + 1);
+    } else if (day === 6) { // 토요일인 경우 월요일로
+      date.setDate(date.getDate() + 2);
+    }
+    return date;
+  };
 
   const coordEqual = (a: { lat: number; lng: number }, b: { lat: number; lng: number }, eps = 1e-6) =>
     Math.abs(a.lat - b.lat) <= eps && Math.abs(a.lng - b.lng) <= eps;
@@ -115,10 +134,10 @@ export default function RouteOptimizerPanel() {
           {/* 섹션 구분선 */}
           <div className="border-t border-gray-200 my-4"></div>
 
-          {/* 날짜/시간 설정 */}
-          <div className="space-y-3 p-3 bg-gray-50/50 rounded-lg">
+          {/* 교통정보 설정 - 깔끔한 버전 */}
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">출발 시간 설정</span>
+              <span className="text-sm font-medium text-gray-700">교통정보 설정</span>
               <label className="flex items-center gap-2 text-sm text-gray-600">
                 <input
                   type="checkbox"
@@ -130,19 +149,147 @@ export default function RouteOptimizerPanel() {
               </label>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs text-gray-600">출발 날짜 및 시간</label>
-              <input
-                type="datetime-local"
-                value={departureDateTime}
-                onChange={(e) => setDepartureDateTime(e.target.value)}
-                className="w-full h-9 border border-gray-300 rounded px-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                disabled={useRealtimeTraffic}
-              />
-              <div className="text-xs text-gray-500">
-                {useRealtimeTraffic ? '실시간 교통정보 사용 중' : '설정된 시간의 교통정보 반영'}
+            {!useRealtimeTraffic && (
+              <div className="space-y-3 p-3 bg-blue-50/30 rounded-lg border border-blue-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-gray-700">타임머신 출발 시간</label>
+                  <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                    {departureDateTime ? new Date(departureDateTime).toLocaleString('ko-KR', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: true
+                    }) : '시간 미설정'}
+                  </span>
+                </div>
+
+                {/* 빠른 시간 선택 버튼들 - 한 행 배치 (주말 자동 조정) */}
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + 1);
+                      targetDate.setHours(0, 0, 0, 0);
+                      targetDate = getNextWeekday(targetDate); // 주말 처리
+
+                      // 한국 시간대로 변환
+                      const year = targetDate.getFullYear();
+                      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(targetDate.getDate()).padStart(2, '0');
+                      const hours = String(targetDate.getHours()).padStart(2, '0');
+                      const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+                      const newTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                      console.log('Setting time to (KST):', newTime);
+                      setDepartureDateTime(newTime);
+                    }}
+                    className="flex-1 px-2 py-2 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border"
+                  >
+                    🌙 0시
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + 1);
+                      targetDate.setHours(6, 0, 0, 0);
+                      targetDate = getNextWeekday(targetDate); // 주말 처리
+
+                      // 한국 시간대로 변환
+                      const year = targetDate.getFullYear();
+                      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(targetDate.getDate()).padStart(2, '0');
+                      const hours = String(targetDate.getHours()).padStart(2, '0');
+                      const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+                      const newTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                      console.log('Setting time to (KST):', newTime);
+                      setDepartureDateTime(newTime);
+                    }}
+                    className="flex-1 px-2 py-2 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors border"
+                  >
+                    🌅 6시
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + 1);
+                      targetDate.setHours(9, 0, 0, 0);
+                      targetDate = getNextWeekday(targetDate); // 주말 처리
+
+                      // 한국 시간대로 변환
+                      const year = targetDate.getFullYear();
+                      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(targetDate.getDate()).padStart(2, '0');
+                      const hours = String(targetDate.getHours()).padStart(2, '0');
+                      const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+                      const newTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                      console.log('Setting time to (KST):', newTime);
+                      setDepartureDateTime(newTime);
+                    }}
+                    className="flex-1 px-2 py-2 text-xs bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors border"
+                  >
+                    ☀️ 9시
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + 1);
+                      targetDate.setHours(14, 0, 0, 0);
+                      targetDate = getNextWeekday(targetDate); // 주말 처리
+
+                      // 한국 시간대로 변환
+                      const year = targetDate.getFullYear();
+                      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(targetDate.getDate()).padStart(2, '0');
+                      const hours = String(targetDate.getHours()).padStart(2, '0');
+                      const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+                      const newTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                      console.log('Setting time to (KST):', newTime);
+                      setDepartureDateTime(newTime);
+                    }}
+                    className="flex-1 px-2 py-2 text-xs bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors border"
+                  >
+                    🌆 2시
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let targetDate = new Date();
+                      targetDate.setDate(targetDate.getDate() + 1);
+                      targetDate.setHours(18, 0, 0, 0);
+                      targetDate = getNextWeekday(targetDate); // 주말 처리
+
+                      // 한국 시간대로 변환
+                      const year = targetDate.getFullYear();
+                      const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(targetDate.getDate()).padStart(2, '0');
+                      const hours = String(targetDate.getHours()).padStart(2, '0');
+                      const minutes = String(targetDate.getMinutes()).padStart(2, '0');
+
+                      const newTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+                      console.log('Setting time to (KST):', newTime);
+                      setDepartureDateTime(newTime);
+                    }}
+                    className="flex-1 px-2 py-2 text-xs bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors border"
+                  >
+                    🌇 6시
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            {useRealtimeTraffic && (
+              <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                📡 현재 시간 기준 실시간 교통정보 사용
+              </div>
+            )}
           </div>
 
           {useExplicitDestination && (
@@ -199,6 +346,7 @@ export default function RouteOptimizerPanel() {
                 optimizeOrder,
                 useRealtimeTraffic,
                 departureDateTime,
+                departureAt: useRealtimeTraffic ? null : departureDateTime,
                 useExplicitDestination,
                 finalDestCount: finalDest.length
               });

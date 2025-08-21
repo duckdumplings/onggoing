@@ -55,7 +55,7 @@ export default function TmapMainMap() {
               <div className="text-xs text-gray-500 text-center">
                 {(routeData.summary as any)?.usedTraffic === 'realtime'
                   ? '📡 실시간 교통정보 반영'
-                  : '⏰ 설정된 시간의 교통정보 반영'
+                  : '⏰ 타임머신 경로 안내 (설정된 시간의 교통정보)'
                 }
               </div>
             </div>
