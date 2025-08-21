@@ -72,21 +72,14 @@ export default function TmapMap({
 
   // 경로 그리기
   useEffect(() => {
-    if (!ready || !iframeRef.current || !routeData) return;
+    if (!ready || !iframeRef.current) return;
 
-    // 출발지와 도착지 정보를 포함한 waypoints 데이터 생성
-    const enhancedWaypoints = waypoints?.map((waypoint, index) => {
-      if (index === 0) {
-        return { ...waypoint, label: '출발' };
-      } else if (index === waypoints.length - 1 && useExplicitDestination) {
-        return { ...waypoint, label: '도착' };
-      } else {
-        return { ...waypoint, label: String(index) };
-      }
-    });
+    // waypoints 데이터를 그대로 사용 (TmapMainMap에서 이미 올바르게 설정됨)
+    const enhancedWaypoints = waypoints;
 
     // 임베드된 iframe에 postMessage로 경로 그리기 전달
     const message = { type: 'route', routeData, center, waypoints: enhancedWaypoints };
+    console.log('[TmapMap] Sending message:', message); // 디버깅 로그 추가
     iframeRef.current.contentWindow?.postMessage(message, '*');
   }, [ready, routeData, waypoints?.length, useExplicitDestination]);
 

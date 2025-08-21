@@ -1,11 +1,47 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 
 export default function TmapMainMap() {
-  const { routeData, waypoints, isLoading, options } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations } = useRouteOptimization();
+  const waypoints = useMemo(() => {
+    const points = [];
+
+    // 디버깅 로그 추가
+    console.log('[TmapMainMap] origins:', origins);
+    console.log('[TmapMainMap] destinations:', destinations);
+    console.log('[TmapMainMap] routeData exists:', !!routeData);
+
+    // 경로 계산이 완료되었을 때만 핀 표시 (직관성을 위해)
+    if (routeData) {
+      // 출발지 추가
+      if (origins) {
+        console.log('[TmapMainMap] Adding origin pin:', { lat: origins.lat, lng: origins.lng, label: '출발' });
+        points.push({ lat: origins.lat, lng: origins.lng, label: '출발' });
+      } else {
+        console.log('[TmapMainMap] No origins data available');
+      }
+
+      // 목적지들 추가 (도착지 별도 설정 고려)
+      destinations.forEach((dest, index) => {
+        const isLastDestination = index === destinations.length - 1;
+        const shouldShowDestination = options?.useExplicitDestination && isLastDestination;
+
+        if (shouldShowDestination) {
+          points.push({ lat: dest.lat, lng: dest.lng, label: '도착' });
+        } else {
+          points.push({ lat: dest.lat, lng: dest.lng, label: String(index + 1) });
+        }
+      });
+    } else {
+      console.log('[TmapMainMap] No route data - pins will not be shown');
+    }
+
+    console.log('[TmapMainMap] Final waypoints:', points);
+    return points;
+  }, [origins, destinations, options?.useExplicitDestination, routeData]);
 
   return (
     <div className="relative w-full h-full">

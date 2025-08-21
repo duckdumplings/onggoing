@@ -16,19 +16,20 @@ export default function RouteOptimizerPanel() {
     setDwellMinutes,
     options,
     setOptions,
+    setOrigins,
   } = useRouteOptimization();
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
 
-  // originSelection이 변경될 때 origins 동기화 - 제거
-  // useEffect(() => {
-  //   if (originSelection) {
-  //     setOrigins({ lat: originSelection.latitude, lng: originSelection.longitude });
-  //   } else {
-  //     setOrigins(null);
-  //   }
-  // }, [originSelection, setOrigins]);
+  // originSelection이 변경될 때 origins 동기화
+  useEffect(() => {
+    if (originSelection) {
+      setOrigins({ lat: originSelection.latitude, lng: originSelection.longitude });
+    } else {
+      setOrigins(null);
+    }
+  }, [originSelection, setOrigins]);
   const [waypoints, setWaypoints] = useState<Array<{ id: string; selection: AddressSelection | null; dwellTime: number }>>([
     { id: 'waypoint-1', selection: null, dwellTime: 10 },
     { id: 'waypoint-2', selection: null, dwellTime: 10 }

@@ -44,12 +44,11 @@ export async function GET() {
       infoWindows.forEach(function(w){ try{ w.setMap(null) }catch(e){} });
       polylines=[];markers=[];infoWindows=[];
     }
-    function badge(latLng, text){
+    function createPin(latLng, text){
       var isSpecial = text === '출발' || text === '도착';
       var bgColor = text === '출발' ? '#3B82F6' : text === '도착' ? '#EF4444' : '#1F2937';
-      var borderColor = text === '출발' ? '#2563EB' : text === '도착' ? '#DC2626' : '#374151';
-      var shadowColor = text === '출발' ? 'rgba(59, 130, 246, 0.3)' : text === '도착' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(31, 41, 55, 0.3)';
       
+      // 간단한 HTML 기반 핀으로 변경 (SVG 인코딩 문제 회피)
       var content = '<div style="' +
         'background:' + bgColor + ';' +
         'color:#fff;' +
@@ -59,14 +58,13 @@ export async function GET() {
         'font-size:' + (isSpecial ? '10px' : '8px') + ';' +
         'font-weight:' + (isSpecial ? '600' : '500') + ';' +
         'font-family:Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;' +
-        'box-shadow:0 2px 6px ' + shadowColor + ', 0 1px 2px rgba(0,0,0,0.1);' +
         'display:flex;' +
         'align-items:center;' +
         'justify-content:center;' +
-        'letter-spacing:0.025em;' +
-        'text-shadow:0 1px 2px rgba(0,0,0,0.1);' +
+        'box-shadow:0 2px 4px rgba(0,0,0,0.2);' +
         '">' + text + '</div>';
       
+      // InfoWindow로 다시 변경 (안정성 우선)
       return new window.Tmapv2.InfoWindow({ 
         position: latLng, 
         content: content, 
@@ -76,29 +74,38 @@ export async function GET() {
       });
     }
     function drawRoute(routeData, waypoints){
-      if(!routeData) return; var features=routeData.features||[]; var T=window.Tmapv2; clearMap();
+      var T=window.Tmapv2; clearMap();
       var minLat=90, maxLat=-90, minLng=180, maxLng=-180;
-      for(var i=0;i<features.length;i++){
-        var f=features[i]; var coords=f&&f.geometry&&f.geometry.coordinates; if(!coords||!coords.length) continue;
-        var flat=Array.isArray(coords[0][0])?coords.flat(1):coords; var path=flat.map(function(c){
-          var lat=c[1], lng=c[0];
-          if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat; if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng;
-          return new T.LatLng(lat,lng)
-        });
-        polylines.push(new T.Polyline({path:path,strokeColor:'#FF1744',strokeWeight:5,map:map}));
+      
+      // 경로 데이터가 있으면 경로 그리기
+      if(routeData && routeData.features){
+        var features=routeData.features||[];
+        for(var i=0;i<features.length;i++){
+          var f=features[i]; var coords=f&&f.geometry&&f.geometry.coordinates; if(!coords||!coords.length) continue;
+          var flat=Array.isArray(coords[0][0])?coords.flat(1):coords; var path=flat.map(function(c){
+            var lat=c[1], lng=c[0];
+            if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat; if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng;
+            return new T.LatLng(lat,lng)
+          });
+          polylines.push(new T.Polyline({path:path,strokeColor:'#FF1744',strokeWeight:5,map:map}));
+        }
       }
-      // waypoints 배지 출력 (출발/도착/경유지)
+      
+      // waypoints 핀 출력 (출발/도착/경유지) - routeData가 없어도 실행
       if(Array.isArray(waypoints)){
+        console.log('Drawing waypoints:', waypoints); // 디버깅 로그 추가
         for(var j=0;j<waypoints.length;j++){
           var w=waypoints[j];
           if(typeof w.lat==='number' && typeof w.lng==='number'){
             var ll=new T.LatLng(w.lat,w.lng);
             var label = w.label || String(j+1);
-            infoWindows.push(badge(ll, label));
+            console.log('Creating pin for:', label, 'at', w.lat, w.lng); // 디버깅 로그 추가
+            infoWindows.push(createPin(ll, label));
             if(w.lat<minLat)minLat=w.lat; if(w.lat>maxLat)maxLat=w.lat; if(w.lng<minLng)minLng=w.lng; if(w.lng>maxLng)maxLng=w.lng;
           }
         }
       }
+      
       // 뷰 맞춤: 경계 기반 중심/줌 설정 (간이 구현)
       if(isFinite(minLat) && isFinite(maxLat) && isFinite(minLng) && isFinite(maxLng)){
         var centerLat=(minLat+maxLat)/2; var centerLng=(minLng+maxLng)/2;
