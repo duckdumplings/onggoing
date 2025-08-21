@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const appKey = 'uqc0pLn7QEapOY2lzIIjFvhYUpLw4IG1f7ZWNgB8' // 임시 하드코딩으로 테스트
+  const appKey = process.env.NEXT_PUBLIC_TMAP_API_KEY || 'uqc0pLn7QEapOY2lzIIjFvhYUpLw4IG1f7ZWNgB8'
   
   // 디버깅용 로그 (프로덕션에서는 제거 필요)
   console.log('[tmap-embed] API Key exists:', appKey ? 'YES' : 'NO')

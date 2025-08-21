@@ -28,6 +28,9 @@ export default function TmapMap({
   useEffect(() => {
     let mounted = true;
 
+    // 환경변수 디버깅
+    console.log('[TmapMap] TMAP API KEY:', process.env.NEXT_PUBLIC_TMAP_API_KEY ? 'EXISTS' : 'MISSING');
+
     // iframe 기반 임베드로 전환하여 document.write 문제 회피
     if (containerRef.current && !iframeRef.current) {
       const iframe = document.createElement('iframe');
@@ -41,9 +44,9 @@ export default function TmapMap({
         const url = new URL('/tmap-embed', origin);
         iframe.src = url.toString();
         // 디버그 로그
-        // eslint-disable-next-line no-console
         console.log('[TmapMap] iframe src =', iframe.src);
-      } catch {
+      } catch (err) {
+        console.error('[TmapMap] URL 생성 실패:', err);
         iframe.src = `/tmap-embed.html?appKey=${encodeURIComponent(process.env.NEXT_PUBLIC_TMAP_API_KEY || '')}`;
       }
       iframe.onload = () => {
