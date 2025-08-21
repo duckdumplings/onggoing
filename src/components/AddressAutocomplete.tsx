@@ -47,9 +47,9 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         console.log('[AddressAutocomplete] Fetch data:', d) // 디버깅 로그
         return Array.isArray(d.suggestions) ? setSuggestions(d.suggestions) : setSuggestions([])
       })
-      .catch((err) => { 
+      .catch((err) => {
         console.log('[AddressAutocomplete] Fetch error:', err) // 디버깅 로그
-        setSuggestions([]) 
+        setSuggestions([])
       })
       .finally(() => setLoading(false))
   }, [debouncedQuery])
@@ -60,6 +60,8 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     const label = s.name && s.name.trim().length > 0 ? s.name : (s.address || '')
     setQuery(label)
     setOpen(false)
+    setSuggestions([]) // 선택 후 제안 목록 비우기
+    setHighlight(0) // 하이라이트 초기화
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -79,9 +81,14 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   }
 
   useEffect(() => {
-    setOpen(suggestions.length > 0)
+    // 선택된 상태가 아닐 때만 드롭다운 열기
+    if (suggestions.length > 0 && !value) {
+      setOpen(true)
+    } else {
+      setOpen(false)
+    }
     setHighlight(0)
-  }, [suggestions])
+  }, [suggestions, value])
 
   useEffect(() => {
     if (value) setQuery(value.name || value.address)
@@ -94,7 +101,16 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => setOpen(suggestions.length > 0)}
+        onFocus={() => {
+          // 선택된 상태가 아니고 제안이 있을 때만 드롭다운 열기
+          if (!value && suggestions.length > 0) {
+            setOpen(true)
+          }
+        }}
+        onBlur={() => {
+          // 약간의 지연을 두어 클릭 이벤트가 처리될 시간을 줌
+          setTimeout(() => setOpen(false), 150)
+        }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full h-11 border rounded px-3"
