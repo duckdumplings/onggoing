@@ -24,8 +24,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ suggestions: cached.data }, { status: 200 })
   }
 
+  // 환경변수 로딩 확인
   const tmapKey = process.env.TMAP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY || ''
+  
+  // 디버깅 로그 추가
+  console.log('[POI Search] Query:', q)
+  console.log('[POI Search] TMAP Key exists:', !!tmapKey)
+  console.log('[POI Search] TMAP Key length:', tmapKey.length)
+  console.log('[POI Search] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
+  
   if (!tmapKey) {
+    console.log('[POI Search] No TMAP key found')
+    console.log('[POI Search] Available env vars:', Object.keys(process.env).filter(k => k.includes('TMAP')))
     return NextResponse.json({ suggestions: [] }, { status: 200 })
   }
 
@@ -43,7 +53,10 @@ export async function GET(req: NextRequest) {
       next: { revalidate: 0 },
     })
 
+    console.log('[POI Search] TMAP API response status:', res.status)
+    
     if (!res.ok) {
+      console.log('[POI Search] TMAP API failed:', res.status, res.statusText)
       return NextResponse.json({ suggestions: [] }, { status: 200 })
     }
 

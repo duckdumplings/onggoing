@@ -28,6 +28,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
 
   useEffect(() => {
     const q = debouncedQuery.trim()
+    console.log('[AddressAutocomplete] Query changed:', q) // 디버깅 로그
     if (q.length < 2) {
       setSuggestions([])
       return
@@ -36,10 +37,20 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     const controller = new AbortController()
     controllerRef.current = controller
     setLoading(true)
+    console.log('[AddressAutocomplete] Starting fetch for:', q) // 디버깅 로그
     fetch(`/api/poi-search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('검색 실패'))))
-      .then((d) => Array.isArray(d.suggestions) ? setSuggestions(d.suggestions) : setSuggestions([]))
-      .catch(() => { setSuggestions([]) })
+      .then((r) => {
+        console.log('[AddressAutocomplete] Fetch response:', r.status, r.ok) // 디버깅 로그
+        return r.ok ? r.json() : Promise.reject(new Error('검색 실패'))
+      })
+      .then((d) => {
+        console.log('[AddressAutocomplete] Fetch data:', d) // 디버깅 로그
+        return Array.isArray(d.suggestions) ? setSuggestions(d.suggestions) : setSuggestions([])
+      })
+      .catch((err) => { 
+        console.log('[AddressAutocomplete] Fetch error:', err) // 디버깅 로그
+        setSuggestions([]) 
+      })
       .finally(() => setLoading(false))
   }, [debouncedQuery])
 
