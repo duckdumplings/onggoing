@@ -4,11 +4,11 @@ import { createServerClient } from '@/libs/supabase-client';
 // 개별 최적화 실행 결과 조회
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = createServerClient();
-    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
@@ -69,11 +69,11 @@ export async function GET(
 // 개별 최적화 실행 결과 삭제
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = createServerClient();
-    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
