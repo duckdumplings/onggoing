@@ -1,6 +1,7 @@
 import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import QuoteCalculatorPanel from '@/components/panels/QuoteCalculatorPanel';
+import { OptimizationHistoryPanel } from '@/components/panels/OptimizationHistoryPanel';
 
 export default function Home() {
   return (
@@ -19,6 +20,11 @@ export default function Home() {
           <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
 
           <QuoteCalculatorPanel />
+
+          {/* 섹션 구분선 */}
+          <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
+
+          <OptimizationHistoryPanel />
         </div>
       </aside>
 

@@ -123,6 +123,27 @@ export async function POST(request: NextRequest) {
       waypoints,
     };
 
+    // 최적화 실행 결과를 데이터베이스에 저장 (비동기, 에러 무시)
+    try {
+      const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/optimization-runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestData: { origins, destinations, vehicleType, optimizeOrder, departureAt, useRealtimeTraffic },
+          resultData: routeData
+        })
+      });
+      
+      if (saveResponse.ok) {
+        console.log('최적화 실행 결과가 저장되었습니다');
+      } else {
+        console.warn('최적화 실행 결과 저장 실패:', saveResponse.status);
+      }
+    } catch (saveError) {
+      console.warn('최적화 실행 결과 저장 중 오류:', saveError);
+      // 저장 실패는 사용자 경험에 영향을 주지 않음
+    }
+
     return NextResponse.json({
       success: true,
       data: routeData

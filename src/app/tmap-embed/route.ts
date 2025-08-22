@@ -5,7 +5,7 @@ export async function GET() {
   const nextPublicKey = process.env.NEXT_PUBLIC_TMAP_API_KEY
   const tmapKey = process.env.TMAP_API_KEY
   const appKey = nextPublicKey || tmapKey || ''
-  
+
   // 디버깅용 로그 (프로덕션에서는 제거 필요)
   console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY exists:', !!nextPublicKey)
   console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY length:', nextPublicKey?.length || 0)
