@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
 import { Loading } from '@/components/ui/Loading';
 
 interface OptimizationRun {
@@ -49,11 +49,11 @@ export function OptimizationHistoryPanel() {
   const fetchHistory = async (limit = 10, offset = 0) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`/api/optimization-runs?limit=${limit}&offset=${offset}`);
       const result = await response.json();
-      
+
       if (result.success) {
         setData(result.data);
       } else {
@@ -168,8 +168,8 @@ export function OptimizationHistoryPanel() {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">최근 실행 기록</h3>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             variant="outline"
             onClick={() => fetchHistory()}
           >
@@ -180,16 +180,15 @@ export function OptimizationHistoryPanel() {
         {data?.runs && data.runs.length > 0 ? (
           <div className="space-y-3">
             {data.runs.map((run) => (
-              <div 
-                key={run.id} 
+              <div
+                key={run.id}
                 className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
                 onClick={() => handleShowDetails(run)}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      run.vehicle_type === '레이' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                    }`}>
+                    <span className={`px-2 py-1 text-xs rounded-full ${run.vehicle_type === '레이' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                      }`}>
                       {run.vehicle_type}
                     </span>
                     {run.optimize_order && (
@@ -207,7 +206,7 @@ export function OptimizationHistoryPanel() {
                     {formatDate(run.created_at)}
                   </span>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <span className="text-gray-600">거리:</span>
@@ -240,8 +239,8 @@ export function OptimizationHistoryPanel() {
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">최적화 실행 상세 정보</h3>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={handleCloseDetails}
               >
@@ -275,19 +274,19 @@ export function OptimizationHistoryPanel() {
                 <h4 className="font-medium mb-2">사용 옵션</h4>
                 <div className="space-y-2">
                   <div className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedRun.optimize_order} 
-                      readOnly 
+                    <input
+                      type="checkbox"
+                      checked={selectedRun.optimize_order}
+                      readOnly
                       className="rounded"
                     />
                     <span>순서 최적화</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedRun.used_traffic} 
-                      readOnly 
+                    <input
+                      type="checkbox"
+                      checked={selectedRun.used_traffic}
+                      readOnly
                       className="rounded"
                     />
                     <span>실시간 교통정보</span>
@@ -322,7 +321,7 @@ export function OptimizationHistoryPanel() {
                         <span className="ml-2">{selectedRun.result_data.waypoints?.length || 0}개</span>
                       </div>
                     </div>
-                    
+
                     {selectedRun.result_data.summary?.optimizationInfo && (
                       <div className="mt-2 p-2 bg-green-50 rounded">
                         <span className="text-green-800 font-medium">최적화 정보:</span>

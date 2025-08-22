@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/libs/supabase/server';
+import { createServerClient } from '@/libs/supabase-client';
 
 // 최적화 실행 결과 저장
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = createServerClient();
     const body = await request.json();
     
     const {
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
 // 최적화 실행 결과 목록 조회
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
     
     // 쿼리 파라미터

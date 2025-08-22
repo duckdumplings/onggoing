@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/libs/supabase/server';
+import { createServerClient } from '@/libs/supabase-client';
 
 // 개별 최적화 실행 결과 조회
 export async function GET(
@@ -7,7 +7,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createClient();
+    const supabase = createServerClient();
     const { id } = params;
 
     if (!id) {
@@ -72,7 +72,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createClient();
+    const supabase = createServerClient();
     const { id } = params;
 
     if (!id) {
