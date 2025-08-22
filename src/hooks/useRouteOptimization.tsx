@@ -94,35 +94,49 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
   const optimizeRouteWith = useCallback(async (override?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
     const payload = buildPayload(override);
+    console.log('[useRouteOptimization] optimizeRouteWith 호출됨, payload:', payload);
     lastPayloadRef.current = payload;
+
     if (!payload.origins?.length || !payload.destinations?.length) {
+      console.log('[useRouteOptimization] 유효하지 않은 payload:', { origins: payload.origins, destinations: payload.destinations });
       setError('출발지와 목적지를 입력하세요.');
       return;
     }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setIsLoading(true);
     setError(null);
+
     try {
+      console.log('[useRouteOptimization] API 호출 시작:', '/api/route-optimization');
       const res = await fetch('/api/route-optimization', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
+
+      console.log('[useRouteOptimization] API 응답 상태:', res.status, res.ok);
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error || `HTTP_${res.status}`);
       }
+
       const data = await res.json();
+      console.log('[useRouteOptimization] API 응답 데이터:', data);
+
       if (data?.success && data?.data) {
+        console.log('[useRouteOptimization] routeData 설정:', data.data);
         setRouteData(data.data as RouteData);
       } else {
         throw new Error('INVALID_RESPONSE');
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') return; // 취소
+      console.error('[useRouteOptimization] API 호출 오류:', e);
       setError(e?.message || '경로 최적화 실패');
     } finally {
       setIsLoading(false);

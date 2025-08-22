@@ -44,18 +44,18 @@ export default function TmapMainMap() {
   }, [origins, destinations, options?.useExplicitDestination, routeData]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full map-container" style={{ height: '100vh', margin: 0, padding: 0 }}>
       <TmapMap
         routeData={routeData as any}
         waypoints={waypoints as any}
         useExplicitDestination={options?.useExplicitDestination}
         className="w-full"
-        height="h-full"
+        height="h-screen"
       />
 
       {/* 우측 하단 오버레이 - 경로 정보 */}
       {routeData?.summary && (
-        <div className="absolute bottom-4 right-4">
+        <div className="absolute bottom-6 right-6">
           <div className="bg-white/90 backdrop-blur-md border border-white/50 shadow-xl rounded-2xl p-4 min-w-[280px]">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -84,6 +84,33 @@ export default function TmapMainMap() {
                 <span className="font-bold text-gray-900">
                   {waypoints?.length ? waypoints.length - 2 : 0}개
                 </span>
+              </div>
+
+              {/* 최적화 상태 및 차량 타입 정보 */}
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <div className="flex justify-between items-center py-1 px-2 bg-blue-50/50 rounded text-xs">
+                  <span className="text-blue-600 font-medium">최적화</span>
+                  <span className="text-blue-800 font-semibold">
+                    {(routeData.summary as any)?.optimizeOrder ? '🔄 자동 순서' : '📍 수동 순서'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center py-1 px-2 bg-green-50/50 rounded text-xs">
+                  <span className="text-green-600 font-medium">차량</span>
+                  <span className="text-green-800 font-semibold">
+                    {(routeData.summary as any)?.vehicleTypeCode === '2' ? '🚐 스타렉스' : '🚗 레이'}
+                  </span>
+                </div>
+
+                {/* 최적화 효과 표시 */}
+                {(routeData.summary as any)?.optimizationInfo && (
+                  <div className="flex justify-between items-center py-1 px-2 bg-purple-50/50 rounded text-xs">
+                    <span className="text-purple-600 font-medium">절약 거리</span>
+                    <span className="text-purple-800 font-semibold">
+                      +{((routeData.summary as any).optimizationInfo.distanceSaved / 1000).toFixed(1)}km
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -17,6 +17,8 @@ export default function RouteOptimizerPanel() {
     options,
     setOptions,
     setOrigins,
+    vehicleType,
+    setVehicleType,
   } = useRouteOptimization();
 
   // 선택 상태
@@ -106,21 +108,85 @@ export default function RouteOptimizerPanel() {
           </div>
 
           {/* 자동 순서 최적화 / 도착지 토글 */}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="accent-blue-600"
-                checked={optimizeOrder}
-                onChange={(e) => setOptimizeOrder(e.target.checked)}
-              />
-              자동 순서 최적화
-              <span className="text-gray-400">(기본 OFF)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" className="accent-blue-600" checked={useExplicitDestination} onChange={(e) => setUseExplicitDestination(e.target.checked)} />
-              도착지 별도 설정
-            </label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="accent-blue-600"
+                  checked={optimizeOrder}
+                  onChange={(e) => setOptimizeOrder(e.target.checked)}
+                />
+                자동 순서 최적화
+                <span className="text-gray-400">(기본 OFF)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" className="accent-blue-600" checked={useExplicitDestination} onChange={(e) => setUseExplicitDestination(e.target.checked)} />
+                도착지 별도 설정
+              </label>
+            </div>
+          </div>
+
+          {/* 차량 타입 선택 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700">차량 타입</label>
+            <div className="flex gap-2">
+              {/* 레이 버튼 */}
+              <button
+                type="button"
+                onClick={() => setVehicleType('레이')}
+                className={`relative px-2 py-1.5 rounded-md border-2 transition-all duration-200 group flex-1 ${vehicleType === '레이'
+                  ? 'border-blue-500 bg-blue-50 shadow-sm'
+                  : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-25'
+                  }`}
+              >
+                <div className="text-center space-y-0.5">
+                  <div className="text-base">🚗</div>
+                  <div className="font-medium text-xs text-gray-900">레이</div>
+                  <div className="text-xs text-gray-500">승용차</div>
+                </div>
+
+                {/* 선택 표시 */}
+                {vehicleType === '레이' && (
+                  <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center">
+                    <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+
+                {/* 호버 효과 */}
+                <div className="absolute inset-0 rounded-md bg-gradient-to-br from-blue-500/0 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              </button>
+
+              {/* 스타렉스 버튼 */}
+              <button
+                type="button"
+                onClick={() => setVehicleType('스타렉스')}
+                className={`relative px-2 py-1.5 rounded-md border-2 transition-all duration-200 group flex-1 ${vehicleType === '스타렉스'
+                  ? 'border-blue-500 bg-blue-50 shadow-sm'
+                  : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-25'
+                  }`}
+              >
+                <div className="text-center space-y-0.5">
+                  <div className="text-base">🚐</div>
+                  <div className="font-medium text-xs text-gray-900">스타렉스</div>
+                  <div className="text-xs text-gray-500">화물차</div>
+                </div>
+
+                {/* 선택 표시 */}
+                {vehicleType === '스타렉스' && (
+                  <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full flex items-center justify-center">
+                    <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+
+                {/* 호버 효과 */}
+                <div className="absolute inset-0 rounded-md bg-gradient-to-br from-blue-500/0 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              </button>
+            </div>
           </div>
 
           {/* 드래그 앤 드롭 목적지 리스트 */}
@@ -309,15 +375,21 @@ export default function RouteOptimizerPanel() {
 
           <button
             onClick={async () => {
+              console.log('[RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
               setLocalError(null);
+
               if (!originSelection) {
+                console.log('[RouteOptimizerPanel] 출발지가 선택되지 않음');
                 setLocalError('출발지를 먼저 선택하세요.');
                 return;
               }
 
               // waypoints에서 유효한 목적지 추출
               const validWaypoints = waypoints.filter(w => w.selection);
+              console.log('[RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
+
               if (validWaypoints.length === 0) {
+                console.log('[RouteOptimizerPanel] 유효한 목적지가 없음');
                 setLocalError('목적지를 하나 이상 추가하세요.');
                 return;
               }
@@ -330,17 +402,20 @@ export default function RouteOptimizerPanel() {
                   destinations.push(point);
                 }
               }
+              console.log('[RouteOptimizerPanel] 중복 제거된 destinations:', destinations);
 
               // 도착지 별도 설정이 켜진 경우 마지막에 도착지를 붙임
               const finalDest = useExplicitDestination && destinationSelection
                 ? [...destinations, { lat: destinationSelection.latitude, lng: destinationSelection.longitude }]
                 : destinations;
+              console.log('[RouteOptimizerPanel] 최종 destinations:', finalDest);
 
               // 체류시간 수집
               const dwellMinutes = validWaypoints.map(w => w.dwellTime);
+              console.log('[RouteOptimizerPanel] 체류시간:', dwellMinutes);
 
               // 디버그: 최적화 옵션 확인
-              console.log('Optimization options debug:', {
+              console.log('[RouteOptimizerPanel] Optimization options debug:', {
                 optimizeOrder,
                 useRealtimeTraffic,
                 departureDateTime,
@@ -352,6 +427,7 @@ export default function RouteOptimizerPanel() {
               setDwellMinutes(dwellMinutes);
               setDestinations(finalDest);
 
+              console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 시작');
               await optimizeRouteWith({
                 origins: originSelection ? { lat: originSelection.latitude, lng: originSelection.longitude } : null,
                 destinations: finalDest,
@@ -363,6 +439,7 @@ export default function RouteOptimizerPanel() {
                 },
                 dwellMinutes
               });
+              console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 완료');
 
               // 자동견적 영역으로 스크롤
               setTimeout(() => {

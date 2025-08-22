@@ -19,7 +19,7 @@ export default function TmapMap({
   waypoints,
   useExplicitDestination = false,
   className = 'w-full',
-  height = 'h-96',
+  height = 'h-screen',
 }: TmapMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -52,12 +52,21 @@ export default function TmapMap({
         iframe.src = `/tmap-embed.html?appKey=${encodeURIComponent(process.env.NEXT_PUBLIC_TMAP_API_KEY || '')}`;
       }
       iframe.onload = () => {
+        console.log('[TmapMap] iframe loaded successfully');
         setReady(true);
         // 초기 중심 전달
         iframe.contentWindow?.postMessage({ type: 'init', center }, '*');
       };
+
+      iframe.onerror = (err) => {
+        console.error('[TmapMap] iframe load error:', err);
+        setError('지도 로딩 실패');
+      };
+
       containerRef.current.appendChild(iframe);
       iframeRef.current = iframe;
+
+      console.log('[TmapMap] iframe appended to container');
     }
 
     return () => {
@@ -72,16 +81,31 @@ export default function TmapMap({
 
   // 경로 그리기
   useEffect(() => {
-    if (!ready || !iframeRef.current) return;
+    if (!ready || !iframeRef.current) {
+      console.log('[TmapMap] iframe not ready:', { ready, iframeRef: !!iframeRef.current });
+      return;
+    }
+
+    console.log('[TmapMap] Drawing route/waypoints:', { routeData, waypoints, center });
 
     // waypoints 데이터를 그대로 사용 (TmapMainMap에서 이미 올바르게 설정됨)
     const enhancedWaypoints = waypoints;
 
     // 임베드된 iframe에 postMessage로 경로 그리기 전달
     const message = { type: 'route', routeData, center, waypoints: enhancedWaypoints };
-    console.log('[TmapMap] Sending message:', message); // 디버깅 로그 추가
-    iframeRef.current.contentWindow?.postMessage(message, '*');
-  }, [ready, routeData, waypoints?.length, useExplicitDestination]);
+    console.log('[TmapMap] Sending message to iframe:', message);
+
+    try {
+      if (iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(message, '*');
+        console.log('[TmapMap] Message sent successfully to iframe');
+      } else {
+        console.error('[TmapMap] iframe contentWindow is null');
+      }
+    } catch (error) {
+      console.error('[TmapMap] Failed to send message to iframe:', error);
+    }
+  }, [ready, routeData, waypoints, center]);
 
   if (error) {
     return (
@@ -95,11 +119,18 @@ export default function TmapMap({
   }
 
   return (
-    <div className={`${className} ${height} relative`}>
-      <div ref={containerRef} className="w-full h-full" />
-      {!ready && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/60 text-gray-700">
-          Tmap 로딩 중...
+    <div className={`${className} ${height} map-container`} style={{ height: '100vh', margin: 0, padding: 0 }}>
+      <div
+        ref={containerRef}
+        className="w-full h-full"
+        style={{ height: '100vh', margin: 0, padding: 0 }}
+      />
+      {error && (
+        <div className="absolute inset-0 bg-white/90 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-red-600 font-semibold">지도 오류</div>
+            <div className="text-gray-600 text-sm">{error}</div>
+          </div>
         </div>
       )}
     </div>

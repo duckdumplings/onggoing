@@ -102,10 +102,24 @@ export async function POST(request: NextRequest) {
       current = dest;
     }
 
+    // 최적화된 경유지 순서 정보 생성
+    const optimizationInfo = optimizeOrder ? {
+      originalOrder: destinations.map((d: any, i: number) => ({ index: i, address: d.address })),
+      optimizedOrder: orderedDestinations.map((d: any, i: number) => ({ index: i, address: d.address })),
+      distanceSaved: calculateDistanceSavings(startLocation, destinationCoords, orderedDestinations),
+    } : null;
+
     const routeData = {
       type: 'FeatureCollection',
       features: segmentFeatures,
-      summary: { totalDistance, totalTime, optimizeOrder, usedTraffic, vehicleTypeCode },
+      summary: {
+        totalDistance,
+        totalTime,
+        optimizeOrder,
+        usedTraffic,
+        vehicleTypeCode,
+        optimizationInfo
+      },
       waypoints,
     };
 
@@ -353,6 +367,34 @@ function nearestNeighborOrder(
     cur = { lat: chosen.latitude, lng: chosen.longitude }
   }
   return ordered
+}
+
+// 최적화로 절약된 거리 계산
+function calculateDistanceSavings(
+  start: { latitude: number; longitude: number },
+  originalOrder: Array<{ latitude: number; longitude: number; address: string }>,
+  optimizedOrder: Array<{ latitude: number; longitude: number; address: string }>
+): number {
+  // 원래 순서로 계산된 총 거리
+  let originalDistance = 0;
+  let current = start;
+
+  for (const dest of originalOrder) {
+    originalDistance += haversineMeters(current.latitude, current.longitude, dest.latitude, dest.longitude);
+    current = dest;
+  }
+
+  // 최적화된 순서로 계산된 총 거리
+  let optimizedDistance = 0;
+  current = start;
+
+  for (const dest of optimizedOrder) {
+    optimizedDistance += haversineMeters(current.latitude, current.longitude, dest.latitude, dest.longitude);
+    current = dest;
+  }
+
+  // 절약된 거리 (미터 단위)
+  return Math.max(0, originalDistance - optimizedDistance);
 }
 
 export async function GET() {

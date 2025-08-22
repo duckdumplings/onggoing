@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { usePoiCache } from '@/hooks/usePoiCache'
 
 export type AddressSelection = {
   name: string
@@ -25,6 +26,9 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   const [highlight, setHighlight] = useState(0)
   const [isEditing, setIsEditing] = useState(false) // 수정 모드 상태 추가
 
+  // POI 캐싱 시스템 사용
+  const { getFromCache, setCache, checkRateLimit, recordApiCall, rateLimit } = usePoiCache()
+
   const debouncedQuery = useDebounce(query, 300)
 
   useEffect(() => {
@@ -34,11 +38,28 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       setSuggestions([])
       return
     }
+
+    // 먼저 캐시에서 검색
+    const cachedResults = getFromCache(q)
+    if (cachedResults) {
+      console.log('[AddressAutocomplete] Using cached results for:', q)
+      setSuggestions(cachedResults)
+      return
+    }
+
+    // 레이트리밋 체크
+    if (checkRateLimit()) {
+      console.warn('[AddressAutocomplete] Rate limit reached, showing cached results only')
+      setSuggestions([])
+      return
+    }
+
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     setLoading(true)
     console.log('[AddressAutocomplete] Starting fetch for:', q) // 디버깅 로그
+
     fetch(`/api/poi-search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
       .then((r) => {
         console.log('[AddressAutocomplete] Fetch response:', r.status, r.ok) // 디버깅 로그
@@ -46,20 +67,39 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       })
       .then((d) => {
         console.log('[AddressAutocomplete] Fetch data:', d) // 디버깅 로그
-        return Array.isArray(d.suggestions) ? setSuggestions(d.suggestions) : setSuggestions([])
+        const suggestions = Array.isArray(d.suggestions) ? d.suggestions : []
+
+        // 성공적인 결과를 캐시에 저장
+        if (suggestions.length > 0) {
+          setCache(q, suggestions)
+          recordApiCall() // API 호출 기록
+        }
+
+        setSuggestions(suggestions)
       })
       .catch((err) => {
         console.log('[AddressAutocomplete] Fetch error:', err) // 디버깅 로그
         setSuggestions([])
       })
       .finally(() => setLoading(false))
-  }, [debouncedQuery])
+  }, [debouncedQuery, getFromCache, setCache, checkRateLimit, recordApiCall])
 
   const handleSelect = (s: AddressSelection) => {
     console.log('[AddressAutocomplete] handleSelect called with:', s)
     onSelect(s)
-    // 입력란에는 상호명이 있으면 상호명 우선 표시
-    const label = s.name && s.name.trim().length > 0 ? s.name : (s.address || '')
+
+    // 입력란에는 상호명이 있으면 상호명 우선 표시, 불필요한 "역" 텍스트 제거
+    let label = s.name && s.name.trim().length > 0 ? s.name : (s.address || '')
+
+    // 불필요한 "역" 텍스트 제거 (예: "회기역[1호선]역" -> "회기역[1호선]")
+    if (label.endsWith('역') && label.length > 1) {
+      const withoutLast = label.slice(0, -1)
+      if (withoutLast.endsWith('역')) {
+        // 이미 "역"이 포함되어 있으면 마지막 "역" 제거
+        label = withoutLast
+      }
+    }
+
     console.log('[AddressAutocomplete] Setting query to:', label)
     setQuery(label)
     setOpen(false)
@@ -131,15 +171,15 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
           // 입력값이 기존 선택과 다르면 수정 모드 활성화
           if (value && newValue !== (value.name || value.address)) {
             setIsEditing(true)
-            onSelect(null) // 선택 초기화
+            // onSelect(null) 제거하여 재열림 방지
           } else if (!value && newValue.length >= 2) {
             // 새로운 검색 시작
             setIsEditing(true)
           }
         }}
         onFocus={() => {
-          // 수정 모드일 때만 드롭다운 열기
-          if (suggestions.length > 0 && isEditing) {
+          // 수정 모드이거나 제안이 있을 때 드롭다운 열기
+          if (isEditing || suggestions.length > 0) {
             setOpen(true)
           }
         }}
