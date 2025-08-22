@@ -131,31 +131,8 @@ export async function POST(request: NextRequest) {
       waypoints,
     };
 
-    // 최적화 실행 결과를 데이터베이스에 저장 (비동기, 에러 무시)
-    try {
-      console.log('최적화 실행 결과 저장 시작...');
-      const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/optimization-runs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestData: { origins, destinations, vehicleType, optimizeOrder, departureAt, useRealtimeTraffic },
-          resultData: routeData
-        })
-      });
-
-      console.log('저장 응답 상태:', saveResponse.status);
-
-      if (saveResponse.ok) {
-        const saveResult = await saveResponse.json();
-        console.log('최적화 실행 결과가 저장되었습니다:', saveResult);
-      } else {
-        const errorText = await saveResponse.text();
-        console.warn('최적화 실행 결과 저장 실패:', saveResponse.status, errorText);
-      }
-    } catch (saveError) {
-      console.warn('최적화 실행 결과 저장 중 오류:', saveError);
-      // 저장 실패는 사용자 경험에 영향을 주지 않음
-    }
+    // 최적화 실행 결과 저장 로직 제거 - 고도화 필요로 인한 일시 중단
+    // 추후 견적서 PDF/모달 생성 시에만 이력 저장 예정
 
     return NextResponse.json({
       success: true,

@@ -1,55 +1,418 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
+import React, { useState, useEffect } from 'react';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import {
+  perJobBasePrice,
+  perJobRegularPrice,
+  STOP_FEE,
+  fuelSurchargeHourly,
+  pickHourlyRate,
+  roundUpTo30Minutes,
+  fuelSurchargeHourlyCorrect,
+  estimatedFuelCost,
+  highwayTollCost
+} from '@/domains/quote/pricing';
+
+// jsPDF 동적 import
+let jsPDF: any = null;
+let html2canvas: any = null;
+
+const loadPDFLibraries = async () => {
+  if (!jsPDF) {
+    const jsPDFModule = await import('jspdf');
+    jsPDF = jsPDFModule.default;
+  }
+  if (!html2canvas) {
+    const html2canvasModule = await import('html2canvas');
+    html2canvas = html2canvasModule.default;
+  }
+};
 
 export default function QuoteCalculatorPanel() {
-  const { routeData, dwellMinutes, destinations } = useRouteOptimization();
+  const { routeData, dwellMinutes, destinations, origins } = useRouteOptimization();
   const [total, setTotal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<any | null>(null);
-  const [plans, setPlans] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'settings'>('summary');
   const [vehicle, setVehicle] = useState<'ray' | 'starex'>('ray');
-  const [scheduleType, setScheduleType] = useState<'regular' | 'ad-hoc'>('ad-hoc');
+  const [scheduleType, setScheduleType] = useState<'ad-hoc' | 'regular'>('ad-hoc'); // 비정기 기본값
+  const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob'>('summary');
+  const [plans, setPlans] = useState<any>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [effectiveStopsCount, setEffectiveStopsCount] = useState<number>(0);
 
-  const stopsCount = useMemo(() => Math.max(0, (destinations?.length || 0) - 1), [destinations]);
-
+  // 견적 계산 (임시로 하드코딩)
   useEffect(() => {
     if (!routeData?.summary) return;
     const { totalDistance, totalTime } = routeData.summary as any;
-    const call = async () => {
-      setLoading(true); setError(null);
-      try {
-        const res = await fetch('/api/quote-calculation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            distance: totalDistance,
-            time: totalTime,
-            vehicleType: vehicle === 'starex' ? '스타렉스' : '레이',
-            dwellMinutes,
-            stopsCount,
-            scheduleType
-          })
-        });
-        const data = await res.json();
-        if (data?.success) {
-          setTotal(data.quote.formattedTotal);
-          setDetail(data.quote.breakdown);
-          setPlans(data.plans);
-        } else {
-          setError(data?.error?.message || '견적 계산 실패');
-        }
-      } catch (e: any) {
-        setError(e?.message || '네트워크 오류');
-      } finally {
-        setLoading(false);
+
+    // pricing.ts의 기존 요금표 사용 (하드코딩 금지)
+    const distanceKm = (totalDistance || 0) / 1000;
+    const driveMinutes = Math.ceil((totalTime || 0) / 60);
+    const dwellTotalMinutes = dwellMinutes.reduce((a, b) => a + b, 0);
+    const totalBillMinutes = driveMinutes + dwellTotalMinutes;
+
+    // 시간당 요금제 계산 (pricing.ts HOURLY_RATE_TABLE 사용)
+    // 체류시간 포함 총 운행시간으로 계산, 최소 2시간(120분) 보장, 30분 단위 올림
+    const billMinutes = roundUpTo30Minutes(totalBillMinutes); // 최소 2시간 보장 후 30분 단위 올림
+    const hourlyRate = pickHourlyRate(vehicle, billMinutes);
+    const hourlyTotal = Math.round((billMinutes / 60) * hourlyRate);
+    // 1,000원 단위 맞춤
+    const hourlyTotalRounded = Math.ceil(hourlyTotal / 1000) * 1000;
+    // 시간당 요금제에는 유류할증 적용 (과금시간 기반)
+    const hourlyTotalWithFuel = hourlyTotalRounded + fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes);
+    const hourlyTotalFinal = hourlyTotalWithFuel;
+
+    // 단건 요금제 계산 (pricing.ts PER_JOB_TABLE 사용)
+    // 체류시간 무시, 정기/비정기 구분
+    const perJobBase = scheduleType === 'regular'
+      ? perJobRegularPrice(vehicle, distanceKm)  // 정기: 가산율 적용
+      : perJobBasePrice(vehicle, distanceKm);    // 비정기: 기본 요금
+
+    // 경유지 요금: 출발지/도착지 제외한 경유지만 계산
+    // 정기일 때는 경유지 요금도 가산율 적용
+    const stopsCount = destinations?.length || 0; // destinations 배열 길이로 경유지 수 계산
+    const calculatedEffectiveStopsCount = Math.max(0, stopsCount - 1); // 출발지/도착지 제외
+    setEffectiveStopsCount(calculatedEffectiveStopsCount);
+    let perJobStopFee;
+    if (scheduleType === 'regular') {
+      if (vehicle === 'ray') {
+        // 레이 정기: 스타렉스 기준
+        perJobStopFee = calculatedEffectiveStopsCount * STOP_FEE.starex;
+      } else {
+        // 스타렉스 정기: 기본 요금에 가산율 적용
+        perJobStopFee = calculatedEffectiveStopsCount * Math.round(STOP_FEE.starex * 1.2);
       }
-    };
-    call();
-  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, scheduleType, stopsCount, dwellMinutes.join(',')]);
+    } else {
+      // 비정기: 차종별 기본 요금
+      perJobStopFee = calculatedEffectiveStopsCount * STOP_FEE[vehicle];
+    }
+
+    const perJobTotal = perJobBase + perJobStopFee;
+
+    // 요약 탭용: 더 높은 금액 표기
+    const summaryTotal = Math.max(hourlyTotalFinal, perJobTotal);
+    const formattedTotal = `₩${summaryTotal.toLocaleString()}`;
+
+    // 선택된 요금제 결정 (더 낮은 금액)
+    const selectedPlan = hourlyTotalFinal <= perJobTotal ? 'perJob' : 'hourly';
+
+    setTotal(formattedTotal);
+
+    // 견적 상세 정보 설정 (pricing.ts 요금표 기준)
+    setPlans({
+      hourly: {
+        total: `₩${hourlyTotalFinal.toLocaleString()}`,
+        formatted: `₩${hourlyTotal.toLocaleString()}`,
+        ratePerHour: hourlyRate,
+        billMinutes: billMinutes,
+        fuelCost: fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes) // 시간당 요금제 유류할증
+      },
+      perJob: {
+        total: `₩${perJobTotal.toLocaleString()}`,
+        formatted: `₩${perJobTotal.toLocaleString()}`,
+        base: perJobBase,
+        stopFee: perJobStopFee,
+        baseEffective: perJobTotal
+      }
+    });
+
+    setDetail({
+      km: distanceKm,
+      driveMinutes: driveMinutes,
+      dwellTotalMinutes: dwellTotalMinutes,
+      hourlyRate: hourlyRate,
+      hourlyTotal: hourlyTotal,
+      hourlyTotalFinal: hourlyTotalFinal,
+      billMinutes: billMinutes,
+      perJobBase: perJobBase,
+      perJobStopFee: perJobStopFee,
+      perJobTotal: perJobTotal,
+      fuelCost: fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes), // 시간당 요금제 유류할증
+      estimatedFuelCost: estimatedFuelCost(vehicle, distanceKm), // 실제 예상 유류비
+      highwayTollCost: highwayTollCost(distanceKm), // 하이패스 비용
+      selectedPlan: selectedPlan
+    });
+  }, [routeData?.summary?.totalDistance, routeData?.summary?.totalTime, vehicle, scheduleType, dwellMinutes.join(',')]);
+
+  const stopsCount = destinations?.length || 0;
+
+  // 클라이언트 사이드 PDF 생성 (탭별 데이터 기반)
+  const generateClientSidePDF = async (tab: string = 'summary') => {
+    try {
+      console.log('PDF 생성 시작:', { tab, plans, detail, total });
+      await loadPDFLibraries();
+
+      // 탭별 HTML 내용 생성
+      let quoteHTML = '';
+
+      if (tab === 'summary') {
+        quoteHTML = generateSummaryHTML();
+      } else if (tab === 'hourly') {
+        quoteHTML = generateHourlyHTML();
+      } else if (tab === 'perjob') {
+        quoteHTML = generatePerJobHTML();
+      }
+
+      // 임시 div 생성
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = quoteHTML;
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.left = '-9999px';
+      tempDiv.style.top = '-9999px';
+      document.body.appendChild(tempDiv);
+
+      // HTML을 캔버스로 변환 (PDF 생성 최적화)
+      const canvas = await html2canvas(tempDiv, {
+        scale: 1.5, // 적절한 해상도
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false, // 로깅 비활성화로 성능 향상
+        width: 800,
+        height: 1200,
+        letterRendering: true,
+        foreignObjectRendering: true,
+        removeContainer: true, // 컨테이너 제거로 깔끔한 렌더링
+        imageTimeout: 5000, // 이미지 타임아웃 단축
+        onclone: (clonedDoc: any) => {
+          // 클론된 문서에서 스타일 최적화
+          const clonedElement = clonedDoc.querySelector('div');
+          if (clonedElement) {
+            clonedElement.style.fontFamily = "'Malgun Gothic', '맑은 고딕', Arial, sans-serif";
+            clonedElement.style.lineHeight = '1.6';
+            clonedElement.style.letterSpacing = '0.5px';
+            clonedElement.style.color = '#000000';
+            clonedElement.style.backgroundColor = '#ffffff';
+            clonedElement.style.width = '800px';
+            clonedElement.style.margin = '0';
+            clonedElement.style.padding = '20px';
+          }
+        }
+      });
+
+      // 임시 div 제거
+      document.body.removeChild(tempDiv);
+
+      // PDF 생성 (품질 개선)
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgData = canvas.toDataURL('image/png', 0.95); // PNG로 변경하여 품질 향상
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      // 페이지 크기에 맞게 이미지 추가
+      if (pdfHeight > pdf.internal.pageSize.getHeight()) {
+        // 여러 페이지로 분할
+        let heightLeft = pdfHeight;
+        let position = 0;
+        let page = 1;
+
+        while (heightLeft >= pdf.internal.pageSize.getHeight()) {
+          pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
+          heightLeft -= pdf.internal.pageSize.getHeight();
+          position -= pdf.internal.pageSize.getHeight();
+
+          if (heightLeft >= pdf.internal.pageSize.getHeight()) {
+            pdf.addPage();
+            page++;
+          }
+        }
+
+        if (heightLeft > 0) {
+          pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
+        }
+      } else {
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      }
+
+      // 파일명 생성
+      const now = new Date();
+      const filename = `quote_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}.pdf`;
+
+      // PDF 다운로드
+      pdf.save(filename);
+
+    } catch (error) {
+      console.error('클라이언트 PDF 생성 오류:', error);
+      alert('PDF 생성에 실패했습니다. 다시 시도해주세요.');
+    }
+  };
+
+  // 요약 탭 HTML 생성
+  const generateSummaryHTML = () => {
+    const isPerJobRecommended = plans?.hourly?.total && plans?.perJob?.total
+      ? plans.hourly.total > plans.perJob.total
+      : false;
+    const stopsCount = destinations?.length || 0;
+
+    return `
+    <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
+      <h1 style="text-align: center; color: #1f2937; border-bottom: 3px solid #1f2937; padding-bottom: 20px;">
+        옹고잉 물류 견적서 - 요약
+      </h1>
+      
+      <div style="text-align: center; background: #059669; color: white; padding: 30px; border-radius: 15px; margin: 30px 0; font-size: 24px; font-weight: bold;">
+        총 견적: ${total}
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">견적 요약</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0;">
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-weight: bold; color: #64748b; font-size: 14px;">차종</div>
+            <div style="font-size: 16px; color: #1f2937;">${vehicle === 'starex' ? '스타렉스' : '레이'}</div>
+          </div>
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-weight: bold; color: #64748b; font-size: 14px;">총 거리</div>
+            <div style="font-size: 16px; color: #1f2937;">${((routeData?.summary?.totalDistance || 0) / 1000).toFixed(1)}km</div>
+          </div>
+          ${!isPerJobRecommended ? `
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-weight: bold; color: #64748b; font-size: 14px;">과금시간</div>
+            <div style="font-size: 16px; color: #1f2937;">${detail?.billMinutes || 0}분</div>
+          </div>
+          ` : ''}
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-weight: bold; color: #64748b; font-size: 14px;">경유지 수</div>
+            <div style="font-size: 16px; color: #1f2937;">${stopsCount}개</div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">추천 요금제</h2>
+        <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; border: 1px solid #bae6fd;">
+          <div style="text-align: center; font-size: 18px; font-weight: bold; color: #1f2937; margin-bottom: 15px;">
+            ${plans?.hourly?.total && plans?.perJob?.total
+        ? (plans.hourly.total > plans.perJob.total ? '시간당 요금제' : '단건 요금제')
+        : '—'}
+          </div>
+          <div style="text-align: center; font-size: 24px; font-weight: bold; color: #3b82f6;">
+            ${plans?.hourly?.total && plans?.perJob?.total
+        ? (plans.hourly.total > plans.perJob.total ? plans.hourly.total : plans.perJob.total)
+        : (total ?? '—')}
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">생성일시</h2>
+        <div style="text-align: center; color: #9ca3af; font-size: 14px;">
+          ${new Date().toLocaleString('ko-KR')}
+        </div>
+      </div>
+    </div>
+  `;
+  };
+
+  // 시간당 탭 HTML 생성
+  const generateHourlyHTML = () => {
+    const stopsCount = destinations?.length || 0;
+    return `
+    <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
+      <h1 style="text-align: center; color: #1f2937; border-bottom: 3px solid #1f2937; padding-bottom: 20px;">
+        옹고잉 물류 견적서 - 시간당 요금제
+      </h1>
+      
+      <div style="text-align: center; background: #3b82f6; color: white; padding: 30px; border-radius: 15px; margin: 30px 0; font-size: 24px; font-weight: bold;">
+        시간당 총액: ${plans?.hourly?.total || '—'}
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">시간당 요금 상세</h2>
+        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div><strong>과금시간:</strong> ${plans?.hourly?.billMinutes || 0}분 (30분 단위 올림, 최소 120분)</div>
+            <div><strong>시간당 단가:</strong> ₩${(plans?.hourly?.ratePerHour || 0).toLocaleString()}</div>
+            <div><strong>기본 요금:</strong> ${plans?.hourly?.formatted || '—'}</div>
+            <div><strong>유류비 할증:</strong> ₩${(plans?.hourly?.fuelCost || 0).toLocaleString()}</div>
+            <div><strong>총액:</strong> ${plans?.hourly?.total || '—'}</div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">생성일시</h2>
+        <div style="text-align: center; color: #9ca3af; font-size: 14px;">
+          ${new Date().toLocaleString('ko-KR')}
+        </div>
+      </div>
+    </div>
+  `;
+  };
+
+  // 단건 탭 HTML 생성
+  const generatePerJobHTML = () => {
+    const stopsCount = destinations?.length || 0;
+    const additionalStopsCount = Math.max(0, stopsCount - 2); // 출발지와 도착지 제외한 추가 경유지
+    return `
+    <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
+      <h1 style="text-align: center; color: #1f2937; border-bottom: 3px solid #1f2937; padding-bottom: 20px;">
+        옹고잉 물류 견적서 - 단건 요금제
+      </h1>
+      
+      <div style="text-align: center; background: #059669; color: white; padding: 30px; border-radius: 15px; margin: 30px 0; font-size: 24px; font-weight: bold;">
+        단건 총액: ${plans?.perJob?.total || '—'}
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #059669; padding-left: 15px;">단건 요금 상세</h2>
+        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div><strong>스케줄 타입:</strong> ${scheduleType === 'regular' ? '정기' : '비정기'}</div>
+            <div><strong>기본요금(구간):</strong> ₩${(plans?.perJob?.base || 0).toLocaleString()}</div>
+            <div><strong>경유지 추가(${additionalStopsCount}개):</strong> ₩${(plans?.perJob?.stopFee || 0).toLocaleString()}</div>
+            <div><strong>총액:</strong> ${plans?.perJob?.total || '—'}</div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin: 25px 0;">
+        <h2 style="color: #1f2937; border-left: 4px solid #059669; padding-left: 15px;">생성일시</h2>
+        <div style="text-align: center; color: #9ca3af; font-size: 14px;">
+          ${new Date().toLocaleString('ko-KR')}
+        </div>
+      </div>
+    </div>
+  `;
+  };
+
+  // HTML 다운로드 함수 (직접 HTML 생성 및 다운로드)
+  const downloadHTML = async (tab: string = 'summary') => {
+    try {
+      setLoading(true);
+      console.log('HTML 다운로드 시작:', { tab, activeTab, plans, detail, total });
+
+      let htmlContent = '';
+      if (tab === 'summary') {
+        htmlContent = generateSummaryHTML();
+      } else if (tab === 'hourly') {
+        htmlContent = generateHourlyHTML();
+      } else if (tab === 'perjob') {
+        htmlContent = generatePerJobHTML();
+      }
+
+      console.log('생성된 HTML 내용:', htmlContent);
+
+      // HTML을 Blob으로 변환하여 직접 다운로드
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `quote_${tab}_${new Date().toISOString().slice(0, 10)}_${new Date().toTimeString().slice(0, 5).replace(/:/g, '')}.html`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('견적서 다운로드 오류:', error);
+      alert('견적서 생성에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!routeData?.summary) return null;
 
   return (
     <section className="glass-card border-b border-white/40 bg-gradient-to-br from-green-50/30 to-emerald-50/30 transition-all duration-300" data-section="quote">
@@ -57,12 +420,7 @@ export default function QuoteCalculatorPanel() {
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-gray-900">💰 자동 견적</h3>
           <div className="flex items-center gap-2">
-            <select
-              value={vehicle}
-              onChange={(e) => setVehicle(e.target.value as 'ray' | 'starex')}
-              className="h-8 border rounded px-2 text-sm"
-              aria-label="차종 선택"
-            >
+            <select className="h-8 border rounded px-2 text-sm" aria-label="차종 선택" value={vehicle} onChange={(e) => setVehicle(e.target.value as 'ray' | 'starex')}>
               <option value="ray">레이</option>
               <option value="starex">스타렉스</option>
             </select>
@@ -74,13 +432,34 @@ export default function QuoteCalculatorPanel() {
           <button className={`px-3 py-1 rounded ${activeTab === 'summary' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setActiveTab('summary')}>요약</button>
           <button className={`px-3 py-1 rounded ${activeTab === 'hourly' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setActiveTab('hourly')}>시간당</button>
           <button className={`px-3 py-1 rounded ${activeTab === 'perjob' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setActiveTab('perjob')}>단건</button>
-          <button className={`px-3 py-1 rounded ${activeTab === 'settings' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setActiveTab('settings')}>설정</button>
         </div>
         {loading && <div className="text-sm text-gray-500">계산 중…</div>}
         {error && <div className="text-sm text-red-600">{error}</div>}
 
         {!loading && !error && (
           <div className="bg-blue-50 rounded-lg p-3 text-sm">
+            {/* 견적서 다운로드 버튼 */}
+            <div className="mb-3">
+              <div className="flex gap-2">
+                <button
+                  disabled={true}
+                  className="flex-1 bg-gray-400 cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                  title="PDF 생성 기능은 현재 개발 중입니다"
+                >
+                  📄 PDF 생성 (개발 중)
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    downloadHTML(activeTab);
+                  }}
+                  disabled={loading || !total}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                >
+                  🌐 HTML 다운로드
+                </button>
+              </div>
+            </div>
             {activeTab === 'summary' && (
               <div>
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
@@ -93,9 +472,14 @@ export default function QuoteCalculatorPanel() {
                     </div>
                     <div className="text-lg md:text-xl font-semibold text-blue-600 mt-1">
                       {plans?.hourly?.total && plans?.perJob?.total
-                        ? (plans.hourly.total > plans.perJob.total ? plans.hourly.formatted : plans.perJob.formatted)
+                        ? (plans.hourly.total > plans.perJob.total ? plans.hourly.total : plans.perJob.total)
                         : (total ?? '—')}
                     </div>
+                    {detail?.billMinutes && plans?.hourly?.total && plans?.perJob?.total && plans.hourly.total > plans.perJob.total && (
+                      <div className="text-xs text-gray-600 mt-2">
+                        과금시간: {detail.billMinutes}분
+                      </div>
+                    )}
                   </div>
                 </div>
                 <ul className="mt-3 text-blue-800 space-y-2">
@@ -105,35 +489,69 @@ export default function QuoteCalculatorPanel() {
                   </li>
                   <li className="flex justify-between">
                     <span>총 운행시간:</span>
-                    <span className="font-medium">{(detail?.driveMinutes ?? 0) + (detail?.dwellTotalMinutes ?? 0)}분</span>
+                    <span className="font-medium">
+                      {(detail?.driveMinutes ?? 0) + (detail?.dwellTotalMinutes ?? 0)}분
+                    </span>
                   </li>
                   <li className="text-sm text-gray-600 pl-2">
                     주행 {detail?.driveMinutes ?? 0}분 · 체류 {detail?.dwellTotalMinutes ?? 0}분
                   </li>
+
                   <li className="flex justify-between">
                     <span>주행거리:</span>
                     <span className="font-medium">{(detail?.km ?? 0).toFixed?.(1)}km</span>
                   </li>
-                  {detail?.fuel && (
+                  {detail?.estimatedFuelCost && (
                     <li className="flex justify-between">
                       <span>예상 유류비:</span>
-                      <span className="font-medium">₩{detail.fuel.fuelCost.toLocaleString('ko-KR')}</span>
+                      <span className="font-medium">₩{detail.estimatedFuelCost.toLocaleString('ko-KR')}</span>
                     </li>
                   )}
+
                 </ul>
               </div>
             )}
             {activeTab === 'hourly' && plans?.hourly && (
               <div>
-                <div>과금시간: {plans.hourly.billMinutes}분 (30분 올림, 최소 120분)</div>
-                <div>시간당 단가: ₩{(plans.hourly.ratePerHour ?? 0).toLocaleString('ko-KR')}</div>
-                <div>유류비 할증: ₩{(plans.hourly.fuelSurcharge ?? 0).toLocaleString('ko-KR')}</div>
-                <div className="mt-1 font-semibold">시간당 총액: {plans.hourly.formatted}</div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>과금시간:</span>
+                    <span className="font-medium">{plans.hourly.billMinutes}분 (30분 단위 올림, 최소 120분)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>시간당 단가:</span>
+                    <span className="font-medium">₩{(plans.hourly.ratePerHour ?? 0).toLocaleString('ko-KR')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>기본 요금:</span>
+                    <span className="font-medium">{(plans.hourly.formatted ?? 0).toLocaleString('ko-KR')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>유류비 할증:</span>
+                    <span className="font-medium">₩{(plans.hourly.fuelCost ?? 0).toLocaleString('ko-KR')}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 pl-2">
+                    {detail?.km && detail?.billMinutes ? (
+                      <>
+                        기본거리: {(detail.billMinutes / 60 * 10).toFixed(1)}km
+                        {detail.km > (detail.billMinutes / 60 * 10) ? (
+                          <> · 초과거리: {(detail.km - detail.billMinutes / 60 * 10).toFixed(1)}km</>
+                        ) : (
+                          <> · 기본거리 이내</>
+                        )}
+                      </>
+                    ) : '—'}
+                  </div>
+                  <div className="border-t border-gray-200 pt-2 flex justify-between font-semibold text-lg">
+                    <span>시간당 총액:</span>
+                    <span className="text-blue-600">{plans.hourly.total}</span>
+                  </div>
+                </div>
               </div>
             )}
             {activeTab === 'perjob' && plans?.perJob && (
               <div>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-3">
                   <label className="flex items-center gap-1 text-xs text-gray-700">
                     <input type="radio" name="schedule" checked={scheduleType === 'ad-hoc'} onChange={() => setScheduleType('ad-hoc')} /> 비정기(하루)
                   </label>
@@ -141,20 +559,23 @@ export default function QuoteCalculatorPanel() {
                     <input type="radio" name="schedule" checked={scheduleType === 'regular'} onChange={() => setScheduleType('regular')} /> 정기(일주일+)
                   </label>
                 </div>
-                <div>
-                  기본요금(구간): ₩{(plans.perJob.baseEffective ?? plans.perJob.base ?? 0).toLocaleString('ko-KR')}
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>기본요금(구간):</span>
+                    <span className="font-medium">₩{(plans.perJob.base ?? 0).toLocaleString('ko-KR')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>경유지 추가({effectiveStopsCount}개):</span>
+                    <span className="font-medium">₩{(plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}</span>
+                  </div>
+                  <div className="border-t border-gray-200 pt-2 flex justify-between font-semibold text-lg">
+                    <span>단건 총액:</span>
+                    <span className="text-green-600">{plans.perJob.total}</span>
+                  </div>
                 </div>
-                <div>
-                  경유지 정액({stopsCount}개): ₩{(plans.perJob.stopFeeEffective ?? plans.perJob.stopFee ?? 0).toLocaleString('ko-KR')}
-                </div>
-                <div className="mt-1 font-semibold">단건 총액: {plans.perJob.formatted}</div>
               </div>
             )}
-            {activeTab === 'settings' && (
-              <div>
-                <div className="text-xs text-gray-700">현재 환경설정(유류가, 연비 등)은 .env 기반입니다. 추후 업로드/모달로 대체 예정.</div>
-              </div>
-            )}
+
           </div>
         )}
       </div>

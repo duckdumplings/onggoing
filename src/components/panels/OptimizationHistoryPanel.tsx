@@ -96,27 +96,41 @@ export function OptimizationHistoryPanel() {
   const handleRerun = async (run: OptimizationRun) => {
     try {
       console.log('재실행 시작:', run.request_data);
-      
-      // 요청 데이터에서 입력값 추출
-      const requestData = run.request_data;
-      
-      // 출발지와 도착지를 Coordinate 형태로 변환
-      const origins = requestData.origins?.[0] ? { lat: 0, lng: 0, address: requestData.origins[0] } : null;
-      const destinations = requestData.destinations?.map((dest: string) => ({ lat: 0, lng: 0, address: dest })) || [];
-      
-      // 최적화 실행
-      await optimizeRouteWith({
-        origins,
-        destinations,
-        vehicleType: requestData.vehicleType,
-        options: {
-          optimizeOrder: requestData.optimizeOrder,
-          useRealtimeTraffic: requestData.useRealtimeTraffic,
-          departureAt: requestData.departureAt
+
+      // 1. RouteOptimizerPanel의 입력란에 이전 설정값들을 설정
+      const setRouteOptimizerInput = (window as any).setRouteOptimizerInput;
+      if (setRouteOptimizerInput) {
+        setRouteOptimizerInput(run.request_data);
+      }
+
+      // 2. 잠시 기다린 후 최적화 실행 (입력값 설정이 완료될 때까지)
+      setTimeout(async () => {
+        try {
+          // 요청 데이터에서 입력값 추출
+          const requestData = run.request_data;
+
+          // 출발지와 도착지를 Coordinate 형태로 변환
+          const origins = requestData.origins?.[0] ? { lat: 0, lng: 0, address: requestData.origins[0] } : null;
+          const destinations = requestData.destinations?.map((dest: string) => ({ lat: 0, lng: 0, address: dest })) || [];
+
+          // 최적화 실행
+          await optimizeRouteWith({
+            origins,
+            destinations,
+            vehicleType: requestData.vehicleType,
+            options: {
+              optimizeOrder: requestData.optimizeOrder,
+              useRealtimeTraffic: requestData.useRealtimeTraffic,
+              departureAt: requestData.departureAt
+            }
+          });
+
+          handleCloseDetails();
+        } catch (error) {
+          console.error('최적화 실행 중 오류:', error);
         }
-      });
-      
-      handleCloseDetails();
+      }, 500); // 0.5초 대기
+
     } catch (error) {
       console.error('재실행 중 오류:', error);
     }
@@ -207,13 +221,13 @@ export function OptimizationHistoryPanel() {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">최근 실행 기록</h3>
-                      <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => fetchHistory()}
-            >
-              새로고침
-            </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => fetchHistory()}
+          >
+            새로고침
+          </Button>
         </div>
 
         {data?.runs && data.runs.length > 0 ? (
@@ -305,7 +319,7 @@ export function OptimizationHistoryPanel() {
                     <span className="ml-2 font-medium">{formatTime(selectedRun.total_time)}</span>
                     {selectedRun.result_data?.summary?.dwellTime && (
                       <span className="text-xs text-gray-500 ml-1">
-                        (이동: {formatTime(selectedRun.result_data.summary.travelTime || selectedRun.total_time)}, 
+                        (이동: {formatTime(selectedRun.result_data.summary.travelTime || selectedRun.total_time)},
                         체류: {formatTime(selectedRun.result_data.summary.dwellTime)})
                       </span>
                     )}
@@ -367,10 +381,23 @@ export function OptimizationHistoryPanel() {
                 </Button>
                 <Button
                   variant="danger"
-                  onClick={() => {
-                    // TODO: 삭제 로직 구현
-                    console.log('삭제:', selectedRun.id);
-                    handleCloseDetails();
+                  onClick={async () => {
+                    try {
+                      const response = await fetch(`/api/optimization-runs/${selectedRun.id}`, {
+                        method: 'DELETE'
+                      });
+
+                      if (response.ok) {
+                        console.log('기록이 삭제되었습니다');
+                        handleCloseDetails();
+                        // 목록 새로고침
+                        fetchHistory();
+                      } else {
+                        console.error('삭제 실패:', response.status);
+                      }
+                    } catch (error) {
+                      console.error('삭제 중 오류:', error);
+                    }
                   }}
                 >
                   삭제

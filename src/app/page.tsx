@@ -1,7 +1,7 @@
 import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import QuoteCalculatorPanel from '@/components/panels/QuoteCalculatorPanel';
-import { OptimizationHistoryPanel } from '@/components/panels/OptimizationHistoryPanel';
+// OptimizationHistoryPanel import 제거 - 고도화 필요로 인한 일시 중단
 
 export default function Home() {
   return (
@@ -20,11 +20,6 @@ export default function Home() {
           <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
 
           <QuoteCalculatorPanel />
-
-          {/* 섹션 구분선 */}
-          <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
-
-          <OptimizationHistoryPanel />
         </div>
       </aside>
 

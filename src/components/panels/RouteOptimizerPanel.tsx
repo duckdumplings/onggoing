@@ -21,13 +21,68 @@ export default function RouteOptimizerPanel() {
     setVehicleType,
   } = useRouteOptimization();
 
+  // 외부에서 입력값을 설정할 수 있는 함수들
+  const setInputFromHistory = useCallback((requestData: any) => {
+    console.log('setInputFromHistory 호출됨:', requestData);
+
+    // 출발지 설정
+    if (requestData.origins?.[0]) {
+      setOriginSelection({
+        latitude: 0,
+        longitude: 0,
+        address: requestData.origins[0],
+        name: requestData.origins[0]
+      });
+    }
+
+    // 차량 타입 설정
+    if (requestData.vehicleType) {
+      setVehicleType(requestData.vehicleType);
+    }
+
+    // 옵션 설정
+    if (requestData.optimizeOrder !== undefined) {
+      setOptimizeOrder(requestData.optimizeOrder);
+    }
+
+    if (requestData.useRealtimeTraffic !== undefined) {
+      setUseRealtimeTraffic(requestData.useRealtimeTraffic);
+    }
+
+    if (requestData.departureAt) {
+      setDepartureDateTime(requestData.departureAt);
+    }
+
+    // 경유지 설정 (destinations를 waypoints로 변환)
+    if (requestData.destinations && requestData.destinations.length > 0) {
+      const newWaypoints = requestData.destinations.map((dest: string, index: number) => ({
+        id: `waypoint-${index + 1}`,
+        selection: { latitude: 0, longitude: 0, address: dest, name: dest },
+        dwellTime: 10
+      }));
+      setWaypoints(newWaypoints);
+    }
+  }, [setVehicleType]);
+
+  // 전역에서 접근할 수 있도록 window 객체에 등록
+  useEffect(() => {
+    (window as any).setRouteOptimizerInput = setInputFromHistory;
+    return () => {
+      delete (window as any).setRouteOptimizerInput;
+    };
+  }, [setInputFromHistory]);
+
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
 
   // originSelection이 변경될 때 origins 동기화
   useEffect(() => {
     if (originSelection) {
-      setOrigins({ lat: originSelection.latitude, lng: originSelection.longitude });
+      setOrigins({
+        lat: originSelection.latitude,
+        lng: originSelection.longitude,
+        address: originSelection.address || originSelection.name
+      });
     } else {
       setOrigins(null);
     }
@@ -70,7 +125,7 @@ export default function RouteOptimizerPanel() {
     return date;
   };
 
-  const coordEqual = (a: { lat: number; lng: number }, b: { lat: number; lng: number }, eps = 1e-6) =>
+  const coordEqual = (a: { lat: number; lng: number; address?: string }, b: { lat: number; lng: number; address?: string }, eps = 1e-6) =>
     Math.abs(a.lat - b.lat) <= eps && Math.abs(a.lng - b.lng) <= eps;
 
   const displayOriginValue: AddressSelection | null = useMemo(() => {
@@ -395,9 +450,13 @@ export default function RouteOptimizerPanel() {
               }
 
               // 중복 제거
-              const destinations: { lat: number; lng: number }[] = [];
+              const destinations: { lat: number; lng: number; address?: string }[] = [];
               for (const waypoint of validWaypoints) {
-                const point = { lat: waypoint.selection!.latitude, lng: waypoint.selection!.longitude };
+                const point = {
+                  lat: waypoint.selection!.latitude,
+                  lng: waypoint.selection!.longitude,
+                  address: waypoint.selection!.address || waypoint.selection!.name
+                };
                 if (!destinations.some(d => coordEqual(d, point))) {
                   destinations.push(point);
                 }
@@ -406,7 +465,11 @@ export default function RouteOptimizerPanel() {
 
               // 도착지 별도 설정이 켜진 경우 마지막에 도착지를 붙임
               const finalDest = useExplicitDestination && destinationSelection
-                ? [...destinations, { lat: destinationSelection.latitude, lng: destinationSelection.longitude }]
+                ? [...destinations, {
+                  lat: destinationSelection.latitude,
+                  lng: destinationSelection.longitude,
+                  address: destinationSelection.address || destinationSelection.name
+                }]
                 : destinations;
               console.log('[RouteOptimizerPanel] 최종 destinations:', finalDest);
 
@@ -429,7 +492,11 @@ export default function RouteOptimizerPanel() {
 
               console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 시작');
               await optimizeRouteWith({
-                origins: originSelection ? { lat: originSelection.latitude, lng: originSelection.longitude } : null,
+                origins: originSelection ? {
+                  lat: originSelection.latitude,
+                  lng: originSelection.longitude,
+                  address: originSelection.address || originSelection.name
+                } : null,
                 destinations: finalDest,
                 options: {
                   useExplicitDestination,

@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
-export interface Coordinate { lat: number; lng: number }
+export interface Coordinate { lat: number; lng: number; address?: string }
 
 export interface RouteSummary {
   totalDistance: number; // meters
@@ -79,8 +79,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     const v = ovr?.vehicleType ?? vehicleType;
     const opt = { ...options, ...(ovr?.options || {}) };
     const dm = ovr?.dwellMinutes ?? dwellMinutesState;
-    const originPayload = o ? [{ latitude: o.lat, longitude: o.lng, address: 'origin' }] : [];
-    const destPayload = d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: 'dest' }));
+    const originPayload = o ? [{ latitude: o.lat, longitude: o.lng, address: o.address || 'origin' }] : [];
+    const destPayload = d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: dt.address || 'dest' }));
     return {
       origins: originPayload,
       destinations: destPayload,
