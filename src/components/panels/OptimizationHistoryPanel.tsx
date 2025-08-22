@@ -1,9 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import { Loading } from '@/components/ui/Loading';
+import { Card, Button, Loading } from '@/components/ui';
 
 interface OptimizationRun {
   id: string;
@@ -168,13 +166,13 @@ export function OptimizationHistoryPanel() {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">최근 실행 기록</h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => fetchHistory()}
-          >
-            새로고침
-          </Button>
+                      <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => fetchHistory()}
+            >
+              새로고침
+            </Button>
         </div>
 
         {data?.runs && data.runs.length > 0 ? (
@@ -241,7 +239,7 @@ export function OptimizationHistoryPanel() {
               <h3 className="text-lg font-semibold">최적화 실행 상세 정보</h3>
               <Button
                 size="sm"
-                variant="outline"
+                variant="secondary"
                 onClick={handleCloseDetails}
               >
                 닫기
