@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Loading } from '@/components/ui';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
 interface OptimizationRun {
   id: string;
@@ -42,6 +43,7 @@ export function OptimizationHistoryPanel() {
   const [error, setError] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<OptimizationRun | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const { optimizeRouteWith } = useRouteOptimization();
 
   // 최적화 실행 히스토리 조회
   const fetchHistory = async (limit = 10, offset = 0) => {
@@ -69,6 +71,15 @@ export function OptimizationHistoryPanel() {
     fetchHistory();
   }, []);
 
+  // 주기적으로 데이터 새로고침 (30초마다)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchHistory();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // 상세 정보 표시
   const handleShowDetails = (run: OptimizationRun) => {
     setSelectedRun(run);
@@ -79,6 +90,36 @@ export function OptimizationHistoryPanel() {
   const handleCloseDetails = () => {
     setShowDetails(false);
     setSelectedRun(null);
+  };
+
+  // 재실행 함수
+  const handleRerun = async (run: OptimizationRun) => {
+    try {
+      console.log('재실행 시작:', run.request_data);
+      
+      // 요청 데이터에서 입력값 추출
+      const requestData = run.request_data;
+      
+      // 출발지와 도착지를 Coordinate 형태로 변환
+      const origins = requestData.origins?.[0] ? { lat: 0, lng: 0, address: requestData.origins[0] } : null;
+      const destinations = requestData.destinations?.map((dest: string) => ({ lat: 0, lng: 0, address: dest })) || [];
+      
+      // 최적화 실행
+      await optimizeRouteWith({
+        origins,
+        destinations,
+        vehicleType: requestData.vehicleType,
+        options: {
+          optimizeOrder: requestData.optimizeOrder,
+          useRealtimeTraffic: requestData.useRealtimeTraffic,
+          departureAt: requestData.departureAt
+        }
+      });
+      
+      handleCloseDetails();
+    } catch (error) {
+      console.error('재실행 중 오류:', error);
+    }
   };
 
   // 시간 포맷팅
@@ -291,10 +332,10 @@ export function OptimizationHistoryPanel() {
                         <span className="ml-2">{selectedRun.request_data.destinations.join(', ')}</span>
                       </div>
                     )}
-                    {selectedRun.result_data?.waypoints && selectedRun.result_data.waypoints.length > 0 && (
+                    {selectedRun.request_data.origins && selectedRun.request_data.origins.length > 1 && (
                       <div>
                         <span className="text-blue-600 font-medium">경유지:</span>
-                        <span className="ml-2">{selectedRun.result_data.waypoints.length}개</span>
+                        <span className="ml-2">{selectedRun.request_data.origins.length - 1}개</span>
                       </div>
                     )}
                   </div>
@@ -319,11 +360,7 @@ export function OptimizationHistoryPanel() {
               {/* 액션 버튼 */}
               <div className="flex space-x-3 pt-2">
                 <Button
-                  onClick={() => {
-                    // TODO: 재실행 로직 구현
-                    console.log('재실행:', selectedRun.request_data);
-                    handleCloseDetails();
-                  }}
+                  onClick={() => handleRerun(selectedRun)}
                   className="flex-1"
                 >
                   이 설정으로 재실행
