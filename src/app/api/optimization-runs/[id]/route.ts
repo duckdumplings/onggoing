@@ -44,7 +44,7 @@ export async function GET(
           { status: 404 }
         );
       }
-      
+
       console.error('최적화 실행 결과 조회 실패:', error);
       return NextResponse.json(
         { error: '데이터 조회에 실패했습니다' },
