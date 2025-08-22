@@ -234,7 +234,7 @@ export function OptimizationHistoryPanel() {
       {/* 상세 정보 모달 */}
       {showDetails && selectedRun && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">최적화 실행 상세 정보</h3>
               <Button
@@ -248,89 +248,97 @@ export function OptimizationHistoryPanel() {
 
             <div className="space-y-4">
               {/* 기본 정보 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="text-gray-600">차량 타입:</span>
-                  <span className="ml-2 font-medium">{selectedRun.vehicle_type}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">총 거리:</span>
-                  <span className="ml-2 font-medium">{formatDistance(selectedRun.total_distance)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">총 시간:</span>
-                  <span className="ml-2 font-medium">{formatTime(selectedRun.total_time)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">엔진:</span>
-                  <span className="ml-2 font-medium">{selectedRun.engine_used.toUpperCase()}</span>
-                </div>
-              </div>
-
-              {/* 옵션 정보 */}
-              <div className="border-t pt-4">
-                <h4 className="font-medium mb-2">사용 옵션</h4>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedRun.optimize_order}
-                      readOnly
-                      className="rounded"
-                    />
-                    <span>순서 최적화</span>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium mb-3 text-gray-800">기본 정보</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-600">차량 타입:</span>
+                    <span className="ml-2 font-medium">{selectedRun.vehicle_type}</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedRun.used_traffic}
-                      readOnly
-                      className="rounded"
-                    />
-                    <span>실시간 교통정보</span>
+                  <div>
+                    <span className="text-gray-600">총 거리:</span>
+                    <span className="ml-2 font-medium">{formatDistance(selectedRun.total_distance)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">총 시간:</span>
+                    <span className="ml-2 font-medium">{formatTime(selectedRun.total_time)}</span>
+                    {selectedRun.result_data?.summary?.dwellTime && (
+                      <span className="text-xs text-gray-500 ml-1">
+                        (이동: {formatTime(selectedRun.result_data.summary.travelTime || selectedRun.total_time)}, 
+                        체류: {formatTime(selectedRun.result_data.summary.dwellTime)})
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-gray-600">실행 시간:</span>
+                    <span className="ml-2 font-medium">{formatDate(selectedRun.created_at)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* 요청 데이터 */}
+              {/* 경로 요약 */}
               {selectedRun.request_data && (
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-2">요청 정보</h4>
-                  <div className="bg-gray-50 p-3 rounded text-sm">
-                    <pre className="whitespace-pre-wrap">
-                      {JSON.stringify(selectedRun.request_data, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {/* 결과 데이터 요약 */}
-              {selectedRun.result_data && (
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-2">결과 요약</h4>
-                  <div className="bg-gray-50 p-3 rounded text-sm">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="text-gray-600">경로 수:</span>
-                        <span className="ml-2">{selectedRun.result_data.features?.length || 0}개</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">경유지 수:</span>
-                        <span className="ml-2">{selectedRun.result_data.waypoints?.length || 0}개</span>
-                      </div>
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h4 className="font-medium mb-3 text-blue-800">경로 요약</h4>
+                  <div className="text-sm space-y-2">
+                    <div>
+                      <span className="text-blue-600 font-medium">출발지:</span>
+                      <span className="ml-2">{selectedRun.request_data.origins?.join(', ') || '-'}</span>
                     </div>
-
-                    {selectedRun.result_data.summary?.optimizationInfo && (
-                      <div className="mt-2 p-2 bg-green-50 rounded">
-                        <span className="text-green-800 font-medium">최적화 정보:</span>
-                        <div className="text-sm text-green-700 mt-1">
-                          절약 거리: {formatDistance(selectedRun.result_data.summary.optimizationInfo.distanceSaved || 0)}
-                        </div>
+                    {selectedRun.request_data.destinations && selectedRun.request_data.destinations.length > 0 && (
+                      <div>
+                        <span className="text-blue-600 font-medium">도착지:</span>
+                        <span className="ml-2">{selectedRun.request_data.destinations.join(', ')}</span>
+                      </div>
+                    )}
+                    {selectedRun.result_data?.waypoints && selectedRun.result_data.waypoints.length > 0 && (
+                      <div>
+                        <span className="text-blue-600 font-medium">경유지:</span>
+                        <span className="ml-2">{selectedRun.result_data.waypoints.length}개</span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
+
+              {/* 사용 옵션 */}
+              <div className="bg-green-50 p-4 rounded-lg">
+                <h4 className="font-medium mb-3 text-green-800">사용 옵션</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-3 h-3 rounded-full ${selectedRun.optimize_order ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    <span>순서 최적화 {selectedRun.optimize_order ? '사용' : '미사용'}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-3 h-3 rounded-full ${selectedRun.used_traffic ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                    <span>실시간 교통정보 {selectedRun.used_traffic ? '사용' : '미사용'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 액션 버튼 */}
+              <div className="flex space-x-3 pt-2">
+                <Button
+                  onClick={() => {
+                    // TODO: 재실행 로직 구현
+                    console.log('재실행:', selectedRun.request_data);
+                    handleCloseDetails();
+                  }}
+                  className="flex-1"
+                >
+                  이 설정으로 재실행
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    // TODO: 삭제 로직 구현
+                    console.log('삭제:', selectedRun.id);
+                    handleCloseDetails();
+                  }}
+                >
+                  삭제
+                </Button>
+              </div>
             </div>
           </div>
         </div>

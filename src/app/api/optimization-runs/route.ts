@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createServerClient();
     const body = await request.json();
-    
+
     const {
       requestData,    // 원본 요청 데이터
       resultData,     // 최적화 결과 데이터
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const optimizeOrder = requestData.optimizeOrder || false;
     const usedTraffic = resultData.summary?.usedTraffic || true;
     const departureAt = requestData.departureAt ? new Date(requestData.departureAt) : null;
-    
+
     // 엔진 정보 (현재는 Tmap만 사용)
     const engineUsed = 'tmap';
     const fallbackUsed = false;
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createServerClient();
     const { searchParams } = new URL(request.url);
-    
+
     // 쿼리 파라미터
     const limit = parseInt(searchParams.get('limit') || '10');
     const offset = parseInt(searchParams.get('offset') || '0');
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
     if (vehicleType) {
       query = query.eq('vehicle_type', vehicleType);
     }
-    
+
     if (optimizeOrder !== null) {
       query = query.eq('optimize_order', optimizeOrder === 'true');
     }
@@ -150,7 +150,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('최적화 실행 결과 조회 API 오류:', error);
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
+      {
+        error: '서버 오류가 발생했습니다',
+        details: error instanceof Error ? error.message : '알 수 없는 오류'
+      },
       { status: 500 }
     );
   }

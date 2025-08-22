@@ -102,6 +102,12 @@ export async function POST(request: NextRequest) {
       current = dest;
     }
 
+    // 체류시간 계산 (경유지당 5분, 도착지 10분)
+    const dwellTimePerWaypoint = 5; // 분
+    const dwellTimeAtDestination = 10; // 분
+    const totalDwellTime = (destinations.length - 1) * dwellTimePerWaypoint + dwellTimeAtDestination;
+    const totalTimeWithDwell = totalTime + totalDwellTime;
+
     // 최적화된 경유지 순서 정보 생성
     const optimizationInfo = optimizeOrder ? {
       originalOrder: destinations.map((d: any, i: number) => ({ index: i, address: d.address })),
@@ -114,7 +120,9 @@ export async function POST(request: NextRequest) {
       features: segmentFeatures,
       summary: {
         totalDistance,
-        totalTime,
+        totalTime: totalTimeWithDwell, // 체류시간 포함
+        travelTime: totalTime, // 이동시간만
+        dwellTime: totalDwellTime, // 체류시간
         optimizeOrder,
         usedTraffic,
         vehicleTypeCode,
@@ -125,6 +133,7 @@ export async function POST(request: NextRequest) {
 
     // 최적화 실행 결과를 데이터베이스에 저장 (비동기, 에러 무시)
     try {
+      console.log('최적화 실행 결과 저장 시작...');
       const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/optimization-runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,10 +143,14 @@ export async function POST(request: NextRequest) {
         })
       });
 
+      console.log('저장 응답 상태:', saveResponse.status);
+
       if (saveResponse.ok) {
-        console.log('최적화 실행 결과가 저장되었습니다');
+        const saveResult = await saveResponse.json();
+        console.log('최적화 실행 결과가 저장되었습니다:', saveResult);
       } else {
-        console.warn('최적화 실행 결과 저장 실패:', saveResponse.status);
+        const errorText = await saveResponse.text();
+        console.warn('최적화 실행 결과 저장 실패:', saveResponse.status, errorText);
       }
     } catch (saveError) {
       console.warn('최적화 실행 결과 저장 중 오류:', saveError);
