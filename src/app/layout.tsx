@@ -6,7 +6,10 @@ import { RouteOptimizationProvider } from '@/hooks/useRouteOptimization.tsx'
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
-  fallback: ['system-ui', 'arial']
+  fallback: ['system-ui', 'arial'],
+  preload: false,
+  adjustFontFallback: true,
+  variable: '--font-inter'
 })
 
 export const metadata: Metadata = {

@@ -86,6 +86,8 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
 
   const handleSelect = (s: AddressSelection) => {
     console.log('[AddressAutocomplete] handleSelect called with:', s)
+
+    // 먼저 onSelect 호출
     onSelect(s)
 
     // 입력란에는 상호명이 있으면 상호명 우선 표시, 불필요한 "역" 텍스트 제거
@@ -101,6 +103,8 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     }
 
     console.log('[AddressAutocomplete] Setting query to:', label)
+
+    // 상태 완전 초기화
     setQuery(label)
     setOpen(false)
     setSuggestions([]) // 선택 후 제안 목록 비우기
@@ -151,13 +155,16 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     if (value) {
       const newQuery = value.name || value.address
       console.log('[AddressAutocomplete] Setting query from value:', newQuery)
-      setQuery(newQuery)
+      // 현재 query와 다를 때만 설정하여 중복 방지
+      if (query !== newQuery) {
+        setQuery(newQuery)
+      }
     } else {
       // value가 null로 변경되는 것을 방지
       console.log('[AddressAutocomplete] Ignoring null value change to prevent UI reset')
       // setQuery('') // 주석 처리하여 query 상태 유지
     }
-  }, [value])
+  }, [value, query])
 
   return (
     <div className="w-full relative">
@@ -166,6 +173,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         value={query}
         onChange={(e) => {
           const newValue = e.target.value
+          console.log('[AddressAutocomplete] onChange:', newValue, 'current value:', value)
           setQuery(newValue)
 
           // 입력값이 기존 선택과 다르면 수정 모드 활성화
