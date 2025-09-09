@@ -6,7 +6,14 @@ interface TmapMapProps {
   center?: { lat: number; lng: number };
   zoom?: number;
   routeData?: any; // Tmap REST or GeoJSON 유사 구조 { features: [...] }
-  waypoints?: { lat: number; lng: number; label?: string }[];
+  waypoints?: {
+    lat: number;
+    lng: number;
+    label?: string;
+    icon?: string;
+    color?: string;
+    priority?: number;
+  }[];
   useExplicitDestination?: boolean;
   className?: string;
   height?: string;
@@ -44,12 +51,14 @@ export default function TmapMap({
         const origin = window.location.origin;
         // 앱 라우트 기반 임베드 페이지로 전환 (문서 파서 컨트롤 강화)
         const url = new URL('/tmap-embed', origin);
+        // 캐시 방지를 위한 타임스탬프 추가
+        url.searchParams.set('v', Date.now().toString());
         iframe.src = url.toString();
         // 디버그 로그
         console.log('[TmapMap] iframe src =', iframe.src);
       } catch (err) {
         console.error('[TmapMap] URL 생성 실패:', err);
-        iframe.src = `/tmap-embed.html?appKey=${encodeURIComponent(process.env.NEXT_PUBLIC_TMAP_API_KEY || '')}`;
+        iframe.src = `/tmap-embed.html?appKey=${encodeURIComponent(process.env.NEXT_PUBLIC_TMAP_API_KEY || '')}&v=${Date.now()}`;
       }
       iframe.onload = () => {
         console.log('[TmapMap] iframe loaded successfully');

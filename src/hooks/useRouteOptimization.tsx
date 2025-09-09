@@ -24,6 +24,8 @@ export interface OptimizationOptions {
   useRealtimeTraffic: boolean;
   departureAt?: string | null;
   useExplicitDestination?: boolean; // 도착지 별도 입력 사용
+  deliveryTimes?: string[]; // 배송완료시간 배열 (24시간 형식: "14:30")
+  isNextDayFlags?: boolean[]; // 다음날 배송 여부 배열
 }
 
 export interface RouteOptimizationState {
@@ -61,7 +63,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [origins, setOrigins] = useState<Coordinate | null>(null);
   const [destinations, setDestinations] = useState<Coordinate[]>([]);
   const [vehicleType, setVehicleType] = useState<'레이' | '스타렉스' | string>('레이');
-  const [options, setOptionsState] = useState<OptimizationOptions>({ optimizeOrder: false, useRealtimeTraffic: true, departureAt: null, useExplicitDestination: false });
+  const [options, setOptionsState] = useState<OptimizationOptions>({ optimizeOrder: true, useRealtimeTraffic: true, departureAt: null, useExplicitDestination: false, deliveryTimes: [] });
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       useRealtimeTraffic: opt.useRealtimeTraffic,
       departureAt: opt.departureAt,
       dwellMinutes: dm,
+      deliveryTimes: opt.deliveryTimes || [],
+      isNextDayFlags: opt.isNextDayFlags || [],
     };
   }, [origins, destinations, vehicleType, options, dwellMinutesState]);
 
@@ -131,6 +135,25 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       if (data?.success && data?.data) {
         console.log('[useRouteOptimization] routeData 설정:', data.data);
         setRouteData(data.data as RouteData);
+
+        // 최적화된 순서로 destinations 업데이트
+        if (data.data.summary?.optimizationInfo?.optimizedOrder) {
+          const optimizedOrder = data.data.summary.optimizationInfo.optimizedOrder;
+          const optimizedDestinations = optimizedOrder.map((item: any) => {
+            // 원본 destinations에서 해당 주소를 찾아서 좌표 정보 복원
+            const originalDest = payload.destinations.find((dest: any) =>
+              dest.address === item.address
+            );
+            return originalDest ? {
+              lat: originalDest.latitude,
+              lng: originalDest.longitude,
+              address: originalDest.address
+            } : null;
+          }).filter(Boolean);
+
+          console.log('[useRouteOptimization] 최적화된 destinations 업데이트:', optimizedDestinations);
+          setDestinations(optimizedDestinations);
+        }
       } else {
         throw new Error('INVALID_RESPONSE');
       }

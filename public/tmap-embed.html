@@ -51,6 +51,8 @@
       clearMap();
       var bounds = new T.LatLngBounds();
       var waypoints = (routeData.waypoints || []).map(function (w) { return new T.LatLng(w.latitude, w.longitude); });
+
+      // 경로 그리기
       for (var idx = 0; idx < features.length; idx++) {
         var feature = features[idx];
         var coords = feature && feature.geometry && feature.geometry.coordinates;
@@ -60,14 +62,78 @@
         if (path.length === 0) continue;
         polylines.push(new T.Polyline({ path: path, strokeColor: '#FF1744', strokeWeight: 5, map: map }));
         for (var k = 0; k < path.length; k++) { bounds.extend(path[k]); }
-        // 도착지 수집은 서버 제공 waypoints 사용
       }
-      // 경유지 수(n) 만큼 번호 배지(1..n)
-      for (var i = 0; i < waypoints.length; i++) {
-        infoWindows.push(new T.InfoWindow({ position: waypoints[i], content: '<div style="background:#1f2937;color:#fff;border-radius:12px;padding:2px 6px;font-size:12px;">' + (i + 1) + '</div>', type: 2, map: map }));
+
+      // 개선된 핀 렌더링 - 새로운 속성들 처리
+      var waypointData = routeData.waypoints || [];
+      for (var i = 0; i < waypointData.length; i++) {
+        var waypoint = waypointData[i];
+        // lat/lng 속성 사용 (TmapMainMap에서 전달하는 속성명)
+        var position = new T.LatLng(waypoint.lat, waypoint.lng);
+
+        // 새로운 속성들 확인
+        var icon = waypoint.icon || '📍';
+        var color = waypoint.color || '#3B82F6';
+        var label = waypoint.label || (i + 1);
+        var priority = waypoint.priority || 1;
+
+        // 아이콘과 색상에 따른 배경색 결정
+        var backgroundColor;
+        var textColor = '#FFFFFF';
+
+        if (icon === '🚀') {
+          backgroundColor = '#10B981'; // 출발지 - 초록색
+        } else if (icon === '🎯') {
+          backgroundColor = '#EF4444'; // 도착지 - 빨간색
+        } else if (icon === '📍') {
+          if (i === 0) {
+            backgroundColor = '#3B82F6'; // 첫 번째 경유지 - 파란색
+          } else {
+            backgroundColor = '#8B5CF6'; // 중간 경유지 - 보라색
+          }
+        } else {
+          backgroundColor = color; // 기본 색상
+        }
+
+        // 핀 내용 생성
+        var content = '<div style="' +
+          'background:' + backgroundColor + ';' +
+          'color:' + textColor + ';' +
+          'border-radius:12px;' +
+          'padding:4px 8px;' +
+          'font-size:14px;' +
+          'font-weight:bold;' +
+          'box-shadow:0 2px 8px rgba(0,0,0,0.3);' +
+          'border:2px solid white;' +
+          'min-width:24px;' +
+          'text-align:center;' +
+          'display:flex;' +
+          'align-items:center;' +
+          'justify-content:center;' +
+          'gap:2px;' +
+          '">' +
+          '<span style="font-size:12px;">' + icon + '</span>' +
+          '<span>' + label + '</span>' +
+          '</div>';
+
+        infoWindows.push(new T.InfoWindow({
+          position: position,
+          content: content,
+          type: 2,
+          map: map
+        }));
+
+        bounds.extend(position);
       }
+
       // 경로 영역으로 자동 맞춤
-      try { if (bounds && typeof bounds.isEmpty === 'function' && !bounds.isEmpty()) { map.fitBounds(bounds, 30); } } catch (e) { }
+      try {
+        if (bounds && typeof bounds.isEmpty === 'function' && !bounds.isEmpty()) {
+          map.fitBounds(bounds, 30);
+        }
+      } catch (e) {
+        console.error('Bounds fitting error:', e);
+      }
     }
 
     function ensureMap(center) {
@@ -97,11 +163,6 @@
     });
 
     // 초기 로드 시 맵만 준비 시도 (SDK가 이미 로드된 경우)
-    if (window.Tmapv2) ensureMap();
-  </script>
-</body>
-
-</html>
     if (window.Tmapv2) ensureMap();
   </script>
 </body>

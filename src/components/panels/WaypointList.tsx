@@ -22,10 +22,71 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 
-interface Waypoint {
+// 배송완료시간 검증 함수들 (다음날 체크박스 고려)
+function isValidDeliveryTime(timeString: string, isNextDay: boolean = false): boolean {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeInMinutes = currentHour * 60 + currentMinute;
+  const inputTimeInMinutes = hours * 60 + minutes;
+
+  // 다음날 체크박스가 체크된 경우: 24시간 후까지 허용
+  if (isNextDay) {
+    // 다음날이므로 24시간 후까지 허용
+    if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
+      return false;
+    }
+    return true;
+  }
+
+  // 당일 배송인 경우: 과거 시간 체크 (현재 시간보다 30분 이전)
+  if (inputTimeInMinutes < currentTimeInMinutes - 30) {
+    return false;
+  }
+
+  // 비현실적인 시간 체크 (24시간 후)
+  if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
+    return false;
+  }
+
+  return true;
+}
+
+function getDeliveryTimeValidationMessage(timeString: string, isNextDay: boolean = false): string {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeInMinutes = currentHour * 60 + currentMinute;
+  const inputTimeInMinutes = hours * 60 + minutes;
+
+  // 다음날 체크박스가 체크된 경우
+  if (isNextDay) {
+    if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
+      return '24시간 이후의 시간입니다. 현실적인 시간으로 설정해주세요.';
+    }
+    return '';
+  }
+
+  // 당일 배송인 경우
+  if (inputTimeInMinutes < currentTimeInMinutes - 30) {
+    return '과거 시간입니다. 현재 시간 이후로 설정해주세요.';
+  }
+
+  if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
+    return '24시간 이후의 시간입니다. 현실적인 시간으로 설정해주세요.';
+  }
+
+  return '';
+}
+
+export interface Waypoint {
   id: string;
   selection: AddressSelection | null;
   dwellTime: number;
+  deliveryTime?: string; // 배송완료시간 (24시간 형식: "14:30")
+  isNextDay?: boolean; // 다음날 배송 여부
 }
 
 interface WaypointListProps {
@@ -85,20 +146,72 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
             value={waypoint.selection}
             onSelect={(selection) => onUpdate(waypoint.id, { selection })}
           />
-          <div className="mt-1">
-            <label className="text-xs text-gray-600 mr-2">체류시간</label>
-            <input
-              type="number"
-              min="0"
-              step="5"
-              value={waypoint.dwellTime}
-              onChange={(e) => {
-                const value = Math.max(0, parseInt(e.target.value || '10', 10));
-                onUpdate(waypoint.id, { dwellTime: value });
-              }}
-              className="w-24 h-8 border rounded px-2 text-sm"
-            />
-            <span className="ml-1 text-xs text-gray-500">분</span>
+          <div className="mt-1 flex gap-4">
+            <div>
+              <label className="text-xs text-gray-600 mr-2">체류시간</label>
+              <input
+                type="number"
+                min="0"
+                step="5"
+                value={waypoint.dwellTime}
+                onChange={(e) => {
+                  const value = Math.max(0, parseInt(e.target.value || '10', 10));
+                  onUpdate(waypoint.id, { dwellTime: value });
+                }}
+                className="w-24 h-8 border rounded px-2 text-sm"
+              />
+              <span className="ml-1 text-xs text-gray-500">분</span>
+            </div>
+            <div>
+              <label className="text-xs text-gray-600 mr-2">배송완료시간</label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="time"
+                  value={waypoint.deliveryTime || ''}
+                  onChange={(e) => {
+                    const timeValue = e.target.value || undefined;
+                    onUpdate(waypoint.id, { deliveryTime: timeValue });
+                  }}
+                  className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay)
+                    ? 'border-red-300 bg-red-50'
+                    : ''
+                    }`}
+                  placeholder="선택사항"
+                />
+                {waypoint.deliveryTime && (
+                  <button
+                    type="button"
+                    onClick={() => onUpdate(waypoint.id, { deliveryTime: undefined, isNextDay: false })}
+                    className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                    title="시간 초기화"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {/* 다음날 체크박스 */}
+              {waypoint.deliveryTime && (
+                <div className="flex items-center gap-1 mt-1">
+                  <input
+                    type="checkbox"
+                    id={`nextday-${waypoint.id}`}
+                    checked={waypoint.isNextDay || false}
+                    onChange={(e) => onUpdate(waypoint.id, { isNextDay: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <label htmlFor={`nextday-${waypoint.id}`} className="text-xs text-gray-600">
+                    다음날 배송
+                  </label>
+                </div>
+              )}
+              {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
+                <div className="text-xs text-red-600 mt-1">
+                  {getDeliveryTimeValidationMessage(waypoint.deliveryTime, waypoint.isNextDay)}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -179,6 +292,8 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
       id: `waypoint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selection: waypointToDuplicate.selection,
       dwellTime: waypointToDuplicate.dwellTime,
+      deliveryTime: waypointToDuplicate.deliveryTime,
+      isNextDay: waypointToDuplicate.isNextDay,
     };
 
     const insertIndex = waypoints.findIndex(w => w.id === id) + 1;
@@ -196,6 +311,8 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
       id: `waypoint-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       selection: null,
       dwellTime: 10,
+      deliveryTime: undefined,
+      isNextDay: false,
     };
 
     onWaypointsChange([...waypoints, newWaypoint]);
@@ -220,17 +337,66 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
                   value={waypoint.selection}
                   onSelect={() => { }} // 서버사이드에서는 빈 함수
                 />
-                <div className="mt-1">
-                  <label className="text-xs text-gray-600 mr-2">체류시간</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="5"
-                    value={waypoint.dwellTime}
-                    onChange={() => { }} // 서버사이드에서는 빈 함수
-                    className="w-24 h-8 border rounded px-2 text-sm"
-                  />
-                  <span className="ml-1 text-xs text-gray-500">분</span>
+                <div className="mt-1 flex gap-4">
+                  <div>
+                    <label className="text-xs text-gray-600 mr-2">체류시간</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={waypoint.dwellTime}
+                      onChange={() => { }} // 서버사이드에서는 빈 함수
+                      className="w-24 h-8 border rounded px-2 text-sm"
+                    />
+                    <span className="ml-1 text-xs text-gray-500">분</span>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mr-2">배송완료시간</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="time"
+                        value={waypoint.deliveryTime || ''}
+                        onChange={() => { }} // 서버사이드에서는 빈 함수
+                        className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay)
+                          ? 'border-red-300 bg-red-50'
+                          : ''
+                          }`}
+                        placeholder="선택사항"
+                      />
+                      {waypoint.deliveryTime && (
+                        <button
+                          type="button"
+                          onClick={() => { }} // 서버사이드에서는 빈 함수
+                          className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          title="시간 초기화"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {/* 다음날 체크박스 (서버사이드) */}
+                    {waypoint.deliveryTime && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <input
+                          type="checkbox"
+                          id={`nextday-ssr-${waypoint.id}`}
+                          checked={waypoint.isNextDay || false}
+                          onChange={() => { }} // 서버사이드에서는 빈 함수
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                        <label htmlFor={`nextday-ssr-${waypoint.id}`} className="text-xs text-gray-600">
+                          다음날 배송
+                        </label>
+                      </div>
+                    )}
+                    {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
+                      <div className="text-xs text-red-600 mt-1">
+                        {getDeliveryTimeValidationMessage(waypoint.deliveryTime, waypoint.isNextDay)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="w-20 flex justify-end pt-6 gap-1">

@@ -1,11 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// 좌표 유효성 검사 함수 추가
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
+    !isNaN(lat) && !isNaN(lng) && isFinite(lat) && isFinite(lng);
+}
+
+// 거리 계산 정확성 검증 함수 추가
+function validateDistanceCalculation(
+  start: { latitude: number; longitude: number },
+  end: { latitude: number; longitude: number },
+  calculatedDistance: number
+): boolean {
+  const haversineDistance = haversineMeters(start.latitude, start.longitude, end.latitude, end.longitude);
+  const tolerance = 0.1; // 10% 허용 오차
+  const difference = Math.abs(calculatedDistance - haversineDistance);
+  return difference <= haversineDistance * tolerance;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { origins, destinations, vehicleType = '레이', optimizeOrder = true, departureAt, useRealtimeTraffic } = body;
+    const { origins, destinations, vehicleType = '레이', optimizeOrder = true, departureAt, useRealtimeTraffic, deliveryTimes = [], isNextDayFlags = [] } = body;
 
-    console.log('API 요청 받음:', { origins, destinations, vehicleType });
+    console.log('API 요청 받음:', { origins, destinations, vehicleType, deliveryTimes, isNextDayFlags });
+
+    // 배송완료시간 검증 (다음날 체크박스 고려)
+    const now = new Date();
+    const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+    const invalidDeliveryTimes = deliveryTimes.filter((time: string, index: number) => {
+      if (!time) return false;
+      const [hours, minutes] = time.split(':').map(Number);
+      const timeInMinutes = hours * 60 + minutes;
+      const isNextDay = isNextDayFlags[index] || false;
+
+      // 다음날 체크박스가 체크된 경우: 24시간 후까지 허용
+      if (isNextDay) {
+        if (timeInMinutes > currentTimeInMinutes + 24 * 60) {
+          return true;
+        }
+        return false;
+      }
+
+      // 당일 배송인 경우: 과거 시간 체크 (현재 시간보다 30분 이전)
+      if (timeInMinutes < currentTimeInMinutes - 30) {
+        return true;
+      }
+
+      // 비현실적인 시간 체크 (24시간 후)
+      if (timeInMinutes > currentTimeInMinutes + 24 * 60) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (invalidDeliveryTimes.length > 0) {
+      return NextResponse.json(
+        { error: '배송완료시간이 과거 시간이거나 비현실적인 시간입니다. 다음날 배송 체크박스를 활용해주세요.' },
+        { status: 400 }
+      );
+    }
 
     const tmapKey =
       process.env.TMAP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY || '';
@@ -16,7 +71,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 입력 검증
+    // 입력 검증 강화
     if (!origins || !destinations || origins.length === 0 || destinations.length === 0) {
       return NextResponse.json(
         { error: '출발지와 목적지가 필요합니다' },
@@ -26,20 +81,36 @@ export async function POST(request: NextRequest) {
 
     // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const startAddress = typeof origins[0] === 'string' ? origins[0] : (origins[0] as any).name || (origins[0] as any).address;
-    const startLocation = (origins[0] as any).latitude && (origins[0] as any).longitude
+    let startLocation = (origins[0] as any).latitude && (origins[0] as any).longitude
       ? { latitude: (origins[0] as any).latitude, longitude: (origins[0] as any).longitude, address: startAddress }
       : await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
+
+    // 좌표 유효성 검사
+    if (!isValidCoordinate(startLocation.latitude, startLocation.longitude)) {
+      return NextResponse.json(
+        { error: '출발지 좌표가 유효하지 않습니다' },
+        { status: 400 }
+      );
+    }
+
     console.log('출발지 좌표:', startLocation);
 
     // 목적지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
     const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
       const destAddress = typeof destination === 'string' ? destination : ((destination as any).name || (destination as any).address);
-      const preset = (destination as any).latitude && (destination as any).longitude
+      let preset = (destination as any).latitude && (destination as any).longitude
         ? { latitude: (destination as any).latitude, longitude: (destination as any).longitude, address: destAddress }
         : await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
-      const coord = preset
-      destinationCoords.push(coord);
+
+      // 좌표 유효성 검사
+      if (!isValidCoordinate(preset.latitude, preset.longitude)) {
+        console.warn(`목적지 좌표가 유효하지 않음: ${destAddress}`);
+        // 기본값으로 서울 시청 좌표 사용
+        preset = { latitude: 37.566535, longitude: 126.9779692, address: destAddress };
+      }
+
+      destinationCoords.push(preset);
     }
 
     console.log('모든 목적지 좌표:', destinationCoords);
@@ -52,15 +123,16 @@ export async function POST(request: NextRequest) {
       ? (useRealtimeTraffic ? 'realtime' : 'standard')
       : decideTrafficMode(departureAt);
 
-    // 목적지 순서 최적화 (최근접 이웃 휴리스틱)
+    // 목적지 순서 최적화 (배송완료시간 고려)
     const orderedDestinations = optimizeOrder
-      ? nearestNeighborOrder(startLocation, destinationCoords)
+      ? nearestNeighborOrderWithTimeConstraints(startLocation, destinationCoords, deliveryTimes, isNextDayFlags)
       : destinationCoords;
 
     const segmentFeatures: any[] = [];
     const waypoints: Array<{ latitude: number; longitude: number }> = [];
     let totalDistance = 0;
     let totalTime = 0;
+    let validationErrors: string[] = [];
 
     let current = startLocation;
     for (const dest of orderedDestinations) {
@@ -73,15 +145,30 @@ export async function POST(request: NextRequest) {
           trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
           departureAt: departureAt || null
         }
-      ).catch(() => null);
+      ).catch((error) => {
+        console.warn(`Tmap API 호출 실패: ${error.message}`);
+        return null;
+      });
 
       if (seg && Array.isArray(seg.features)) {
-        // 합산
+        // 거리 계산 정확성 검증
+        let segmentDistance = 0;
+        let segmentTime = 0;
+
         for (const f of seg.features) {
-          if (f?.properties?.totalDistance) totalDistance += f.properties.totalDistance;
-          if (f?.properties?.totalTime) totalTime += f.properties.totalTime;
+          if (f?.properties?.totalDistance) segmentDistance += f.properties.totalDistance;
+          if (f?.properties?.totalTime) segmentTime += f.properties.totalTime;
           segmentFeatures.push(f);
         }
+
+        // 거리 계산 검증
+        if (!validateDistanceCalculation(current, dest, segmentDistance)) {
+          validationErrors.push(`거리 계산 오류: ${current.address} → ${dest.address}`);
+          console.warn(`거리 계산 검증 실패: 계산값=${segmentDistance}m, 예상값=${haversineMeters(current.latitude, current.longitude, dest.latitude, dest.longitude)}m`);
+        }
+
+        totalDistance += segmentDistance;
+        totalTime += segmentTime;
         waypoints.push({ latitude: dest.latitude, longitude: dest.longitude });
       } else {
         // 폴백: 직선 보간 한 구간 추가
@@ -90,14 +177,18 @@ export async function POST(request: NextRequest) {
           [dest.longitude, dest.latitude],
         ];
         const approx = haversineMeters(current.latitude, current.longitude, dest.latitude, dest.longitude);
+        const approxTime = Math.floor(approx / (50 * 1000) * 3600); // 50km/h 가정
+
         totalDistance += approx;
-        totalTime += Math.floor(approx / (50 * 1000) * 3600); // 50km/h 가정
+        totalTime += approxTime;
         segmentFeatures.push({
           type: 'Feature',
-          properties: { totalDistance: approx, totalTime: Math.floor(approx / (50 * 1000) * 3600) },
+          properties: { totalDistance: approx, totalTime: approxTime },
           geometry: { type: 'LineString', coordinates },
         });
         waypoints.push({ latitude: dest.latitude, longitude: dest.longitude });
+
+        console.warn(`Tmap API 실패로 직선 거리 사용: ${current.address} → ${dest.address}`);
       }
       current = dest;
     }
@@ -126,7 +217,12 @@ export async function POST(request: NextRequest) {
         optimizeOrder,
         usedTraffic,
         vehicleTypeCode,
-        optimizationInfo
+        optimizationInfo,
+        validation: {
+          hasErrors: validationErrors.length > 0,
+          errors: validationErrors,
+          warnings: validationErrors.length > 0 ? ['일부 경로에서 Tmap API 실패로 직선 거리 사용됨'] : []
+        }
       },
       waypoints,
     };
@@ -136,7 +232,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: routeData
+      data: routeData,
+      warnings: validationErrors.length > 0 ? validationErrors : undefined
     });
 
   } catch (error) {
@@ -353,6 +450,96 @@ function decideTrafficMode(departureAt?: string | null): 'realtime' | 'standard'
   } catch {
     return 'realtime'
   }
+}
+
+function nearestNeighborOrderWithTimeConstraints(
+  start: { latitude: number; longitude: number },
+  points: Array<{ latitude: number; longitude: number; address: string }>,
+  deliveryTimes: string[],
+  isNextDayFlags: boolean[] = []
+) {
+  // 배송완료시간이 있는 목적지들을 시간순으로 정렬 (다음날 체크박스 고려)
+  const timeConstrainedPoints = points
+    .map((point, index) => ({
+      ...point,
+      deliveryTime: deliveryTimes[index] || null,
+      isNextDay: isNextDayFlags[index] || false,
+      originalIndex: index
+    }))
+    .filter(point => point.deliveryTime)
+    .sort((a, b) => {
+      const timeA = a.deliveryTime!.split(':').map(Number);
+      const timeB = b.deliveryTime!.split(':').map(Number);
+      let minutesA = timeA[0] * 60 + timeA[1];
+      let minutesB = timeB[0] * 60 + timeB[1];
+
+      // 다음날 체크박스가 체크된 경우 24시간(1440분) 추가
+      if (a.isNextDay) minutesA += 24 * 60;
+      if (b.isNextDay) minutesB += 24 * 60;
+
+      // 다음날 배송인 경우: 오름차순 정렬 (이른 시간이 먼저)
+      // 당일 배송인 경우: 내림차순 정렬 (늦은 시간이 먼저)
+      if (a.isNextDay && b.isNextDay) {
+        return minutesA - minutesB; // 다음날 배송끼리는 오름차순
+      } else if (!a.isNextDay && !b.isNextDay) {
+        return minutesB - minutesA; // 당일 배송끼리는 내림차순
+      } else {
+        return minutesA - minutesB; // 다음날이 당일보다 나중
+      }
+    });
+
+  // 배송완료시간이 없는 목적지들
+  const unconstrainedPoints = points
+    .map((point, index) => ({
+      ...point,
+      deliveryTime: deliveryTimes[index] || null,
+      originalIndex: index
+    }))
+    .filter(point => !point.deliveryTime);
+
+  // 시간 제약이 없는 목적지들에 대해 최근접 이웃 알고리즘 적용
+  const remaining = [...unconstrainedPoints];
+  const ordered: typeof points = [];
+  let cur = { lat: start.latitude, lng: start.longitude };
+
+  // 시간 제약이 있는 목적지들을 먼저 배치
+  for (const point of timeConstrainedPoints) {
+    ordered.push({
+      latitude: point.latitude,
+      longitude: point.longitude,
+      address: point.address
+    });
+    cur = { lat: point.latitude, lng: point.longitude };
+  }
+
+  // 나머지 목적지들에 대해 최근접 이웃 알고리즘 적용
+  while (remaining.length) {
+    let bestIdx = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < remaining.length; i++) {
+      const p = remaining[i];
+      const d = haversineMeters(cur.lat, cur.lng, p.latitude, p.longitude);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    const [chosen] = remaining.splice(bestIdx, 1);
+    ordered.push({
+      latitude: chosen.latitude,
+      longitude: chosen.longitude,
+      address: chosen.address
+    });
+    cur = { lat: chosen.latitude, lng: chosen.longitude };
+  }
+
+  console.log('배송완료시간 고려한 최적화 결과:', {
+    timeConstrained: timeConstrainedPoints.map(p => ({ address: p.address, time: p.deliveryTime })),
+    unconstrained: unconstrainedPoints.map(p => ({ address: p.address })),
+    finalOrder: ordered.map(p => ({ address: p.address }))
+  });
+
+  return ordered;
 }
 
 function nearestNeighborOrder(

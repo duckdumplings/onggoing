@@ -176,10 +176,17 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
           console.log('[AddressAutocomplete] onChange:', newValue, 'current value:', value)
           setQuery(newValue)
 
+          // 입력값이 비워지거나 기존 선택과 다르면 선택 해제
+          if (value && (newValue.trim() === '' || newValue !== (value.name || value.address))) {
+            console.log('[AddressAutocomplete] Input changed, calling onSelect(null)')
+            onSelect(null)
+            setIsEditing(false)
+            return
+          }
+
           // 입력값이 기존 선택과 다르면 수정 모드 활성화
           if (value && newValue !== (value.name || value.address)) {
             setIsEditing(true)
-            // onSelect(null) 제거하여 재열림 방지
           } else if (!value && newValue.length >= 2) {
             // 새로운 검색 시작
             setIsEditing(true)

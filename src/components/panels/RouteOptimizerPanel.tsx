@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
-import WaypointList from './WaypointList';
+import WaypointList, { type Waypoint } from './WaypointList';
 
 export default function RouteOptimizerPanel() {
   const [collapsed, setCollapsed] = useState(false);
@@ -58,7 +58,8 @@ export default function RouteOptimizerPanel() {
       const newWaypoints = requestData.destinations.map((dest: string, index: number) => ({
         id: `waypoint-${index + 1}`,
         selection: { latitude: 0, longitude: 0, address: dest, name: dest },
-        dwellTime: 10
+        dwellTime: 10,
+        deliveryTime: undefined
       }));
       setWaypoints(newWaypoints);
     }
@@ -74,6 +75,7 @@ export default function RouteOptimizerPanel() {
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
+  const [originDwellTime, setOriginDwellTime] = useState(10); // 출발지 체류시간
 
   // originSelection이 변경될 때 origins 동기화
   useEffect(() => {
@@ -87,16 +89,17 @@ export default function RouteOptimizerPanel() {
       setOrigins(null);
     }
   }, [originSelection, setOrigins]);
-  const [waypoints, setWaypoints] = useState<Array<{ id: string; selection: AddressSelection | null; dwellTime: number }>>([
-    { id: 'waypoint-1', selection: null, dwellTime: 10 },
-    { id: 'waypoint-2', selection: null, dwellTime: 10 }
+  const [waypoints, setWaypoints] = useState<Array<{ id: string; selection: AddressSelection | null; dwellTime: number; deliveryTime?: string }>>([
+    { id: 'waypoint-1', selection: null, dwellTime: 10, deliveryTime: undefined },
+    { id: 'waypoint-2', selection: null, dwellTime: 10, deliveryTime: undefined }
   ]);
   const [useExplicitDestination, setUseExplicitDestination] = useState(false);
   const [destinationSelection, setDestinationSelection] = useState<AddressSelection | null>(null);
+  const [destinationDwellTime, setDestinationDwellTime] = useState(10); // 도착지 체류시간
   const [localError, setLocalError] = useState<string | null>(null);
 
   // 자동순서최적화 상태
-  const [optimizeOrder, setOptimizeOrder] = useState(false);
+  const [optimizeOrder, setOptimizeOrder] = useState(true);
 
   // 날짜/시간 설정 - 한국 시간 기준
   const [departureDateTime, setDepartureDateTime] = useState(() => {
@@ -149,17 +152,36 @@ export default function RouteOptimizerPanel() {
       {!collapsed && (
         <div className="px-4 pb-4 space-y-4">
           {/* 출발지 */}
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <AddressAutocomplete
-                label="출발지"
-                placeholder="출발지를 검색하세요"
-                value={displayOriginValue}
-                onSelect={(v) => {
-                  setOriginSelection(v);
-                }}
-              />
+          <div className="space-y-2">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <AddressAutocomplete
+                  label="출발지"
+                  placeholder="출발지를 검색하세요"
+                  value={displayOriginValue}
+                  onSelect={(v) => {
+                    setOriginSelection(v);
+                  }}
+                />
+              </div>
             </div>
+            {originSelection && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600">출발지 체류시간</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="5"
+                  value={originDwellTime}
+                  onChange={(e) => {
+                    const value = Math.max(0, parseInt(e.target.value || '10', 10));
+                    setOriginDwellTime(value);
+                  }}
+                  className="w-24 h-8 border rounded px-2 text-sm"
+                />
+                <span className="text-xs text-gray-500">분</span>
+              </div>
+            )}
           </div>
 
           {/* 자동 순서 최적화 / 도착지 토글 */}
@@ -173,7 +195,7 @@ export default function RouteOptimizerPanel() {
                   onChange={(e) => setOptimizeOrder(e.target.checked)}
                 />
                 자동 순서 최적화
-                <span className="text-gray-400">(기본 OFF)</span>
+                <span className="text-gray-400">(기본 ON)</span>
               </label>
               <label className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" className="accent-blue-600" checked={useExplicitDestination} onChange={(e) => setUseExplicitDestination(e.target.checked)} />
@@ -419,6 +441,23 @@ export default function RouteOptimizerPanel() {
                 value={destinationSelection}
                 onSelect={(v) => setDestinationSelection(v)}
               />
+              {destinationSelection && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600">도착지 체류시간</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={destinationDwellTime}
+                    onChange={(e) => {
+                      const value = Math.max(0, parseInt(e.target.value || '10', 10));
+                      setDestinationDwellTime(value);
+                    }}
+                    className="w-24 h-8 border rounded px-2 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">분</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -440,7 +479,7 @@ export default function RouteOptimizerPanel() {
               }
 
               // waypoints에서 유효한 목적지 추출
-              const validWaypoints = waypoints.filter(w => w.selection);
+              const validWaypoints: Waypoint[] = waypoints.filter(w => w.selection);
               console.log('[RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
 
               if (validWaypoints.length === 0) {
@@ -473,9 +512,19 @@ export default function RouteOptimizerPanel() {
                 : destinations;
               console.log('[RouteOptimizerPanel] 최종 destinations:', finalDest);
 
-              // 체류시간 수집
+              // 체류시간, 배송완료시간, 다음날 배송 여부 수집
               const dwellMinutes = validWaypoints.map(w => w.dwellTime);
-              console.log('[RouteOptimizerPanel] 체류시간:', dwellMinutes);
+              const deliveryTimes = validWaypoints.map(w => w.deliveryTime);
+              const isNextDayFlags = validWaypoints.map(w => w.isNextDay || false);
+
+              // 출발지와 도착지 체류시간 포함
+              const allDwellTimes = [originDwellTime, ...dwellMinutes];
+              if (useExplicitDestination && destinationSelection) {
+                allDwellTimes.push(destinationDwellTime);
+              }
+
+              console.log('[RouteOptimizerPanel] 체류시간 (출발지+경유지+도착지):', allDwellTimes);
+              console.log('[RouteOptimizerPanel] 배송완료시간:', deliveryTimes);
 
               // 디버그: 최적화 옵션 확인
               console.log('[RouteOptimizerPanel] Optimization options debug:', {
@@ -487,8 +536,18 @@ export default function RouteOptimizerPanel() {
                 finalDestCount: finalDest.length
               });
 
-              setDwellMinutes(dwellMinutes);
+              setDwellMinutes(allDwellTimes);
               setDestinations(finalDest);
+
+              // 배송완료시간 및 다음날 배송 여부를 options에 추가
+              const optionsWithDeliveryTimes = {
+                useExplicitDestination,
+                optimizeOrder,
+                useRealtimeTraffic,
+                departureAt: useRealtimeTraffic ? null : departureDateTime,
+                deliveryTimes: deliveryTimes.filter((t): t is string => !!t), // undefined 제거 및 타입 가드
+                isNextDayFlags: isNextDayFlags // 다음날 배송 여부 배열
+              };
 
               console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 시작');
               await optimizeRouteWith({
@@ -498,13 +557,8 @@ export default function RouteOptimizerPanel() {
                   address: originSelection.address || originSelection.name
                 } : null,
                 destinations: finalDest,
-                options: {
-                  useExplicitDestination,
-                  optimizeOrder,
-                  useRealtimeTraffic,
-                  departureAt: useRealtimeTraffic ? null : departureDateTime
-                },
-                dwellMinutes
+                options: optionsWithDeliveryTimes,
+                dwellMinutes: allDwellTimes
               });
               console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 완료');
 
