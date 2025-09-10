@@ -99,6 +99,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const optimizeRouteWith = useCallback(async (override?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
     const payload = buildPayload(override);
     console.log('[useRouteOptimization] optimizeRouteWith 호출됨, payload:', payload);
+    console.log('[useRouteOptimization] 배송완료시간 상세:', {
+      deliveryTimes: payload.deliveryTimes,
+      isNextDayFlags: payload.isNextDayFlags,
+      currentTime: new Date().toLocaleString()
+    });
     lastPayloadRef.current = payload;
 
     if (!payload.origins?.length || !payload.destinations?.length) {

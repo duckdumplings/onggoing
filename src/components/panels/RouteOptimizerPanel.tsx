@@ -75,7 +75,8 @@ export default function RouteOptimizerPanel() {
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
-  const [originDwellTime, setOriginDwellTime] = useState(10); // 출발지 체류시간
+  const [originDwellTime, setOriginDwellTime] = useState(10);
+  const [originDepartureTime, setOriginDepartureTime] = useState(''); // 출발지 배송출발시간 (기본값: 미입력)
 
   // originSelection이 변경될 때 origins 동기화
   useEffect(() => {
@@ -116,6 +117,18 @@ export default function RouteOptimizerPanel() {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   });
   const [useRealtimeTraffic, setUseRealtimeTraffic] = useState(true);
+
+  // 시간 설정 감지 (컴포넌트 상단에서 계산)
+  const hasAnyDeliveryTime = waypoints.some(w => w.deliveryTime && w.deliveryTime.trim() !== '');
+
+  // 시간 설정이 있을 때 실시간 교통정보 자동 비활성화
+  useEffect(() => {
+    const hasTimeSettings = originDepartureTime || hasAnyDeliveryTime;
+    if (hasTimeSettings && useRealtimeTraffic) {
+      console.log('⏰ [useEffect] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
+      setUseRealtimeTraffic(false);
+    }
+  }, [originDepartureTime, hasAnyDeliveryTime, useRealtimeTraffic]);
 
   // 주말인 경우 다음주 월요일로 조정하는 헬퍼 함수
   const getNextWeekday = (date: Date): Date => {
@@ -166,20 +179,44 @@ export default function RouteOptimizerPanel() {
               </div>
             </div>
             {originSelection && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-600">출발지 체류시간</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="5"
-                  value={originDwellTime}
-                  onChange={(e) => {
-                    const value = Math.max(0, parseInt(e.target.value || '10', 10));
-                    setOriginDwellTime(value);
-                  }}
-                  className="w-24 h-8 border rounded px-2 text-sm"
-                />
-                <span className="text-xs text-gray-500">분</span>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600">출발지 체류시간</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="5"
+                    value={originDwellTime}
+                    onChange={(e) => {
+                      const value = Math.max(0, parseInt(e.target.value || '10', 10));
+                      setOriginDwellTime(value);
+                    }}
+                    className="w-24 h-8 border rounded px-2 text-sm"
+                  />
+                  <span className="text-xs text-gray-500">분</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600">배송출발시간</label>
+                  <input
+                    type="time"
+                    value={originDepartureTime}
+                    onChange={(e) => setOriginDepartureTime(e.target.value)}
+                    className="w-32 h-8 border rounded px-2 text-sm"
+                    placeholder="미설정시 현재시간"
+                  />
+                  {originDepartureTime && (
+                    <button
+                      type="button"
+                      onClick={() => setOriginDepartureTime('')}
+                      className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                      title="시간 초기화"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -285,8 +322,12 @@ export default function RouteOptimizerPanel() {
                   className="accent-blue-600"
                   checked={useRealtimeTraffic}
                   onChange={(e) => setUseRealtimeTraffic(e.target.checked)}
+                  disabled={originDepartureTime || hasAnyDeliveryTime}
                 />
                 실시간 교통정보
+                {(originDepartureTime || hasAnyDeliveryTime) && (
+                  <span className="text-xs text-amber-600 ml-1">(시간 설정 시 자동 비활성화)</span>
+                )}
               </label>
             </div>
 
@@ -431,6 +472,12 @@ export default function RouteOptimizerPanel() {
                 📡 현재 시간 기준 실시간 교통정보 사용
               </div>
             )}
+
+            {!useRealtimeTraffic && (originDepartureTime || hasAnyDeliveryTime) && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                ⏰ 시간 설정 감지 - 타임머신 교통정보 사용 (실시간 교통정보 자동 비활성화)
+              </div>
+            )}
           </div>
 
           {useExplicitDestination && (
@@ -469,21 +516,28 @@ export default function RouteOptimizerPanel() {
 
           <button
             onClick={async () => {
-              console.log('[RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
+              console.log('🎯 [RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
+              console.log('🔍 [RouteOptimizerPanel] 현재 상태:', {
+                originSelection,
+                waypoints,
+                vehicleType,
+                optimizeOrder,
+                useRealtimeTraffic
+              });
               setLocalError(null);
 
               if (!originSelection) {
-                console.log('[RouteOptimizerPanel] 출발지가 선택되지 않음');
+                console.log('❌ [RouteOptimizerPanel] 출발지가 선택되지 않음');
                 setLocalError('출발지를 먼저 선택하세요.');
                 return;
               }
 
               // waypoints에서 유효한 목적지 추출
               const validWaypoints: Waypoint[] = waypoints.filter(w => w.selection);
-              console.log('[RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
+              console.log('📍 [RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
 
               if (validWaypoints.length === 0) {
-                console.log('[RouteOptimizerPanel] 유효한 목적지가 없음');
+                console.log('❌ [RouteOptimizerPanel] 유효한 목적지가 없음');
                 setLocalError('목적지를 하나 이상 추가하세요.');
                 return;
               }
@@ -512,15 +566,64 @@ export default function RouteOptimizerPanel() {
                 : destinations;
               console.log('[RouteOptimizerPanel] 최종 destinations:', finalDest);
 
-              // 체류시간, 배송완료시간, 다음날 배송 여부 수집
+              // 체류시간, 배송완료시간 수집
               const dwellMinutes = validWaypoints.map(w => w.dwellTime);
               const deliveryTimes = validWaypoints.map(w => w.deliveryTime);
-              const isNextDayFlags = validWaypoints.map(w => w.isNextDay || false);
+
+              // 출발시간 기반 다음날 판단 (미입력 시 현재 시간 사용)
+              const now = new Date();
+              const originTimeInMinutes = originDepartureTime
+                ? (() => {
+                  const [originHours, originMinutes] = originDepartureTime.split(':').map(Number);
+                  return originHours * 60 + originMinutes;
+                })()
+                : now.getHours() * 60 + now.getMinutes();
+
+              const isNextDayFlags = deliveryTimes.map(time => {
+                if (!time) {
+                  // 배송완료시간이 없는 경우: 일부 경유지에 배송완료시간이 있으면 다음날, 없으면 당일
+                  return hasAnyDeliveryTime;
+                }
+
+                const [hours, minutes] = time.split(':').map(Number);
+                const timeInMinutes = hours * 60 + minutes;
+
+                if (hasAnyDeliveryTime) {
+                  // 일부 경유지에 배송완료시간이 있으면 모든 경유지를 다음날 배송으로 판단
+                  return true;
+                } else {
+                  // 모든 경유지에 배송완료시간이 없으면 출발시간과 비교하여 판단
+                  return timeInMinutes < originTimeInMinutes;
+                }
+              });
+
+              console.log('=== RouteOptimizerPanel 수집된 데이터 ===');
+              console.log('deliveryTimes:', deliveryTimes);
+              console.log('isNextDayFlags:', isNextDayFlags);
+              console.log('hasAnyDeliveryTime:', hasAnyDeliveryTime);
+              console.log('originDepartureTime:', originDepartureTime || '미입력(현재시간 사용)');
+              console.log('originTimeInMinutes:', originTimeInMinutes);
+              console.log('validWaypoints:', validWaypoints.map(w => ({
+                id: w.id,
+                deliveryTime: w.deliveryTime,
+                isNextDay: w.isNextDay
+              })));
+              console.log('==========================================');
 
               // 출발지와 도착지 체류시간 포함
               const allDwellTimes = [originDwellTime, ...dwellMinutes];
               if (useExplicitDestination && destinationSelection) {
                 allDwellTimes.push(destinationDwellTime);
+              }
+
+              // 시간 설정이 있는 경우 실시간 교통정보 자동 비활성화
+              const hasTimeSettings = originDepartureTime || hasAnyDeliveryTime;
+              let finalUseRealtimeTraffic = useRealtimeTraffic;
+
+              if (hasTimeSettings && useRealtimeTraffic) {
+                console.log('⏰ [RouteOptimizerPanel] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
+                setUseRealtimeTraffic(false);
+                finalUseRealtimeTraffic = false; // 즉시 반영
               }
 
               console.log('[RouteOptimizerPanel] 체류시간 (출발지+경유지+도착지):', allDwellTimes);
@@ -529,9 +632,9 @@ export default function RouteOptimizerPanel() {
               // 디버그: 최적화 옵션 확인
               console.log('[RouteOptimizerPanel] Optimization options debug:', {
                 optimizeOrder,
-                useRealtimeTraffic,
+                useRealtimeTraffic: finalUseRealtimeTraffic,
                 departureDateTime,
-                departureAt: useRealtimeTraffic ? null : departureDateTime,
+                departureAt: finalUseRealtimeTraffic ? null : departureDateTime,
                 useExplicitDestination,
                 finalDestCount: finalDest.length
               });
@@ -540,17 +643,32 @@ export default function RouteOptimizerPanel() {
               setDestinations(finalDest);
 
               // 배송완료시간 및 다음날 배송 여부를 options에 추가
+              // 출발시간을 ISO 형식으로 변환 (미입력 시 현재 시간 사용)
+              const originDepartureDateTime = new Date();
+              if (originDepartureTime) {
+                const [originH, originM] = originDepartureTime.split(':').map(Number);
+                originDepartureDateTime.setHours(originH, originM, 0, 0);
+              } else {
+                // 미입력 시 현재 시간 사용
+                originDepartureDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
+              }
+
+              // 다음날 배송인 경우 출발시간도 다음날로 설정
+              if (hasAnyDeliveryTime) {
+                originDepartureDateTime.setDate(originDepartureDateTime.getDate() + 1);
+              }
+
               const optionsWithDeliveryTimes = {
                 useExplicitDestination,
                 optimizeOrder,
-                useRealtimeTraffic,
-                departureAt: useRealtimeTraffic ? null : departureDateTime,
+                useRealtimeTraffic: finalUseRealtimeTraffic,
+                departureAt: finalUseRealtimeTraffic ? null : originDepartureDateTime.toISOString(),
                 deliveryTimes: deliveryTimes.filter((t): t is string => !!t), // undefined 제거 및 타입 가드
-                isNextDayFlags: isNextDayFlags // 다음날 배송 여부 배열
+                isNextDayFlags: isNextDayFlags.filter((_, index) => !!deliveryTimes[index]) // deliveryTimes와 인덱스 맞춤
               };
 
-              console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 시작');
-              await optimizeRouteWith({
+              console.log('🚀 [RouteOptimizerPanel] optimizeRouteWith 호출 시작');
+              console.log('📤 전송할 데이터:', {
                 origins: originSelection ? {
                   lat: originSelection.latitude,
                   lng: originSelection.longitude,
@@ -560,7 +678,23 @@ export default function RouteOptimizerPanel() {
                 options: optionsWithDeliveryTimes,
                 dwellMinutes: allDwellTimes
               });
-              console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 완료');
+
+              try {
+                await optimizeRouteWith({
+                  origins: originSelection ? {
+                    lat: originSelection.latitude,
+                    lng: originSelection.longitude,
+                    address: originSelection.address || originSelection.name
+                  } : null,
+                  destinations: finalDest,
+                  options: optionsWithDeliveryTimes,
+                  dwellMinutes: allDwellTimes
+                });
+                console.log('✅ [RouteOptimizerPanel] optimizeRouteWith 호출 완료');
+              } catch (error) {
+                console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
+                setLocalError('경로 최적화 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+              }
 
               // 자동견적 영역으로 스크롤
               setTimeout(() => {

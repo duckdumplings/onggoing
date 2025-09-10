@@ -194,16 +194,6 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
               {/* 다음날 체크박스 */}
               {waypoint.deliveryTime && (
                 <div className="flex items-center gap-1 mt-1">
-                  <input
-                    type="checkbox"
-                    id={`nextday-${waypoint.id}`}
-                    checked={waypoint.isNextDay || false}
-                    onChange={(e) => onUpdate(waypoint.id, { isNextDay: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <label htmlFor={`nextday-${waypoint.id}`} className="text-xs text-gray-600">
-                    다음날 배송
-                  </label>
                 </div>
               )}
               {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
@@ -379,16 +369,6 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
                     {/* 다음날 체크박스 (서버사이드) */}
                     {waypoint.deliveryTime && (
                       <div className="flex items-center gap-1 mt-1">
-                        <input
-                          type="checkbox"
-                          id={`nextday-ssr-${waypoint.id}`}
-                          checked={waypoint.isNextDay || false}
-                          onChange={() => { }} // 서버사이드에서는 빈 함수
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                        />
-                        <label htmlFor={`nextday-ssr-${waypoint.id}`} className="text-xs text-gray-600">
-                          다음날 배송
-                        </label>
                       </div>
                     )}
                     {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
