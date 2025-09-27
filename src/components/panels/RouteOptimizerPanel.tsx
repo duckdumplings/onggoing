@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 import WaypointList, { type Waypoint } from './WaypointList';
@@ -19,6 +19,7 @@ export default function RouteOptimizerPanel() {
     setOrigins,
     vehicleType,
     setVehicleType,
+    lastError,
   } = useRouteOptimization();
 
   // 외부에서 입력값을 설정할 수 있는 함수들
@@ -98,6 +99,57 @@ export default function RouteOptimizerPanel() {
   const [destinationSelection, setDestinationSelection] = useState<AddressSelection | null>(null);
   const [destinationDwellTime, setDestinationDwellTime] = useState(10); // 도착지 체류시간
   const [localError, setLocalError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
+
+  // 에러 → 인라인 필드 에러 매핑
+  useEffect(() => {
+    const byIndex: Record<number, string> = {};
+    const le: any = lastError;
+    if (le?.details?.errors && Array.isArray(le.details.errors)) {
+      le.details.errors.forEach((msg: string) => {
+        const match = msg.match(/경유지\s(\d+)/);
+        if (match) {
+          const idx = parseInt(match[1], 10) - 1;
+          byIndex[idx] = msg.replace(/경유지\s\d+:\s?/, '');
+        }
+      });
+    }
+    setFieldErrors(byIndex);
+  }, [lastError]);
+
+  // 시간 문자열 보정 헬퍼
+  const adjustHHMM = useCallback((time: string, deltaMin: number) => {
+    const [h, m] = time.split(':').map(Number);
+    let total = h * 60 + m + deltaMin;
+    total = (total % (24 * 60) + 24 * 60) % (24 * 60);
+    const nh = String(Math.floor(total / 60)).padStart(2, '0');
+    const nm = String(total % 60).padStart(2, '0');
+    return `${nh}:${nm}`;
+  }, []);
+
+  const quickFixAdvanceDeparture = useCallback((minutes: number) => {
+    const base = originDepartureTime || (() => {
+      const now = new Date();
+      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    })();
+    const updated = adjustHHMM(base, -minutes);
+    setOriginDepartureTime(updated);
+    // 수정 후 자동 재시도
+    setTimeout(() => optimizeButtonRef.current?.click(), 50);
+  }, [originDepartureTime, adjustHHMM]);
+
+  const quickFixDelayFirstErroredStop = useCallback((minutes: number) => {
+    const indices = Object.keys(fieldErrors).map(k => parseInt(k, 10)).sort((a, b) => a - b);
+    if (indices.length === 0) return;
+    const idx = indices[0];
+    setWaypoints(prev => prev.map((w, i) => {
+      if (i !== idx) return w;
+      const base = w.deliveryTime || originDepartureTime || '09:00';
+      return { ...w, deliveryTime: adjustHHMM(base, minutes) };
+    }));
+    // 수정 후 자동 재시도
+    setTimeout(() => optimizeButtonRef.current?.click(), 50);
+  }, [fieldErrors, originDepartureTime, adjustHHMM]);
 
   // 자동순서최적화 상태
   const [optimizeOrder, setOptimizeOrder] = useState(true);
@@ -121,6 +173,9 @@ export default function RouteOptimizerPanel() {
   // 시간 설정 감지 (컴포넌트 상단에서 계산)
   const hasAnyDeliveryTime = waypoints.some(w => w.deliveryTime && w.deliveryTime.trim() !== '');
 
+  // 출발지 배송출발시간 필수 입력 여부 (경유지에 배송완료시간이 하나라도 있으면 필수)
+  const isOriginDepartureTimeRequired = hasAnyDeliveryTime;
+
   // 시간 설정이 있을 때 실시간 교통정보 자동 비활성화
   useEffect(() => {
     const hasTimeSettings = originDepartureTime || hasAnyDeliveryTime;
@@ -129,6 +184,14 @@ export default function RouteOptimizerPanel() {
       setUseRealtimeTraffic(false);
     }
   }, [originDepartureTime, hasAnyDeliveryTime, useRealtimeTraffic]);
+
+  // 출발지 배송출발시간이 설정되면 실시간 교통정보 자동 비활성화 (다음날 기준 계산)
+  useEffect(() => {
+    if (originDepartureTime && useRealtimeTraffic) {
+      console.log('🚀 [useEffect] 출발지 배송출발시간 설정 - 실시간 교통정보 자동 비활성화 (다음날 기준)');
+      setUseRealtimeTraffic(false);
+    }
+  }, [originDepartureTime, useRealtimeTraffic]);
 
   // 주말인 경우 다음주 월요일로 조정하는 헬퍼 함수
   const getNextWeekday = (date: Date): Date => {
@@ -141,12 +204,33 @@ export default function RouteOptimizerPanel() {
     return date;
   };
 
+  // 출발지 배송출발시간을 설정하면 타임머신 출발시각을 자동 동기화(다음날 동일 HH:mm)
+  useEffect(() => {
+    if (!originDepartureTime) return;
+    try {
+      const [h, m] = originDepartureTime.split(':').map(Number);
+      let target = new Date();
+      target.setDate(target.getDate() + 1); // 시간제약 존재 시 내일 앵커에 맞춤
+      target = getNextWeekday(target);
+      target.setHours(h, m, 0, 0);
+      const year = target.getFullYear();
+      const month = String(target.getMonth() + 1).padStart(2, '0');
+      const day = String(target.getDate()).padStart(2, '0');
+      const hh = String(target.getHours()).padStart(2, '0');
+      const mm = String(target.getMinutes()).padStart(2, '0');
+      setDepartureDateTime(`${year}-${month}-${day}T${hh}:${mm}`);
+    } catch { }
+  }, [originDepartureTime]);
+
   const coordEqual = (a: { lat: number; lng: number; address?: string }, b: { lat: number; lng: number; address?: string }, eps = 1e-6) =>
     Math.abs(a.lat - b.lat) <= eps && Math.abs(a.lng - b.lng) <= eps;
 
   const displayOriginValue: AddressSelection | null = useMemo(() => {
     return originSelection;
   }, [originSelection]);
+
+  // 최적경로 계산 메인 버튼 ref (부동 액션 버튼에서 재사용)
+  const optimizeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   return (
     <section className="glass-card border-b border-white/40 bg-gradient-to-br from-blue-50/30 to-indigo-50/30">
@@ -196,13 +280,20 @@ export default function RouteOptimizerPanel() {
                   <span className="text-xs text-gray-500">분</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-600">배송출발시간</label>
+                  <label className={`text-xs ${isOriginDepartureTimeRequired ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                    배송출발시간
+                    {isOriginDepartureTimeRequired && <span className="text-red-500 ml-1">*</span>}
+                  </label>
                   <input
                     type="time"
                     value={originDepartureTime}
                     onChange={(e) => setOriginDepartureTime(e.target.value)}
-                    className="w-32 h-8 border rounded px-2 text-sm"
-                    placeholder="미설정시 현재시간"
+                    className={`w-32 h-8 border rounded px-2 text-sm ${isOriginDepartureTimeRequired && !originDepartureTime
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-200'
+                      : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'
+                      }`}
+                    placeholder={isOriginDepartureTimeRequired ? "필수 입력" : "미설정시 현재시간"}
+                    required={isOriginDepartureTimeRequired}
                   />
                   {originDepartureTime && (
                     <button
@@ -217,6 +308,11 @@ export default function RouteOptimizerPanel() {
                     </button>
                   )}
                 </div>
+                {isOriginDepartureTimeRequired && !originDepartureTime && (
+                  <div className="text-xs text-red-600 mt-1">
+                    ⚠️ 시간제약 기반 최적화를 위해 출발지 배송출발시간을 입력해주세요
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -307,6 +403,8 @@ export default function RouteOptimizerPanel() {
           <WaypointList
             waypoints={waypoints}
             onWaypointsChange={setWaypoints}
+            hasAnyDeliveryTime={hasAnyDeliveryTime}
+            errorByIndex={fieldErrors}
           />
 
           {/* 섹션 구분선 */}
@@ -322,11 +420,14 @@ export default function RouteOptimizerPanel() {
                   className="accent-blue-600"
                   checked={useRealtimeTraffic}
                   onChange={(e) => setUseRealtimeTraffic(e.target.checked)}
-                  disabled={originDepartureTime || hasAnyDeliveryTime}
+                  disabled={!!originDepartureTime || hasAnyDeliveryTime}
                 />
                 실시간 교통정보
-                {(originDepartureTime || hasAnyDeliveryTime) && (
-                  <span className="text-xs text-amber-600 ml-1">(시간 설정 시 자동 비활성화)</span>
+                {originDepartureTime && (
+                  <span className="text-xs text-amber-600 ml-1">(출발시간 설정 시 자동 비활성화)</span>
+                )}
+                {hasAnyDeliveryTime && !originDepartureTime && (
+                  <span className="text-xs text-amber-600 ml-1">(경유지 시간제약 시 자동 비활성화)</span>
                 )}
               </label>
             </div>
@@ -473,9 +574,14 @@ export default function RouteOptimizerPanel() {
               </div>
             )}
 
-            {!useRealtimeTraffic && (originDepartureTime || hasAnyDeliveryTime) && (
+            {!useRealtimeTraffic && originDepartureTime && (
               <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-                ⏰ 시간 설정 감지 - 타임머신 교통정보 사용 (실시간 교통정보 자동 비활성화)
+                🚀 출발시간 설정 감지 - 타임머신 교통정보 사용 (다음날 기준 최적화)
+              </div>
+            )}
+            {!useRealtimeTraffic && hasAnyDeliveryTime && !originDepartureTime && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                ⏰ 경유지 시간제약 감지 - 타임머신 교통정보 사용 (시간제약 기반 최적화)
               </div>
             )}
           </div>
@@ -514,7 +620,39 @@ export default function RouteOptimizerPanel() {
             <div className="text-sm text-red-600">{localError || error}</div>
           )}
 
+          {/* 서버 에러 요약 배너 + 빠른수정 */}
+          {lastError && (
+            <div className="p-3 rounded-lg border bg-red-50 border-red-200 text-sm text-red-800 space-y-2">
+              <div className="font-medium">오류: {lastError.message || lastError.error}</div>
+              {Array.isArray(lastError?.details?.errors) && lastError.details.errors.length > 0 && (
+                <ul className="list-disc pl-5 space-y-0.5">
+                  {lastError.details.errors.map((e: string, i: number) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => quickFixAdvanceDeparture(30)}
+                  className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50"
+                >출발시간 30분 앞당기기</button>
+                <button
+                  type="button"
+                  onClick={() => quickFixDelayFirstErroredStop(30)}
+                  className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50"
+                >문제 경유지 +30분</button>
+                <button
+                  type="button"
+                  onClick={() => setLocalError(null)}
+                  className="ml-auto px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50"
+                >닫기</button>
+              </div>
+            </div>
+          )}
+
           <button
+            ref={optimizeButtonRef}
             onClick={async () => {
               console.log('🎯 [RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
               console.log('🔍 [RouteOptimizerPanel] 현재 상태:', {
@@ -529,6 +667,13 @@ export default function RouteOptimizerPanel() {
               if (!originSelection) {
                 console.log('❌ [RouteOptimizerPanel] 출발지가 선택되지 않음');
                 setLocalError('출발지를 먼저 선택하세요.');
+                return;
+              }
+
+              // 시간제약 기반 최적화를 위한 출발지 배송출발시간 필수 검증
+              if (isOriginDepartureTimeRequired && !originDepartureTime) {
+                console.log('❌ [RouteOptimizerPanel] 출발지 배송출발시간이 필수인데 비어있음');
+                setLocalError('시간제약 기반 최적화를 위해 출발지 배송출발시간을 입력해주세요.');
                 return;
               }
 
@@ -581,20 +726,16 @@ export default function RouteOptimizerPanel() {
 
               const isNextDayFlags = deliveryTimes.map(time => {
                 if (!time) {
-                  // 배송완료시간이 없는 경우: 일부 경유지에 배송완료시간이 있으면 다음날, 없으면 당일
-                  return hasAnyDeliveryTime;
+                  // 배송완료시간이 없는 경우: 당일 배송으로 처리
+                  return false;
                 }
 
                 const [hours, minutes] = time.split(':').map(Number);
                 const timeInMinutes = hours * 60 + minutes;
 
-                if (hasAnyDeliveryTime) {
-                  // 일부 경유지에 배송완료시간이 있으면 모든 경유지를 다음날 배송으로 판단
-                  return true;
-                } else {
-                  // 모든 경유지에 배송완료시간이 없으면 출발시간과 비교하여 판단
-                  return timeInMinutes < originTimeInMinutes;
-                }
+                // 배송완료시간이 출발시간보다 이르면 다음날 배송
+                // 배송완료시간이 출발시간보다 늦으면 당일 배송
+                return timeInMinutes < originTimeInMinutes;
               });
 
               console.log('=== RouteOptimizerPanel 수집된 데이터 ===');
@@ -653,18 +794,18 @@ export default function RouteOptimizerPanel() {
                 originDepartureDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
               }
 
-              // 다음날 배송인 경우 출발시간도 다음날로 설정
-              if (hasAnyDeliveryTime) {
-                originDepartureDateTime.setDate(originDepartureDateTime.getDate() + 1);
-              }
+              // 출발시간은 당일로 유지 (배송완료시간만 다음날 처리)
+              // 다음날 배송 로직은 서버에서 isNextDayFlags로 처리
 
               const optionsWithDeliveryTimes = {
                 useExplicitDestination,
                 optimizeOrder,
                 useRealtimeTraffic: finalUseRealtimeTraffic,
-                departureAt: finalUseRealtimeTraffic ? null : originDepartureDateTime.toISOString(),
-                deliveryTimes: deliveryTimes.filter((t): t is string => !!t), // undefined 제거 및 타입 가드
-                isNextDayFlags: isNextDayFlags.filter((_, index) => !!deliveryTimes[index]) // deliveryTimes와 인덱스 맞춤
+                // 타임머신 출발 시간 UI(departureDateTime)를 그대로 사용
+                departureAt: finalUseRealtimeTraffic ? null : new Date(departureDateTime).toISOString(),
+                // 인덱스 정합성을 위해 빈 문자열로 채워 전달
+                deliveryTimes: deliveryTimes.map(t => t || ''),
+                isNextDayFlags: isNextDayFlags
               };
 
               console.log('🚀 [RouteOptimizerPanel] optimizeRouteWith 호출 시작');
@@ -694,6 +835,19 @@ export default function RouteOptimizerPanel() {
               } catch (error) {
                 console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
                 setLocalError('경로 최적화 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+                // 서버 lastError를 UI에 매핑
+                const le: any = (window as any).lastOptimizationError || null;
+                const byIndex: Record<number, string> = {};
+                if (le?.details?.errors && Array.isArray(le.details.errors)) {
+                  le.details.errors.forEach((msg: string) => {
+                    const match = msg.match(/경유지\s(\d+)/);
+                    if (match) {
+                      const idx = parseInt(match[1], 10) - 1;
+                      byIndex[idx] = msg.replace(/경유지\s\d+:\s?/, '');
+                    }
+                  });
+                }
+                setFieldErrors(byIndex);
               }
 
               // 자동견적 영역으로 스크롤
@@ -712,6 +866,7 @@ export default function RouteOptimizerPanel() {
           >
             {isLoading ? '최적 경로 계산 중…' : '최적 경로 계산'}
           </button>
+          {/* 고정 버튼 제거: 상단 메인 버튼만 사용 */}
         </div>
       )}
     </section>

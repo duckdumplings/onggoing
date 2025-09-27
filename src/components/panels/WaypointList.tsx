@@ -22,8 +22,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 
-// 배송완료시간 검증 함수들 (다음날 체크박스 고려)
-function isValidDeliveryTime(timeString: string, isNextDay: boolean = false): boolean {
+// 배송완료시간 검증 함수들 (자동 다음날 배송 추론 고려)
+function isValidDeliveryTime(timeString: string, hasAnyDeliveryTime: boolean = false): boolean {
   const [hours, minutes] = timeString.split(':').map(Number);
   const now = new Date();
   const currentHour = now.getHours();
@@ -31,9 +31,9 @@ function isValidDeliveryTime(timeString: string, isNextDay: boolean = false): bo
   const currentTimeInMinutes = currentHour * 60 + currentMinute;
   const inputTimeInMinutes = hours * 60 + minutes;
 
-  // 다음날 체크박스가 체크된 경우: 24시간 후까지 허용
-  if (isNextDay) {
-    // 다음날이므로 24시간 후까지 허용
+  // 자동 다음날 배송 추론: 일부 경유지에 배송완료시간이 있으면 모든 경유지를 다음날 배송으로 판단
+  if (hasAnyDeliveryTime) {
+    // 다음날 배송이므로 24시간 후까지 허용
     if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
       return false;
     }
@@ -53,7 +53,7 @@ function isValidDeliveryTime(timeString: string, isNextDay: boolean = false): bo
   return true;
 }
 
-function getDeliveryTimeValidationMessage(timeString: string, isNextDay: boolean = false): string {
+function getDeliveryTimeValidationMessage(timeString: string, hasAnyDeliveryTime: boolean = false): string {
   const [hours, minutes] = timeString.split(':').map(Number);
   const now = new Date();
   const currentHour = now.getHours();
@@ -61,8 +61,8 @@ function getDeliveryTimeValidationMessage(timeString: string, isNextDay: boolean
   const currentTimeInMinutes = currentHour * 60 + currentMinute;
   const inputTimeInMinutes = hours * 60 + minutes;
 
-  // 다음날 체크박스가 체크된 경우
-  if (isNextDay) {
+  // 자동 다음날 배송 추론: 일부 경유지에 배송완료시간이 있으면 모든 경유지를 다음날 배송으로 판단
+  if (hasAnyDeliveryTime) {
     if (inputTimeInMinutes > currentTimeInMinutes + 24 * 60) {
       return '24시간 이후의 시간입니다. 현실적인 시간으로 설정해주세요.';
     }
@@ -92,6 +92,8 @@ export interface Waypoint {
 interface WaypointListProps {
   waypoints: Waypoint[];
   onWaypointsChange: (waypoints: Waypoint[]) => void;
+  hasAnyDeliveryTime?: boolean; // 자동 다음날 배송 추론을 위한 플래그
+  errorByIndex?: Record<number, string>; // 인라인 에러 표시용
 }
 
 interface SortableWaypointItemProps {
@@ -100,9 +102,11 @@ interface SortableWaypointItemProps {
   onUpdate: (id: string, updates: Partial<Waypoint>) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
+  hasAnyDeliveryTime?: boolean; // 자동 다음날 배송 추론을 위한 플래그
+  errorByIndex?: Record<number, string>;
 }
 
-function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate }: SortableWaypointItemProps) {
+function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate, hasAnyDeliveryTime = false, errorByIndex }: SortableWaypointItemProps) {
   const {
     attributes,
     listeners,
@@ -172,7 +176,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                     const timeValue = e.target.value || undefined;
                     onUpdate(waypoint.id, { deliveryTime: timeValue });
                   }}
-                  className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay)
+                  className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime)
                     ? 'border-red-300 bg-red-50'
                     : ''
                     }`}
@@ -196,9 +200,14 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                 <div className="flex items-center gap-1 mt-1">
                 </div>
               )}
-              {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
+              {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime) && (
                 <div className="text-xs text-red-600 mt-1">
-                  {getDeliveryTimeValidationMessage(waypoint.deliveryTime, waypoint.isNextDay)}
+                  {getDeliveryTimeValidationMessage(waypoint.deliveryTime, hasAnyDeliveryTime)}
+                </div>
+              )}
+              {errorByIndex && errorByIndex[index] && (
+                <div className="text-xs text-red-600 mt-1">
+                  {errorByIndex[index]}
                 </div>
               )}
             </div>
@@ -233,7 +242,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
   );
 }
 
-export default function WaypointList({ waypoints, onWaypointsChange }: WaypointListProps) {
+export default function WaypointList({ waypoints, onWaypointsChange, hasAnyDeliveryTime = false, errorByIndex }: WaypointListProps) {
   // 클라이언트 전용 렌더링을 위한 상태
   const [isClient, setIsClient] = useState(false);
 
@@ -347,7 +356,7 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
                         type="time"
                         value={waypoint.deliveryTime || ''}
                         onChange={() => { }} // 서버사이드에서는 빈 함수
-                        className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay)
+                        className={`w-32 h-8 border rounded px-2 text-sm ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime)
                           ? 'border-red-300 bg-red-50'
                           : ''
                           }`}
@@ -371,9 +380,9 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
                       <div className="flex items-center gap-1 mt-1">
                       </div>
                     )}
-                    {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, waypoint.isNextDay) && (
+                    {waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime) && (
                       <div className="text-xs text-red-600 mt-1">
-                        {getDeliveryTimeValidationMessage(waypoint.deliveryTime, waypoint.isNextDay)}
+                        {getDeliveryTimeValidationMessage(waypoint.deliveryTime, hasAnyDeliveryTime)}
                       </div>
                     )}
                   </div>
@@ -429,6 +438,8 @@ export default function WaypointList({ waypoints, onWaypointsChange }: WaypointL
               onUpdate={handleUpdate}
               onDelete={handleDelete}
               onDuplicate={handleDuplicate}
+              hasAnyDeliveryTime={hasAnyDeliveryTime}
+              errorByIndex={errorByIndex}
             />
           ))}
         </SortableContext>

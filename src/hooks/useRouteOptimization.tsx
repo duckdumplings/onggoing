@@ -55,6 +55,7 @@ export interface RouteOptimizationState {
   retry: () => Promise<void>;
   cancel: () => void;
   reset: () => void;
+  lastError: any | null;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -67,6 +68,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<any | null>(null);
   const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
@@ -131,7 +133,12 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `HTTP_${res.status}`);
+        console.warn('[useRouteOptimization] 서버 오류 응답:', err);
+        setLastError(err);
+        setError(err?.message || err?.error || `HTTP_${res.status}`);
+        // UI에서 배너와 인라인 가이드를 띄우기 위해 throw 대신 상태로 전달하고 조용히 종료
+        try { (window as any).lastOptimizationError = err; } catch { }
+        return;
       }
 
       const data = await res.json();
@@ -140,6 +147,10 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       if (data?.success && data?.data) {
         console.log('[useRouteOptimization] routeData 설정:', data.data);
         setRouteData(data.data as RouteData);
+        // 성공 시 에러 상태 초기화
+        setLastError(null);
+        setError(null);
+        try { (window as any).lastOptimizationError = null; } catch { }
 
         // 최적화된 순서로 destinations 업데이트
         if (data.data.summary?.optimizationInfo?.optimizedOrder) {
@@ -165,7 +176,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     } catch (e: any) {
       if (e?.name === 'AbortError') return; // 취소
       console.error('[useRouteOptimization] API 호출 오류:', e);
-      setError(e?.message || '경로 최적화 실패');
+      if (!lastError) setError(e?.message || '경로 최적화 실패');
+      try { if (lastError) (window as any).lastOptimizationError = lastError; } catch { }
     } finally {
       setIsLoading(false);
     }
@@ -218,6 +230,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     retry,
     cancel,
     reset,
+    lastError,
   };
 
   return (
