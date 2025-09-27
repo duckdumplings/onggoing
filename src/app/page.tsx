@@ -29,8 +29,7 @@ export default function Home() {
       {/* 좌측 패널 */}
       <aside className="hidden md:flex flex-col p-4 gap-3 bg-white/60 backdrop-blur-xl border-r border-white/40" style={{ width: '28rem' }}>
         <header className="px-2 pb-1 flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">옹고잉 물류</h1>
-          <p className="text-xs text-gray-600">스마트 경로 최적화 플랫폼</p>
+          <h1 className="text-xl font-bold text-gray-900">옹라우팅</h1>
         </header>
         {/* 통합 기능 패널 - 스크롤 영역 */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3 custom-scrollbar">
