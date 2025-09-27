@@ -230,8 +230,19 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         </ul>
       )}
       {value && (
-        <div className="mt-2 text-xs text-gray-600">
-          확정: {value.address} ({value.latitude.toFixed(5)}, {value.longitude.toFixed(5)})
+        <div className="mt-2 flex items-center gap-2 text-xs text-gray-700">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">확정됨</span>
+          <span className="truncate" title={`${value.address} (${value.latitude.toFixed(5)}, ${value.longitude.toFixed(5)})`}>
+            {value.address}
+          </span>
+          <button
+            type="button"
+            className="ml-auto px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            title="좌표 복사"
+            onClick={() => navigator.clipboard?.writeText(`${value.latitude},${value.longitude}`).catch(() => { })}
+          >
+            복사
+          </button>
         </div>
       )}
     </div>

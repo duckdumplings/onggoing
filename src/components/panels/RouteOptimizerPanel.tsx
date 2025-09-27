@@ -101,6 +101,18 @@ export default function RouteOptimizerPanel() {
   const [localError, setLocalError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
 
+  // 경유지 선택 변경 시 해당 인덱스의 에러 제거
+  useEffect(() => {
+    if (!fieldErrors || Object.keys(fieldErrors).length === 0) return;
+    const next: Record<number, string> = { ...fieldErrors };
+    waypoints.forEach((w, i) => {
+      if (w.selection && next[i]) delete next[i];
+    });
+    if (Object.keys(next).length !== Object.keys(fieldErrors).length) {
+      setFieldErrors(next);
+    }
+  }, [waypoints]);
+
   // 에러 → 인라인 필드 에러 매핑
   useEffect(() => {
     const byIndex: Record<number, string> = {};
@@ -663,6 +675,7 @@ export default function RouteOptimizerPanel() {
                 useRealtimeTraffic
               });
               setLocalError(null);
+              setFieldErrors({});
 
               if (!originSelection) {
                 console.log('❌ [RouteOptimizerPanel] 출발지가 선택되지 않음');
@@ -674,6 +687,18 @@ export default function RouteOptimizerPanel() {
               if (isOriginDepartureTimeRequired && !originDepartureTime) {
                 console.log('❌ [RouteOptimizerPanel] 출발지 배송출발시간이 필수인데 비어있음');
                 setLocalError('시간제약 기반 최적화를 위해 출발지 배송출발시간을 입력해주세요.');
+                return;
+              }
+
+              // 주소 미확정 경유지 차단
+              const unconfirmedIdx: number[] = [];
+              waypoints.forEach((w, i) => { if (!w.selection) unconfirmedIdx.push(i + 1); });
+              if (unconfirmedIdx.length > 0) {
+                console.log('❌ [RouteOptimizerPanel] 미확정 경유지 존재:', unconfirmedIdx);
+                setLocalError(`주소가 확정되지 않은 경유지(${unconfirmedIdx.join(', ')})가 있습니다. 각 경유지에서 검색 후 항목을 선택해 "확정됨" 상태로 만들어주세요.`);
+                const fe: Record<number, string> = {};
+                unconfirmedIdx.forEach((idx) => { fe[idx - 1] = '주소 미확정: 검색 후 제안 목록에서 선택해주세요.'; });
+                setFieldErrors(fe);
                 return;
               }
 
@@ -832,6 +857,7 @@ export default function RouteOptimizerPanel() {
                   dwellMinutes: allDwellTimes
                 });
                 console.log('✅ [RouteOptimizerPanel] optimizeRouteWith 호출 완료');
+                setFieldErrors({});
               } catch (error) {
                 console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
                 setLocalError('경로 최적화 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));

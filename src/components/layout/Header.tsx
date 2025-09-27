@@ -26,8 +26,15 @@ const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center">
             <div className="flex-shrink-0">
               <div className="flex items-center space-x-2">
-                {/* optional logo at /logo.png */}
-                <img src="/logo.png" alt="옹라우팅" className="h-7 w-7 object-contain hidden sm:block" onError={(e)=>{(e.currentTarget as HTMLImageElement).style.display='none';}} />
+                {/* optional logo at /logo.png - hide until loaded, suppress alt fallback */}
+                <img
+                  src="/logo.png"
+                  alt=""
+                  className="h-7 w-7 object-contain hidden sm:block"
+                  style={{ visibility: 'hidden' }}
+                  onLoad={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'visible'; }}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
                 <h1 className="text-xl font-bold text-primary-600">옹라우팅</h1>
               </div>
             </div>

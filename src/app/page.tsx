@@ -29,7 +29,17 @@ export default function Home() {
       {/* 좌측 패널 */}
       <aside className="hidden md:flex flex-col p-4 gap-3 bg-white/60 backdrop-blur-xl border-r border-white/40" style={{ width: '28rem' }}>
         <header className="px-2 pb-1 flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-900">옹라우팅</h1>
+          <div className="flex items-center space-x-3 select-none">
+            <span
+              className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-emerald-400 shadow-sm"
+              aria-hidden="true"
+            >
+              <span className="text-lg">🧭</span>
+            </span>
+            <h1 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600">
+              옹라우팅
+            </h1>
+          </div>
         </header>
         {/* 통합 기능 패널 - 스크롤 영역 */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3 custom-scrollbar">
