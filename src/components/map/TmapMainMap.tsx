@@ -25,7 +25,8 @@ export default function TmapMainMap() {
           label: '출발',
           icon: '🚀', // 출발 아이콘
           color: '#10B981', // 초록색
-          priority: 1
+          priority: 1,
+          address: (origins as any).address || ''
         });
       } else {
         console.log('[TmapMainMap] No origins data available');
@@ -58,7 +59,8 @@ export default function TmapMainMap() {
           label,
           icon,
           color,
-          priority
+          priority,
+          address: (dest as any).address || ''
         });
       });
     } else {

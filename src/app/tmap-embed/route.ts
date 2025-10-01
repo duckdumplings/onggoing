@@ -58,8 +58,21 @@ export async function GET() {
             
             let map = null;
             let routePolylines = []; // 경로 polyline들을 배열로 관리
+            let segmentPolylines = []; // 세그먼트 강조용
             let markers = [];
+            let infoWindows = [];
+            let segmentInteracts = []; // {center, line, badge, metaIdx}
+            let markerInteracts = [];  // {marker, tip, position, address, label}
+            try { window.segmentInteracts = segmentInteracts; window.markerInteracts = markerInteracts; } catch(e){}
+            let overlayLayer = null;   // DOM overlay layer
+            let overlayBadge = null;   // segment badge div
+            let overlayTip = null;     // marker tooltip div
+            let lastMarkerKey = null;  // 토글 상태 추적용
+            let lastSegmentKey = null; // 토글 상태 추적용
             
+            // 전역 디버그 노출 (초기 no-op)
+            try { window.toggleNearest = function(){ console.log('[TmapEmbed] toggleNearest noop (not ready)'); }; } catch(e){}
+
             // Tmapv2 로딩 대기
             function waitForTmap() {
               if (typeof window.Tmapv2 !== 'undefined') {
@@ -99,12 +112,19 @@ export async function GET() {
                   addOverlay: typeof map.addOverlay,
                   removeOverlay: typeof map.removeOverlay
                 });
+                console.log('[TmapEmbed] Event availability:', {
+                  Event: typeof Tmapv2.Event,
+                  addListener: Tmapv2.Event && typeof Tmapv2.Event.addListener
+                });
                 
                 // 메시지 리스너 설정
                 window.addEventListener('message', handleMessage);
                 
                 // 초기화 완료 메시지
                 window.parent.postMessage({ type: 'mapReady' }, '*');
+                // 전역 인터랙션 설치
+                try { installGlobalInteraction(true); } catch (e) { console.warn('[TmapEmbed] installGlobalInteraction failed at init', e); }
+                try { console.log('[TmapEmbed] After init, toggleNearest type =', typeof window.toggleNearest); } catch(e){}
                 
               } catch (error) {
                 console.error('[TmapEmbed] Map initialization failed:', error);
@@ -143,6 +163,32 @@ export async function GET() {
               }
             }
             
+            function clearOverlays() {
+              // 기존 마커 제거
+              if (markers.length > 0) {
+                markers.forEach(m => { try { m.setMap(null); } catch (e) {} });
+                markers = [];
+              }
+              // 기존 경로 제거
+              if (routePolylines.length > 0) {
+                routePolylines.forEach(l => { try { l.setMap(null); } catch (e) {} });
+                routePolylines = [];
+              }
+              if (segmentPolylines.length > 0) {
+                segmentPolylines.forEach(l => { try { l.setMap(null); } catch (e) {} });
+                segmentPolylines = [];
+              }
+              if (infoWindows.length > 0) {
+                infoWindows.forEach(w => { try { w.setMap(null); } catch (e) {} });
+                infoWindows = [];
+              }
+              segmentInteracts = [];
+              markerInteracts = [];
+              try { window.segmentInteracts = segmentInteracts; window.markerInteracts = markerInteracts; } catch(e){}
+              if (overlayBadge) { try { overlayBadge.remove(); } catch(e){} overlayBadge = null; }
+              if (overlayTip) { try { overlayTip.remove(); } catch(e){} overlayTip = null; }
+            }
+
             function drawRoute(routeData, waypoints) {
               try {
                 console.log('[TmapEmbed] drawRoute 시작:', { 
@@ -152,60 +198,131 @@ export async function GET() {
                   waypointsCount: waypoints?.length || 0 
                 });
                 
-                // 기존 마커 제거
-                if (markers.length > 0) {
-                  console.log('[TmapEmbed] 기존 마커 제거 중:', markers.length);
-                  markers.forEach(marker => {
-                    try {
-                      if (marker && typeof marker.setMap === 'function') {
-                        marker.setMap(null);
-                      }
-                    } catch (e) {
-                      console.warn('[TmapEmbed] 마커 제거 중 오류:', e);
-                    }
-                  });
-                  markers = [];
-                }
-                
-                // 기존 경로 제거
-                if (routePolylines.length > 0) {
-                  console.log('[TmapEmbed] 기존 경로 제거 중:', routePolylines.length);
-                  routePolylines.forEach(polyline => {
-                    try {
-                      if (polyline && typeof polyline.setMap === 'function') {
-                        polyline.setMap(null);
-                      }
-                    } catch (e) {
-                      console.warn('[TmapEmbed] 경로 제거 중 오류:', e);
-                    }
-                  });
-                  routePolylines = [];
-                }
+                clearOverlays();
+                try { window.__segmentSummary = routeData && routeData.segmentSummary ? routeData.segmentSummary : null; } catch(e) {}
                 
                 // 경로 그리기 (routeData가 있을 때만)
                 if (routeData && routeData.features && routeData.features.length > 0) {
                   console.log('[TmapEmbed] 경로 그리기 시작:', routeData.features.length, '개 feature');
-                  
-                  routeData.features.forEach((feature, index) => {
-                    if (feature.geometry && feature.geometry.coordinates) {
-                      const path = feature.geometry.coordinates.map(coord => 
-                        new Tmapv2.LatLng(coord[1], coord[0])
-                      );
-                      
-                      const polyline = new Tmapv2.Polyline({
-                        path: path,
-                        strokeColor: "#FF0000",
-                        strokeWeight: 6,
-                        strokeOpacity: 0.8,
-                        map: map
-                      });
-                      
-                      routePolylines.push(polyline); // 개별 polyline을 배열에 추가
-                      console.log('[TmapEmbed] Feature ' + (index + 1) + ' 경로 추가됨:', path.length, '개 좌표');
+
+                  // 1) 전체 경로 좌표 풀어 수집
+                  const fullPath = [];
+                  routeData.features.forEach((feature) => {
+                    if (!feature.geometry || !feature.geometry.coordinates) return;
+                    const coords = feature.geometry.coordinates;
+                    if (Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+                      coords.forEach((c) => fullPath.push(new Tmapv2.LatLng(c[1], c[0])));
+                    } else if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
+                      const flat = coords.flat(1);
+                      flat.forEach((c) => fullPath.push(new Tmapv2.LatLng(c[1], c[0])));
                     }
                   });
-                  
+
+                  // 2) 기본 경로(연녹색)로 전체 라인 한 번 그리기 → 교통 스타일 위에 우리 라인을 올리기
+                  if (fullPath.length > 1) {
+                    const base = new Tmapv2.Polyline({ path: fullPath, strokeColor: '#2DD4BF', strokeWeight: 5, strokeOpacity: 0.7, map });
+                    routePolylines.push(base);
+                  }
+
+                  // 3) 세그먼트 분리: waypoints 위치를 fullPath 내 가장 가까운 인덱스로 매핑하여 슬라이스
+                  const wp = (waypoints || []).map(p => new Tmapv2.LatLng(p.lat, p.lng));
+                  // 좌표 안전 접근 헬퍼
+                  const getLatSafe = (p) => {
+                    try {
+                      if (p && typeof p.getLat === 'function') return p.getLat();
+                      if (p && typeof p.lat === 'function') return p.lat();
+                      if (p && typeof p.lat === 'number') return p.lat;
+                      if (p && typeof p.y === 'number') return p.y;
+                      if (p && p._lat !== undefined) return p._lat; // 내부 값 대비
+                    } catch (e) {}
+                    return NaN;
+                  };
+                  const getLngSafe = (p) => {
+                    try {
+                      if (p && typeof p.getLng === 'function') return p.getLng();
+                      if (p && typeof p.lng === 'function') return p.lng();
+                      if (p && typeof p.lng === 'number') return p.lng;
+                      if (p && typeof p.x === 'number') return p.x;
+                      if (p && p._lng !== undefined) return p._lng; // 내부 값 대비
+                    } catch (e) {}
+                    return NaN;
+                  };
+                  const idxOf = (ll) => {
+                    let best = 0, bestD = Infinity;
+                    for (let i = 0; i < fullPath.length; i++) {
+                      const aLat = getLatSafe(fullPath[i]);
+                      const aLng = getLngSafe(fullPath[i]);
+                      const bLat = getLatSafe(ll);
+                      const bLng = getLngSafe(ll);
+                      if (isNaN(aLat) || isNaN(aLng) || isNaN(bLat) || isNaN(bLng)) continue;
+                      const dLat = aLat - bLat;
+                      const dLng = aLng - bLng;
+                      const d = dLat*dLat + dLng*dLng;
+                      if (d < bestD) { bestD = d; best = i; }
+                    }
+                    return best;
+                  };
+                  const anchors = wp.map(idxOf);
+                  // 정렬 보정 및 유니크
+                  const ordered = Array.from(new Set(anchors)).sort((a,b)=>a-b);
+
+                  for (let si = 0; si < ordered.length - 1; si++) {
+                    const a = ordered[si];
+                    const b = ordered[si+1];
+                    if (b - a < 2) continue; // 너무 짧으면 스킵
+                    const segment = fullPath.slice(a, b+1);
+                    const hue = 210 + si * 20;
+                    const color = 'hsl(' + hue + ',85%,55%)';
+                    const segLine = new Tmapv2.Polyline({ path: segment, strokeColor: color, strokeWeight: 7, strokeOpacity: 0.95, map });
+                    routePolylines.push(segLine);
+                    // 이벤트 캡처 라인은 제거 (DOM overlay로 대체)
+
+                    // 호버 강조 + 배지
+                    try {
+                      const mid = segment[Math.floor(segment.length / 2)];
+                      const meta = (routeData.segmentSummary && routeData.segmentSummary[si]) || null;
+                      const badgeHtml = '<div style="background:rgba(0,0,0,.75);color:#fff;padding:4px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
+                        (meta && meta.distM ? (meta.distM/1000).toFixed(1) + 'km · ' : '') + (meta && meta.timeSec ? Math.round(meta.timeSec/60) + '분' : ('구간 ' + (si+1))) +
+                        '</div>';
+                      // 전역 인터랙션용 목록에 저장 (배지는 DOM으로 표시)
+                      segmentInteracts.push({ center: mid, line: segLine, metaIdx: si });
+                      // 클릭/탭으로 토글(hover 폴백)
+                      try {
+                        const bind = (target, type, handler) => {
+                          try { if (Tmapv2.Event && typeof Tmapv2.Event.addListener === 'function') { Tmapv2.Event.addListener(target, type, handler); return true; } } catch(e) {}
+                          return false;
+                        };
+                        const toggle = () => {
+                          try {
+                            const meta = (window.__segmentSummary && window.__segmentSummary[si]) || null;
+                            const container = document.getElementById('map'); if (!container) return;
+                            const rect = container.getBoundingClientRect();
+                            const zoom = (typeof map.getZoom === 'function') ? map.getZoom() : 14;
+                            const center = (typeof map.getCenter === 'function') ? map.getCenter() : { getLat: () => 37.5665, getLng: () => 126.978 };
+                            const worldScale = 256 * Math.pow(2, zoom);
+                            const project = (lt, lg) => { const x = (lg + 180) / 360 * worldScale; const siny = Math.sin(lt * Math.PI / 180); const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * worldScale; return { x, y }; };
+                            const c = project(center.getLat(), center.getLng());
+                            const p = project(mid.getLat(), mid.getLng());
+                            const px = (p.x - c.x) + rect.width / 2; const py = (p.y - c.y) + rect.height / 2;
+                            // ensure overlay
+                            let layer = document.querySelector('#map > div[style*="z-index: 9999"]');
+                            if (!layer) { /* 강제 생성 */ const ev = new Event('mousemove'); document.getElementById('map')?.dispatchEvent(ev); layer = document.querySelector('#map > div[style*="z-index: 9999"]'); }
+                            if (!layer) return;
+                            let badge = layer.querySelector('._segBadge');
+                            if (!badge) { badge = document.createElement('div'); badge.className = '_segBadge'; badge.style.position = 'absolute'; badge.style.transform = 'translate(-50%, -100%)'; badge.style.background = 'rgba(0,0,0,0.75)'; badge.style.color = '#fff'; badge.style.padding = '4px 8px'; badge.style.borderRadius = '8px'; badge.style.fontSize = '12px'; badge.style.boxShadow = '0 2px 8px rgba(0,0,0,.25)'; layer.appendChild(badge); }
+                            badge.textContent = meta && meta.distM ? (meta.distM/1000).toFixed(1) + 'km · ' + Math.round(meta.timeSec/60) + '분' : ('구간 ' + (si+1));
+                            badge.style.left = px + 'px'; badge.style.top = py + 'px';
+                            badge.style.display = (badge.style.display === 'block') ? 'none' : 'block';
+                          } catch(e) {}
+                        };
+                        bind(segLine, 'click', toggle);
+                        bind(segLine, 'touchstart', () => { setTimeout(toggle, 0); });
+                      } catch(e) {}
+                    } catch(e) { console.warn('[TmapEmbed] 세그먼트 배지 생성 실패', e); }
+                  }
+
                   console.log('[TmapEmbed] 경로 그리기 완료');
+                  try { window.segmentInteracts = segmentInteracts; window.markerInteracts = markerInteracts; } catch(e){}
                 } else {
                   console.log('[TmapEmbed] 경로 데이터 없음 - 경로 그리기 건너뜀');
                 }
@@ -223,11 +340,47 @@ export async function GET() {
                       
                       markers.push(marker);
                       console.log('[TmapEmbed] 핀 ' + (index + 1) + ' 추가됨:', { lat: point.lat, lng: point.lng, label: point.label });
+
+                      // 핀 클릭/롱프레스 툴팁 (주소/라벨)
+                      try {
+                        const tipHtml = '<div style="background:#111;color:#fff;padding:6px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
+                          (point.address ? point.address : '') + (point.label ? ' · ' + point.label : '') +
+                          '</div>';
+                        const tipPos = new Tmapv2.LatLng(point.lat, point.lng);
+                        // 전역 인터랙션용 목록 저장 (툴팁은 DOM으로 표시)
+                        markerInteracts.push({ marker: marker, position: tipPos, address: point.address || '', label: point.label || '' });
+
+                        const bind = (target, type, handler) => { try { if (Tmapv2.Event && typeof Tmapv2.Event.addListener === 'function') { Tmapv2.Event.addListener(target, type, handler); return true; } } catch(e){} return false; };
+                        const toggleTip = () => {
+                          try {
+                            const container = document.getElementById('map'); if (!container) return;
+                            let layer = container.querySelector('div[style*="z-index: 9999"]');
+                            if (!layer) { const ev = new Event('mousemove'); container.dispatchEvent(ev); layer = container.querySelector('div[style*="z-index: 9999"]'); }
+                            if (!layer) return;
+                            let tip = layer.querySelector('._markerTip');
+                            if (!tip) { tip = document.createElement('div'); tip.className = '_markerTip'; tip.style.position = 'absolute'; tip.style.transform = 'translate(-50%, -120%)'; tip.style.background = '#111'; tip.style.color = '#fff'; tip.style.padding = '6px 8px'; tip.style.borderRadius = '8px'; tip.style.fontSize = '12px'; tip.style.boxShadow = '0 2px 8px rgba(0,0,0,.25)'; layer.appendChild(tip); }
+                            tip.textContent = (point.address || '') + (point.label ? ' · ' + point.label : '');
+                            const rect = container.getBoundingClientRect();
+                            const zoom = (typeof map.getZoom === 'function') ? map.getZoom() : 14;
+                            const center = (typeof map.getCenter === 'function') ? map.getCenter() : { getLat: () => 37.5665, getLng: () => 126.978 };
+                            const worldScale = 256 * Math.pow(2, zoom);
+                            const project = (lt, lg) => { const x = (lg + 180) / 360 * worldScale; const siny = Math.sin(lt * Math.PI / 180); const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * worldScale; return { x, y }; };
+                            const c = project(center.getLat(), center.getLng());
+                            const p = project(point.lat, point.lng);
+                            const px = (p.x - c.x) + rect.width / 2; const py = (p.y - c.y) + rect.height / 2;
+                            tip.style.left = px + 'px'; tip.style.top = py + 'px';
+                            tip.style.display = (tip.style.display === 'block') ? 'none' : 'block';
+                          } catch(e) {}
+                        };
+                        bind(marker, 'click', toggleTip);
+                        bind(marker, 'touchstart', () => { setTimeout(toggleTip, 0); });
+                      } catch(e) { console.warn('[TmapEmbed] 핀 툴팁 생성 실패', e); }
                     } else {
                       console.warn('[TmapEmbed] Waypoint ' + (index + 1) + ' 좌표 누락:', point);
                     }
                   });
                   console.log('[TmapEmbed] 핀 그리기 완료:', markers.length, '개 핀');
+                  try { window.segmentInteracts = segmentInteracts; window.markerInteracts = markerInteracts; } catch(e){}
                 } else {
                   console.log('[TmapEmbed] Waypoints 없음 - 핀 그리기 건너뜀');
                 }
@@ -571,6 +724,284 @@ export async function GET() {
                 console.error('[TmapEmbed] drawRoute 오류:', error);
               }
             }
+
+            // 맵 전역 이벤트(hover 대체) — 마우스 위치 기준 최근접 세그먼트/마커 강조
+            function installGlobalInteraction(fromInit) {
+              if (!map || typeof Tmapv2 === 'undefined') { console.log('[TmapEmbed] installGlobalInteraction skipped (map not ready)'); return; }
+              console.log('[TmapEmbed] installGlobalInteraction', { fromInit, alreadyBound: !!installGlobalInteraction._bound });
+
+              const getLatSafe = (p) => {
+                try { if (p && typeof p.getLat === 'function') return p.getLat(); if (p && p.lat) return (typeof p.lat === 'function') ? p.lat() : p.lat; } catch(e){}
+                return NaN;
+              };
+              const getLngSafe = (p) => {
+                try { if (p && typeof p.getLng === 'function') return p.getLng(); if (p && p.lng) return (typeof p.lng === 'function') ? p.lng() : p.lng; } catch(e){}
+                return NaN;
+              };
+
+              const toLatLngFromDom = (px, py) => {
+                try {
+                  if (map && typeof map.screenToLatLng === 'function') return map.screenToLatLng(px, py);
+                  if (map && typeof map.fromPointToLatLng === 'function') return map.fromPointToLatLng({ x: px, y: py });
+                  if (map && typeof map.getProjection === 'function') {
+                    const proj = map.getProjection();
+                    if (proj && typeof proj.fromContainerPixelToLatLng === 'function') return proj.fromContainerPixelToLatLng(new Tmapv2.Point(px, py));
+                    if (proj && typeof proj.fromDivPixelToLatLng === 'function') return proj.fromDivPixelToLatLng(new Tmapv2.Point(px, py));
+                    if (proj && typeof proj.fromPointToLatLng === 'function') return proj.fromPointToLatLng(new Tmapv2.Point(px, py));
+                  }
+                } catch(e) {}
+                return null;
+              };
+
+              // DOM overlay layer to draw tooltip/badge without SDK events
+              const ensureOverlay = () => {
+                const root = document.getElementById('map');
+                if (!root) return null;
+                if (!overlayLayer) {
+                  overlayLayer = document.createElement('div');
+                  overlayLayer.style.position = 'absolute';
+                  overlayLayer.style.inset = '0';
+                  overlayLayer.style.pointerEvents = 'none';
+                  overlayLayer.style.zIndex = '9999';
+                  root.appendChild(overlayLayer);
+                }
+                if (!overlayBadge) {
+                  overlayBadge = document.createElement('div');
+                  overlayBadge.style.position = 'absolute';
+                  overlayBadge.style.transform = 'translate(-50%, -100%)';
+                  overlayBadge.style.background = 'rgba(0,0,0,0.75)';
+                  overlayBadge.style.color = '#fff';
+                  overlayBadge.style.padding = '4px 8px';
+                  overlayBadge.style.borderRadius = '8px';
+                  overlayBadge.style.fontSize = '12px';
+                  overlayBadge.style.boxShadow = '0 2px 8px rgba(0,0,0,.25)';
+                  overlayBadge.style.display = 'none';
+                  overlayLayer.appendChild(overlayBadge);
+                }
+                if (!overlayTip) {
+                  overlayTip = document.createElement('div');
+                  overlayTip.style.position = 'absolute';
+                  overlayTip.style.transform = 'translate(-50%, -120%)';
+                  overlayTip.style.background = '#111';
+                  overlayTip.style.color = '#fff';
+                  overlayTip.style.padding = '6px 8px';
+                  overlayTip.style.borderRadius = '8px';
+                  overlayTip.style.fontSize = '12px';
+                  overlayTip.style.boxShadow = '0 2px 8px rgba(0,0,0,.25)';
+                  overlayTip.style.display = 'none';
+                  overlayLayer.appendChild(overlayTip);
+                }
+                return overlayLayer;
+              };
+
+              const showNearest = (evt) => {
+                // 호버 기능 비활성화 (성능 최적화)
+                return;
+                try {
+                  const pos = evt && (evt.latLng || evt._latlng || evt._latLng);
+                  let lat, lng;
+                  const container = document.getElementById('map');
+                  if (!container) return;
+                  const rect = container.getBoundingClientRect();
+                  const cx = (evt.clientX !== undefined ? evt.clientX : 0) - rect.left;
+                  const cy = (evt.clientY !== undefined ? evt.clientY : 0) - rect.top;
+                  if (pos) {
+                    lat = getLatSafe(pos); lng = getLngSafe(pos);
+                  } else {
+                    const ll = toLatLngFromDom(cx, cy);
+                    if (!ll) return;
+                    lat = getLatSafe(ll); lng = getLngSafe(ll);
+                  }
+                  if (isNaN(lat) || isNaN(lng)) return;
+
+                  const layer = ensureOverlay();
+                  if (!layer) return;
+
+                  // Projection: Web Mercator approximation
+                  const zoom = (typeof map.getZoom === 'function') ? map.getZoom() : 14;
+                  const center = (typeof map.getCenter === 'function') ? map.getCenter() : { lat: 37.5665, lng: 126.978 };
+                  const worldScale = 256 * Math.pow(2, zoom);
+                  const project = (lt, lg) => {
+                    const x = (lg + 180) / 360 * worldScale;
+                    const siny = Math.sin(lt * Math.PI / 180);
+                    const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * worldScale;
+                    return { x, y };
+                  };
+                  const cLat = (center && (center.getLat ? center.getLat() : (center.lat ? center.lat() : center._lat))) ?? 37.5665;
+                  const cLng = (center && (center.getLng ? center.getLng() : (center.lng ? center.lng() : center._lng))) ?? 126.978;
+                  const c = project(cLat, cLng);
+                  const toPx = (lt, lg) => {
+                    const p = project(lt, lg);
+                    return { x: (p.x - c.x) + rect.width / 2, y: (p.y - c.y) + rect.height / 2 };
+                  };
+
+                  // Nearest marker
+                  let bestM = null; let bestMd = Infinity; let bestMPx = null;
+                  for (let i=0;i<markerInteracts.length;i++) {
+                    const p = markerInteracts[i].position;
+                    const ml = p && (p.lat ? p.lat() : p._lat);
+                    const mg = p && (p.lng ? p.lng() : p._lng);
+                    if (ml == null || mg == null) continue;
+                    const pp = toPx(ml, mg);
+                    const d = Math.hypot(pp.x - cx, pp.y - cy);
+                    if (d < bestMd) { bestMd = d; bestM = markerInteracts[i]; bestMPx = pp; }
+                  }
+                  if (bestM && bestMd < 48) {
+                    overlayTip.textContent = (bestM.address || '') + (bestM.label ? ' · ' + bestM.label : '');
+                    overlayTip.style.left = bestMPx.x + 'px';
+                    overlayTip.style.top = bestMPx.y + 'px';
+                    overlayTip.style.display = 'block';
+                    lastMarkerKey = bestM.address + '|' + bestM.label;
+                  } else {
+                    overlayTip.style.display = 'none';
+                    lastMarkerKey = null;
+                  }
+
+                  // Nearest segment by mid point
+                  let bestS = null; let bestSd = Infinity; let bestSPx = null;
+                  for (let i=0;i<segmentInteracts.length;i++) {
+                    const cpos = segmentInteracts[i].center;
+                    const sl = cpos && (cpos.lat ? cpos.lat() : cpos._lat);
+                    const sg = cpos && (cpos.lng ? cpos.lng() : cpos._lng);
+                    if (sl == null || sg == null) continue;
+                    const sp = toPx(sl, sg);
+                    const d = Math.hypot(sp.x - cx, sp.y - cy);
+                    if (d < bestSd) { bestSd = d; bestS = segmentInteracts[i]; bestSPx = sp; }
+                  }
+                  if (bestS && bestSd < 72) {
+                    const meta = (window.__segmentSummary && window.__segmentSummary[bestS.metaIdx]) || null;
+                    // meta가 없으면 텍스트 기본값
+                    overlayBadge.textContent = meta && meta.distM ? (meta.distM/1000).toFixed(1) + 'km · ' + Math.round(meta.timeSec/60) + '분' : ('구간 ' + (bestS.metaIdx + 1));
+                    overlayBadge.style.left = bestSPx.x + 'px';
+                    overlayBadge.style.top = bestSPx.y + 'px';
+                    overlayBadge.style.display = 'block';
+                    try { bestS.line.setStrokeWeight(10); } catch(e){}
+                    lastSegmentKey = String(bestS.metaIdx);
+                  } else {
+                    overlayBadge.style.display = 'none';
+                    lastSegmentKey = null;
+                  }
+                } catch(e) { console.warn('global hover error', e); }
+              };
+
+              // 클릭/탭 기반 토글: 가장 가까운 마커/세그먼트를 찾아 같은 대상이면 숨김, 아니면 표시
+              const toggleNearest = (evt) => {
+                try {
+                  const container = document.getElementById('map');
+                  if (!container) return;
+                  const rect = container.getBoundingClientRect();
+                  const cx = (evt.clientX !== undefined ? evt.clientX : 0) - rect.left;
+                  const cy = (evt.clientY !== undefined ? evt.clientY : 0) - rect.top;
+
+                  const zoom = (typeof map.getZoom === 'function') ? map.getZoom() : 14;
+                  const center = (typeof map.getCenter === 'function') ? map.getCenter() : { lat: 37.5665, lng: 126.978 };
+                  const worldScale = 256 * Math.pow(2, zoom);
+                  const project = (lt, lg) => { const x = (lg + 180) / 360 * worldScale; const siny = Math.sin(lt * Math.PI / 180); const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * worldScale; return { x, y }; };
+                  const cLat = (typeof center === 'object') ? ( (center.getLat ? center.getLat() : (center.lat ? center.lat() : (center._lat ?? 37.5665))) ) : 37.5665;
+                  const cLng = (typeof center === 'object') ? ( (center.getLng ? center.getLng() : (center.lng ? center.lng() : (center._lng ?? 126.978))) ) : 126.978;
+                  const c = project(cLat, cLng);
+                  const toPx = (lt, lg) => { const p = project(lt, lg); return { x: (p.x - c.x) + rect.width / 2, y: (p.y - c.y) + rect.height / 2 }; };
+
+                  // 소스 배열 결정 (window에 노출된 참조가 최신일 수 있음)
+                  const MI = (window.markerInteracts && window.markerInteracts.length) ? window.markerInteracts : markerInteracts;
+                  const SI = (window.segmentInteracts && window.segmentInteracts.length) ? window.segmentInteracts : segmentInteracts;
+
+                  // nearest marker
+                  let bestM = null; let bestMd = Infinity; let bestMPx = null;
+                  for (let i=0;i<MI.length;i++) {
+                    const p = MI[i].position; 
+                    const ml = p && (p.lat ? p.lat() : p._lat); 
+                    const mg = p && (p.lng ? p.lng() : p._lng);
+                    if (ml == null || mg == null) continue;
+                    const pp = toPx(ml, mg); const d = Math.hypot(pp.x - cx, pp.y - cy);
+                    if (d < bestMd) { bestMd = d; bestM = MI[i]; bestMPx = pp; }
+                  }
+
+                  // nearest segment by mid
+                  let bestS = null; let bestSd = Infinity; let bestSPx = null;
+                  for (let i=0;i<SI.length;i++) {
+                    const cp = SI[i].center; 
+                    const sl = cp && (cp.lat ? cp.lat() : cp._lat); 
+                    const sg = cp && (cp.lng ? cp.lng() : cp._lng);
+                    if (sl == null || sg == null) continue;
+                    const sp = toPx(sl, sg); const d = Math.hypot(sp.x - cx, sp.y - cy);
+                    if (d < bestSd) { bestSd = d; bestS = SI[i]; bestSPx = sp; }
+                  }
+
+                  const layer = ensureOverlay(); if (!layer) return;
+                  // console.log('[TmapEmbed] toggleNearest', { cx, cy, bestMd, bestSd, hasM: !!bestM, hasS: !!bestS, miLen: MI.length, siLen: SI.length });
+
+                  if (bestM && bestMd < 96) {
+                    const key = (bestM.address || '') + '|' + (bestM.label || '');
+                    if (lastMarkerKey === key && overlayTip && overlayTip.style.display === 'block') {
+                      overlayTip.style.display = 'none'; 
+                      lastMarkerKey = null; return;
+                    }
+                    overlayTip.textContent = (bestM.address || '') + (bestM.label ? ' · ' + bestM.label : '');
+                    overlayTip.style.left = bestMPx.x + 'px'; overlayTip.style.top = bestMPx.y + 'px'; overlayTip.style.display = 'block';
+                    lastMarkerKey = key;
+                    return; // 마커 우선 토글
+                  }
+
+                  if (bestS) {
+                    const key = String(bestS.metaIdx);
+                    const meta = (window.__segmentSummary && window.__segmentSummary[bestS.metaIdx]) || null;
+                    if (lastSegmentKey === key && overlayBadge && overlayBadge.style.display === 'block') {
+                      overlayBadge.style.display = 'none'; lastSegmentKey = null; return;
+                    }
+                    overlayBadge.textContent = meta && meta.distM ? (meta.distM/1000).toFixed(1) + 'km · ' + Math.round(meta.timeSec/60) + '분' : ('구간 ' + (bestS.metaIdx + 1));
+                    overlayBadge.style.left = bestSPx.x + 'px'; overlayBadge.style.top = bestSPx.y + 'px'; overlayBadge.style.display = 'block';
+                    try { bestS.line.setStrokeWeight(10); } catch(e){}
+                    lastSegmentKey = key;
+                  }
+                } catch(e) { console.warn('toggleNearest error', e); }
+              };
+
+              const hideAll = () => {
+                // 클릭으로 고정된 툴팁/배지가 있으면 숨기지 않음
+                if (lastMarkerKey || lastSegmentKey) {
+                  return;
+                }
+                
+                try { if (overlayTip) overlayTip.style.display = 'none'; } catch(e){}
+                try { if (overlayBadge) overlayBadge.style.display = 'none'; } catch(e){}
+                segmentInteracts.forEach(si => { try { si.line.setStrokeWeight(7); } catch(e){} });
+              };
+
+              // 바인딩 (한 번만)
+              const bind = (target, type, handler) => {
+                try {
+                  if (Tmapv2.Event && typeof Tmapv2.Event.addListener === 'function') { Tmapv2.Event.addListener(target, type, handler); return true; }
+                } catch(e) {}
+                return false;
+              };
+              if (!(installGlobalInteraction._bound)) {
+                const mapEl = document.getElementById('map');
+                const ok1 = bind(map, 'mousemove', showNearest) || (mapEl && mapEl.addEventListener('mousemove', showNearest, { capture: true, passive: true }));
+                const ok2 = bind(map, 'mouseover', showNearest) || (mapEl && mapEl.addEventListener('mouseover', showNearest, { capture: true, passive: true }));
+                const ok3 = bind(map, 'mouseout', hideAll) || (mapEl && mapEl.addEventListener('mouseout', hideAll, { capture: true, passive: true }));
+                const ok4 = bind(map, 'click', toggleNearest) || (mapEl && mapEl.addEventListener('click', toggleNearest, { capture: true, passive: false }));
+
+                // 최후 수단: 문서 전역 리스너(캡처 단계)로 좌표 계산
+                let rafId = null;
+                const docMove = (e) => {
+                  const el = document.getElementById('map');
+                  if (!el) return;
+                  const r = el.getBoundingClientRect();
+                  const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+                  if (!inside) { hideAll(); return; }
+                  if (rafId) cancelAnimationFrame(rafId);
+                  rafId = requestAnimationFrame(() => showNearest(e));
+                };
+                const docLeave = (e) => { hideAll(); };
+                document.addEventListener('mousemove', docMove, true);
+                document.addEventListener('mouseleave', docLeave, true);
+                document.addEventListener('click', toggleNearest, true);
+                try { window.toggleNearest = toggleNearest; console.log('[TmapEmbed] toggleNearest exported'); } catch(e){}
+                installGlobalInteraction._bound = true;
+              }
+            }
+            try { installGlobalInteraction(false); } catch (e) { console.warn('[TmapEmbed] installGlobalInteraction failed at module tail', e); }
             
             function createPinIcon(label) {
               const canvas = document.createElement('canvas');

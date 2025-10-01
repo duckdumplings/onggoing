@@ -35,13 +35,15 @@
     var polylines = [];
     var markers = [];
     var infoWindows = [];
+    var segmentPolylines = [];
 
     function clearMap() {
       polylines.forEach(function (p) { p.setMap(null); });
+      segmentPolylines.forEach(function (p) { p.setMap(null); });
       markers.forEach(function (m) { m.setMap(null); });
       infoWindows.forEach(function (w) { try { w.setMap(null); } catch (e) { } });
       infoWindows = [];
-      polylines = []; markers = [];
+      polylines = []; markers = []; segmentPolylines = [];
     }
 
     function drawRoute(routeData) {
@@ -51,6 +53,9 @@
       clearMap();
       var bounds = new T.LatLngBounds();
       var waypoints = (routeData.waypoints || []).map(function (w) { return new T.LatLng(w.latitude, w.longitude); });
+
+      // 세그먼트 메타 (optional)
+      var segmentSummary = routeData.segmentSummary || [];
 
       // 경로 그리기
       for (var idx = 0; idx < features.length; idx++) {
@@ -63,6 +68,38 @@
         polylines.push(new T.Polyline({ path: path, strokeColor: '#FF1744', strokeWeight: 5, map: map }));
         for (var k = 0; k < path.length; k++) { bounds.extend(path[k]); }
       }
+
+      // 경로를 세그먼트 단위로 강조 가능한 라인으로 다시 그림 (출발→1, 1→2, ...)
+      try {
+        var wp = routeData.waypoints || [];
+        for (var si = 0; si < wp.length - 1; si++) {
+          var seg = features.filter(function (f) { return f.properties && f.properties.segmentIndex === si; });
+          var segCoords = [];
+          seg.forEach(function (f) {
+            var coords = f.geometry && f.geometry.coordinates || [];
+            var flat = Array.isArray(coords[0][0]) ? coords.flat(1) : coords;
+            flat.forEach(function (c) { segCoords.push(new T.LatLng(c[1], c[0])); });
+          });
+          if (segCoords.length === 0) continue;
+          var hue = 210 + si * 20;
+          var color = 'hsl(' + hue + ',85%,55%)';
+          var pl = new T.Polyline({ path: segCoords, strokeColor: color, strokeOpacity: 0.9, strokeWeight: 6, map: map });
+          segmentPolylines.push(pl);
+
+          // hover 효과 및 미니 배지
+          (function (index, line) {
+            var mid = segCoords[Math.floor(segCoords.length / 2)];
+            var meta = segmentSummary[index] || {};
+            var badgeHtml = '<div style="background:rgba(0,0,0,0.75);color:#fff;padding:4px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
+              (meta.distM ? (meta.distM / 1000).toFixed(1) + 'km · ' : '') + (meta.timeSec ? Math.round(meta.timeSec / 60) + '분' : '') +
+              '</div>';
+            var badge = new T.InfoWindow({ position: mid, content: badgeHtml, type: 2 });
+            T.Event.addListener(line, 'mouseover', function () { line.setStrokeWeight(9); badge.setMap(map); });
+            T.Event.addListener(line, 'mouseout', function () { line.setStrokeWeight(6); badge.setMap(null); });
+            T.Event.addListener(line, 'click', function () { badge.setMap(map); });
+          })(si, pl);
+        }
+      } catch (e) { console.warn('Segment draw failed', e); }
 
       // 개선된 핀 렌더링 - 새로운 속성들 처리
       var waypointData = routeData.waypoints || [];
@@ -122,6 +159,20 @@
           type: 2,
           map: map
         }));
+
+        // 호버 툴팁 (주소/라벨)
+        (function (wp, pos) {
+          var tooltipHtml = '<div style="background:#111;color:#fff;padding:6px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
+            (wp.address ? wp.address : '') + (wp.label ? ' · ' + wp.label : '') +
+            '</div>';
+          var tip = new T.InfoWindow({ position: pos, content: tooltipHtml, type: 2 });
+          var marker = new T.Marker({ position: pos, icon: new T.IconHtml('<div style="width:14px;height:14px;opacity:0"></div>') });
+          marker.setMap(map);
+          markers.push(marker);
+          T.Event.addListener(marker, 'mouseover', function () { tip.setMap(map); });
+          T.Event.addListener(marker, 'mouseout', function () { tip.setMap(null); });
+          T.Event.addListener(marker, 'click', function () { tip.setMap(map); });
+        })(waypoint, position);
 
         bounds.extend(position);
       }
