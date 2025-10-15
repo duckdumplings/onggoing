@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { perJobBasePrice, perJobRegularPrice, STOP_FEE } from '@/domains/quote/pricing';
+import { perJobBasePrice, perJobRegularPrice, STOP_FEE, PER_JOB_TABLE } from '@/domains/quote/pricing';
 
 interface QuoteDetailModalProps {
   isOpen: boolean;
@@ -150,26 +150,18 @@ export default function QuoteDetailModal({
     return table[table.length - 1].ratePerHour;
   };
 
-  // 자동견적 카드와 동일한 시간당 총액 계산 함수
+  // 자동견적 카드와 동일한 시간당 총액 계산 함수 (올림 제거)
   const calculateHourlyTotal = (vehicleType: 'ray' | 'starex', billMinutes: number, distanceKm: number) => {
     const hourlyRate = calculateHourlyRateCorrect(vehicleType, billMinutes);
-    const hourlyTotal = Math.round((billMinutes / 60) * hourlyRate);
-    const hourlyTotalRounded = Math.ceil(hourlyTotal / 1000) * 1000;
-
-    // 유류할증 계산 (자동견적 카드와 동일한 로직)
+    const base = Math.round((billMinutes / 60) * hourlyRate);
+    // 동일 파일 내 단순화된 계산식 사용: 과금시간 기준 기본거리 초과분 10km 당 가산
     const baseDistance = (billMinutes / 60) * 10;
-    let fuelSurcharge = 0;
-
+    let fuel = 0;
     if (distanceKm > baseDistance) {
       const extraKm = distanceKm - baseDistance;
-      if (vehicleType === 'ray') {
-        fuelSurcharge = Math.ceil(extraKm / 10) * 2000;
-      } else {
-        fuelSurcharge = Math.ceil(extraKm / 10) * 2800;
-      }
+      fuel = Math.ceil(extraKm / 10) * (vehicleType === 'ray' ? 2000 : 2800);
     }
-
-    return hourlyTotalRounded + fuelSurcharge;
+    return base + fuel;
   };
 
   const downloadHTML = (tab: string) => {
@@ -214,13 +206,13 @@ export default function QuoteDetailModal({
         <h2>시간 정보</h2>
         <p>주행 시간: ${quoteData.detail.driveMinutes || 0}분</p>
         <p>체류 시간: ${quoteData.detail.dwellTotalMinutes || 0}분</p>
-        <p>총 운행시간: ${quoteData.detail.billMinutes ? (quoteData.detail.billMinutes + quoteData.detail.driveMinutes + quoteData.detail.dwellTotalMinutes) : '0'}분</p>
-        <p>과금시간: ${quoteData.detail.billMinutes || '0'}분</p>
+        <p>총 운행시간: ${quoteData.detail.driveMinutes + quoteData.detail.dwellTotalMinutes}분</p>
+        <p>과금시간: ${((quoteData.detail.billMinutes || 0) / 60).toFixed(1)}시간</p>
 
         <h2>요금 상세</h2>
         ${getRecommendedPlan() === '시간당 요금제' ? `
           <h3>시간당 요금제</h3>
-          <p>과금시간: ${quoteData.plans.hourly.billMinutes}분</p>
+          <p>과금시간: ${((quoteData.plans.hourly.billMinutes || 0) / 60).toFixed(1)}시간</p>
           <p>시간당 단가: ₩${(quoteData.plans.hourly.ratePerHour ?? 0).toLocaleString('ko-KR')}</p>
           <p>기본 요금: ${quoteData.plans.hourly.formatted}</p>
           <p>유류비 할증: ₩${(quoteData.plans.hourly.fuelCost ?? 0).toLocaleString('ko-KR')}</p>
@@ -330,7 +322,7 @@ export default function QuoteDetailModal({
       ['차종', '스케줄', '총 거리', '경유지 수'],
       [quoteData.vehicle, quoteData.scheduleType, quoteData.routeData.summary.totalDistance ? ((quoteData.routeData.summary.totalDistance / 1000).toFixed(1)) : '0.0', quoteData.destinations.length],
       ['', '', '', '시간 정보'],
-      ['주행 시간', '체류 시간', '과금시간', '총 운행시간'],
+      ['주행 시간(분)', '체류 시간(분)', '과금시간(시간)', '총 운행시간(분)'],
       [quoteData.detail.driveMinutes || 0, quoteData.detail.dwellTotalMinutes || 0, quoteData.detail.billMinutes || 0, (quoteData.detail.billMinutes ?? 0) + (quoteData.detail.driveMinutes ?? 0) + (quoteData.detail.dwellTotalMinutes ?? 0)],
       ['', '', '', '요금 상세'],
       ['요금제', '과금시간', '단가', '기본 요금', '유류비 할증', '총액'],
@@ -475,7 +467,7 @@ export default function QuoteDetailModal({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">과금시간:</span>
-                    <span className="font-medium">{safePlans.hourly.billMinutes}분</span>
+                    <span className="font-medium">{((safePlans.hourly.billMinutes || 0) / 60).toFixed(1)}시간</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">시간당 단가:</span>
@@ -542,6 +534,11 @@ export default function QuoteDetailModal({
                     </div>
                   </div>
                 </div>
+                <div className="mt-3 text-xs text-blue-900 bg-white/40 border border-blue-100 rounded p-2">
+                  <div className="font-medium mb-1">유류비 할증 계산식</div>
+                  <div>기본거리 = 과금시간(시간) × 10km, 총거리 ≤ 기본거리 ⇒ 할증 0원</div>
+                  <div>초과거리 = 총거리 − 기본거리 · 레이: 10km당 +2,000원 · 스타렉스: 10km당 +2,800원</div>
+                </div>
               </div>
             )}
 
@@ -560,7 +557,12 @@ export default function QuoteDetailModal({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">기본요금(구간):</span>
-                      <span className="font-medium">₩{(safePlans.perJob.base ?? 0).toLocaleString('ko-KR')}</span>
+                      <span className="font-medium">
+                        ₩{(safePlans.perJob.base ?? 0).toLocaleString('ko-KR')}
+                        {safePlans.perJob.bracketLabel && (
+                          <span className="ml-1 text-gray-400">({safePlans.perJob.bracketLabel})</span>
+                        )}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">경유지 추가({displayEffectiveStopsCount}개):</span>
@@ -578,6 +580,11 @@ export default function QuoteDetailModal({
                       <span>단건 총액:</span>
                       <span className="text-green-600">{safePlans.perJob.total}</span>
                     </div>
+                    {safePlans.perJob.nextBracketLabel && (
+                      <div className="md:col-span-2 text-xs text-gray-500">
+                        다음 구간 {safePlans.perJob.nextBracketLabel} 진입 시 +₩{(safePlans.perJob.nextDelta || 0).toLocaleString('ko-KR')}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -707,7 +714,7 @@ export default function QuoteDetailModal({
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">과금시간:</span>
-                        <span className="font-medium">{safePlans.hourly.billMinutes}분</span>
+                        <span className="font-medium">{((safePlans.hourly.billMinutes || 0) / 60).toFixed(1)}시간</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">시간당 단가:</span>
@@ -762,6 +769,14 @@ export default function QuoteDetailModal({
                         <span>단건 총액:</span>
                         <span className="text-green-600">{safePlans.perJob.total}</span>
                       </div>
+                      {safePlans.perJob.bracketLabel && (
+                        <div className="md:col-span-2 text-xs text-green-800 bg-white/40 border border-green-100 rounded p-2">
+                          현재 구간: {safePlans.perJob.bracketLabel}
+                          {safePlans.perJob.nextBracketLabel ? (
+                            <> · 다음 구간 {safePlans.perJob.nextBracketLabel} 진입 시 +₩{(safePlans.perJob.nextDelta || 0).toLocaleString('ko-KR')}</>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -864,7 +879,7 @@ export default function QuoteDetailModal({
                       {safePlans?.hourly?.total || '—'}
                     </div>
                     <div className="text-xs text-green-600">
-                      {safeDetail?.billMinutes ? `과금시간: ${safeDetail.billMinutes}분` : '—'}
+                      {safeDetail?.billMinutes ? `과금시간: ${((safeDetail.billMinutes || 0) / 60).toFixed(1)}시간` : '—'}
                     </div>
                   </div>
                   <div className="bg-white/50 rounded-lg p-4">

@@ -11,7 +11,8 @@ import {
   roundUpTo30Minutes,
   fuelSurchargeHourlyCorrect,
   estimatedFuelCost,
-  highwayTollCost
+  highwayTollCost,
+  PER_JOB_TABLE
 } from '@/domains/quote/pricing';
 import QuoteDetailModal from '@/components/modals/QuoteDetailModal';
 
@@ -44,7 +45,7 @@ interface QuoteCalculatorPanelProps {
 }
 
 export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPanelProps) {
-  const { routeData, dwellMinutes, destinations, origins } = useRouteOptimization();
+  const { routeData, dwellMinutes, destinations, origins, vehicleType } = useRouteOptimization();
   const [total, setTotal] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,13 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
   const [detail, setDetail] = useState<any>(null);
   const [effectiveStopsCount, setEffectiveStopsCount] = useState<number>(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // 차량 타입 동기화: RouteOptimizerPanel의 차량 타입(한글)을 본 컴포넌트의 내부 코드값으로 매핑
+  useEffect(() => {
+    if (!vehicleType) return;
+    const mapped = vehicleType === '스타렉스' ? 'starex' : 'ray';
+    setVehicle(mapped);
+  }, [vehicleType]);
 
   // 견적 계산 (임시로 하드코딩)
   useEffect(() => {
@@ -71,11 +79,10 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
     // 체류시간 포함 총 운행시간으로 계산, 최소 2시간(120분) 보장, 30분 단위 올림
     const billMinutes = roundUpTo30Minutes(totalBillMinutes); // 최소 2시간 보장 후 30분 단위 올림
     const hourlyRate = pickHourlyRate(vehicle, billMinutes);
+    // 올림 처리 제거: 실제 계산값을 그대로 사용 (원 단위 반올림만 수행)
     const hourlyTotal = Math.round((billMinutes / 60) * hourlyRate);
-    // 1,000원 단위 맞춤
-    const hourlyTotalRounded = Math.ceil(hourlyTotal / 1000) * 1000;
     // 시간당 요금제에는 유류할증 적용 (과금시간 기반)
-    const hourlyTotalWithFuel = hourlyTotalRounded + fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes);
+    const hourlyTotalWithFuel = hourlyTotal + fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes);
     const hourlyTotalFinal = hourlyTotalWithFuel;
 
     // 단건 요금제 계산 (pricing.ts PER_JOB_TABLE 사용)
@@ -113,18 +120,40 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
     const selectedPlan = hourlyTotalFinal <= perJobTotal ? 'perJob' : 'hourly';
 
     // plans 상태 업데이트
+    // 단건 요금제: 현재 구간 및 다음 구간 증분 정보 계산
+    const findBracket = (km: number) => {
+      let current = PER_JOB_TABLE[0];
+      for (const r of PER_JOB_TABLE) {
+        if (km >= r.fromKm && km <= r.toKm) { current = r; break; }
+      }
+      const idx = PER_JOB_TABLE.indexOf(current);
+      const next = idx >= 0 && idx < PER_JOB_TABLE.length - 1 ? PER_JOB_TABLE[idx + 1] : null;
+      const curPrice = vehicle === 'ray' ? current.ray : current.starex;
+      const nextPrice = next ? (vehicle === 'ray' ? next.ray : next.starex) : null;
+      const delta = nextPrice != null ? nextPrice - curPrice : null;
+      return {
+        label: `${current.fromKm}~${current.toKm}km`,
+        nextLabel: next ? `${next.fromKm}~${next.toKm}km` : null,
+        delta,
+      };
+    };
+    const bracketInfo = findBracket(distanceKm);
+
     const newPlans = {
       hourly: {
         total: `₩${hourlyTotalFinal.toLocaleString()}`,
         ratePerHour: hourlyRate,
-        formatted: `₩${hourlyTotalRounded.toLocaleString()}`,
+        formatted: `₩${hourlyTotal.toLocaleString()}`,
         fuelCost: fuelSurchargeHourlyCorrect(vehicle, distanceKm, billMinutes),
         billMinutes
       },
       perJob: {
         total: `₩${perJobTotal.toLocaleString()}`,
         base: perJobBase,
-        stopFee: perJobStopFee
+        stopFee: perJobStopFee,
+        bracketLabel: bracketInfo.label,
+        nextBracketLabel: bracketInfo.nextLabel,
+        nextDelta: bracketInfo.delta
       }
     };
 
@@ -267,6 +296,7 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
       ? plans.hourly.total > plans.perJob.total
       : false;
     const stopsCount = destinations?.length || 0;
+    const billHours = detail?.billMinutes ? (detail.billMinutes / 60) : 0;
 
     return `
     <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
@@ -292,7 +322,7 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
           ${!isPerJobRecommended ? `
           <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="font-weight: bold; color: #64748b; font-size: 14px;">과금시간</div>
-            <div style="font-size: 16px; color: #1f2937;">${detail?.billMinutes || 0}분</div>
+            <div style="font-size: 16px; color: #1f2937;">${billHours.toFixed(1)}시간</div>
           </div>
           ` : ''}
           <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
@@ -331,6 +361,7 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
   // 시간당 탭 HTML 생성
   const generateHourlyHTML = () => {
     const stopsCount = destinations?.length || 0;
+    const billHours = detail?.billMinutes ? (detail.billMinutes / 60) : 0;
     return `
     <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
       <h1 style="text-align: center; color: #1f2937; border-bottom: 3px solid #1f2937; padding-bottom: 20px;">
@@ -345,7 +376,7 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
         <h2 style="color: #1f2937; border-left: 4px solid #3b82f6; padding-left: 15px;">시간당 요금 상세</h2>
         <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0;">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div><strong>과금시간:</strong> ${plans?.hourly?.billMinutes || 0}분 (30분 단위 올림, 최소 120분)</div>
+            <div><strong>과금시간:</strong> ${billHours.toFixed(1)}시간 (30분 단위 올림, 최소 2시간)</div>
             <div><strong>시간당 단가:</strong> ₩${(plans?.hourly?.ratePerHour || 0).toLocaleString()}</div>
             <div><strong>기본 요금:</strong> ${plans?.hourly?.formatted || '—'}</div>
             <div><strong>유류비 할증:</strong> ₩${(plans?.hourly?.fuelCost || 0).toLocaleString()}</div>
@@ -368,6 +399,9 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
   const generatePerJobHTML = () => {
     const stopsCount = destinations?.length || 0;
     const additionalStopsCount = Math.max(0, stopsCount - 2); // 출발지와 도착지 제외한 추가 경유지
+    const bracketLabel = plans?.perJob?.bracketLabel ?? '—';
+    const nextBracketLabel = plans?.perJob?.nextBracketLabel ?? null;
+    const nextDelta = plans?.perJob?.nextDelta ?? null;
     return `
     <div style="font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; padding: 20px; max-width: 800px;">
       <h1 style="text-align: center; color: #1f2937; border-bottom: 3px solid #1f2937; padding-bottom: 20px;">
@@ -383,10 +417,11 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
         <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0;">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <div><strong>스케줄 타입:</strong> ${scheduleType === 'regular' ? '정기' : '비정기'}</div>
-            <div><strong>기본요금(구간):</strong> ₩${(plans?.perJob?.base || 0).toLocaleString()}</div>
+            <div><strong>기본요금(구간):</strong> ₩${(plans?.perJob?.base || 0).toLocaleString()} <span style="color:#64748b">(${bracketLabel})</span></div>
             <div><strong>경유지 추가(${additionalStopsCount}개):</strong> ₩${(plans?.perJob?.stopFee || 0).toLocaleString()}</div>
             <div><strong>총액:</strong> ${plans?.perJob?.total || '—'}</div>
           </div>
+          ${nextBracketLabel ? `<div style="margin-top:10px; color:#64748b; font-size:13px;">다음 구간 ${nextBracketLabel} 진입 시 +₩${(nextDelta || 0).toLocaleString()}</div>` : ''}
         </div>
       </div>
       
@@ -459,7 +494,6 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
               <div>
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
                   <div className="text-center">
-                    <div className="text-xs text-blue-600 font-medium mb-1">추천 요금제</div>
                     <div className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
                       {plans?.hourly?.total && plans?.perJob?.total
                         ? (plans.hourly.total > plans.perJob.total ? '시간당 요금제' : '단건 요금제')
@@ -470,41 +504,37 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
                         ? (plans.hourly.total > plans.perJob.total ? plans.hourly.total : plans.perJob.total)
                         : (total ?? '—')}
                     </div>
-                    {detail?.billMinutes && plans?.hourly?.total && plans?.perJob?.total && plans.hourly.total > plans.perJob.total && (
-                      <div className="text-xs text-gray-600 mt-2">
-                        과금시간: {detail.billMinutes}분
-                      </div>
-                    )}
+                    {/* 추천 요금제 박스에서는 과금시간 표시 제거 (중복 방지) */}
                   </div>
                 </div>
                 <ul className="mt-3 text-blue-800 space-y-2">
                   <li className="flex justify-between">
                     <span>차종:</span>
-                    <span className="font-medium">{vehicle === 'starex' ? '스타렉스' : '레이'}</span>
+                    <span className="font-medium tabular-nums font-mono text-right">{vehicle === 'starex' ? '스타렉스' : '레이'}</span>
                   </li>
                   <li className="flex justify-between">
                     <span>총 운행시간:</span>
-                    <span className="font-medium">
+                    <span className="font-medium tabular-nums font-mono text-right">
                       {(detail?.driveMinutes ?? 0) + (detail?.dwellTotalMinutes ?? 0)}분
                     </span>
                   </li>
                   {detail?.billMinutes && plans?.hourly?.total && plans?.perJob?.total && plans.hourly.total > plans.perJob.total && (
                     <li className="flex justify-between">
                       <span>과금시간:</span>
-                      <span className="font-medium">{detail.billMinutes}분</span>
+                      <span className="font-medium tabular-nums font-mono text-right">{((detail.billMinutes || 0) / 60).toFixed(1)}시간</span>
                     </li>
                   )}
                   <li className="flex justify-between">
                     <span>총 거리:</span>
-                    <span className="font-medium">{((routeData?.summary?.totalDistance || 0) / 1000).toFixed(1)}km</span>
+                    <span className="font-medium tabular-nums font-mono text-right">{((routeData?.summary?.totalDistance || 0) / 1000).toFixed(1)}km</span>
                   </li>
                   <li className="flex justify-between">
                     <span>경유지:</span>
-                    <span className="font-medium">{destinations?.length || 0}개</span>
+                    <span className="font-medium tabular-nums font-mono text-right">{destinations?.length || 0}개</span>
                   </li>
                   <li className="flex justify-between">
                     <span>예상 유류비:</span>
-                    <span className="font-medium">₩{detail?.estimatedFuelCost?.toLocaleString() || '0'}</span>
+                    <span className="font-medium tabular-nums font-mono text-right">₩{detail?.estimatedFuelCost?.toLocaleString() || '0'}</span>
                   </li>
                 </ul>
               </div>
@@ -523,19 +553,19 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
                 <ul className="mt-3 text-blue-800 space-y-2">
                   <li className="flex justify-between">
                     <span>과금시간:</span>
-                    <span className="font-medium">{detail?.billMinutes || 0}분</span>
+                    <span className="font-medium tabular-nums font-mono text-right">{((detail?.billMinutes || 0) / 60).toFixed(1)}시간</span>
                   </li>
                   <li className="flex justify-between">
                     <span>시간당 단가:</span>
-                    <span className="font-medium">₩{(plans?.hourly?.ratePerHour ?? 0).toLocaleString()}</span>
+                    <span className="font-medium tabular-nums font-mono text-right">₩{(plans?.hourly?.ratePerHour ?? 0).toLocaleString()}</span>
                   </li>
                   <li className="flex justify-between">
                     <span>기본 요금:</span>
-                    <span className="font-medium">{plans?.hourly?.formatted || '—'}</span>
+                    <span className="font-medium tabular-nums font-mono text-right">{plans?.hourly?.formatted || '—'}</span>
                   </li>
                   <li className="flex justify-between">
                     <span>유류비 할증:</span>
-                    <span className="font-medium">₩{(plans?.hourly?.fuelCost ?? 0).toLocaleString()}</span>
+                    <span className="font-medium tabular-nums font-mono text-right">₩{(plans?.hourly?.fuelCost ?? 0).toLocaleString()}</span>
                   </li>
                   <li className="flex justify-between font-semibold text-lg">
                     <span>시간당 총액:</span>
@@ -586,7 +616,7 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
                   </li>
                   <li className="flex justify-between">
                     <span>기본요금(구간):</span>
-                    <span className="font-medium">₩{(plans?.perJob?.base ?? 0).toLocaleString()}</span>
+                    <span className="font-medium">₩{(plans?.perJob?.base ?? 0).toLocaleString()} {plans?.perJob?.bracketLabel ? <span className="text-gray-500">({plans?.perJob?.bracketLabel})</span> : null}</span>
                   </li>
                   <li className="flex justify-between">
                     <span>경유지 추가({effectiveStopsCount}개):</span>
@@ -596,6 +626,11 @@ export default function QuoteCalculatorPanel({ onDataChange }: QuoteCalculatorPa
                     <span>단건 총액:</span>
                     <span className="text-green-600">{plans?.perJob?.total || '—'}</span>
                   </li>
+                  {plans?.perJob?.nextBracketLabel && (
+                    <li className="text-xs text-gray-600">
+                      다음 구간 {plans.perJob.nextBracketLabel} 진입 시 +₩{(plans.perJob.nextDelta || 0).toLocaleString()}
+                    </li>
+                  )}
                 </ul>
               </div>
             )}
