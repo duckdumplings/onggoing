@@ -4,6 +4,7 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 import WaypointList, { type Waypoint } from './WaypointList';
+import BulkUploadModal from './BulkUploadModal';
 
 export default function RouteOptimizerPanel() {
   const [collapsed, setCollapsed] = useState(false);
@@ -100,6 +101,7 @@ export default function RouteOptimizerPanel() {
   const [destinationDwellTime, setDestinationDwellTime] = useState(10); // 도착지 체류시간
   const [localError, setLocalError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<number, string>>({});
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // 경유지 선택 변경 시 해당 인덱스의 에러 제거
   useEffect(() => {
@@ -409,6 +411,11 @@ export default function RouteOptimizerPanel() {
                 <div className="absolute inset-0 rounded-md bg-gradient-to-br from-blue-500/0 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
               </button>
             </div>
+          </div>
+
+          {/* 일괄 업로드 */}
+          <div className="flex justify-end">
+            <button className="text-xs px-2 py-1 border rounded bg-white hover:bg-gray-50" onClick={() => setBulkOpen(true)}>CSV/Excel 업로드</button>
           </div>
 
           {/* 드래그 앤 드롭 목적지 리스트 */}
@@ -893,6 +900,15 @@ export default function RouteOptimizerPanel() {
             {isLoading ? '최적 경로 계산 중…' : '최적 경로 계산'}
           </button>
           {/* 고정 버튼 제거: 상단 메인 버튼만 사용 */}
+          <BulkUploadModal
+            isOpen={bulkOpen}
+            onClose={() => setBulkOpen(false)}
+            onApply={(rows) => {
+              // rows -> our waypoint state 형식으로 변환
+              const next = rows.map((r, idx) => ({ id: `waypoint-${idx + 1}`, selection: r.selection, dwellTime: r.dwellTime ?? 10, deliveryTime: r.deliveryTime }));
+              setWaypoints(next.length ? next : waypoints);
+            }}
+          />
         </div>
       )}
     </section>

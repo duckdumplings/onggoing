@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { perJobBasePrice, perJobRegularPrice, STOP_FEE, PER_JOB_TABLE } from '@/domains/quote/pricing';
+import { perJobBasePrice, perJobRegularPrice, STOP_FEE, PER_JOB_TABLE, HOURLY_RATE_TABLE } from '@/domains/quote/pricing';
 
 interface QuoteDetailModalProps {
   isOpen: boolean;
@@ -15,7 +15,7 @@ interface QuoteDetailModalProps {
   routeData: any;
   destinations: any[];
   effectiveStopsCount: number;
-  initialActiveTab?: 'summary' | 'hourly' | 'perjob' | 'analysis' | 'export';
+  initialActiveTab?: 'summary' | 'hourly' | 'perjob' | 'analysis' | 'export' | 'rate';
 }
 
 export default function QuoteDetailModal({
@@ -38,9 +38,22 @@ export default function QuoteDetailModal({
   const safeDestinations = destinations || [];
 
   // 모달 내부에서 탭 상태 관리
-  const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'analysis' | 'export'>(
+  const [activeTab, setActiveTab] = useState<'summary' | 'hourly' | 'perjob' | 'analysis' | 'export' | 'rate'>(
     initialActiveTab || 'summary'
   );
+
+  // 시간당 요금제 구간표(레이/스타렉스) 병합 뷰
+  const hourlyRows = (HOURLY_RATE_TABLE && HOURLY_RATE_TABLE.ray ? HOURLY_RATE_TABLE.ray : []).map((r, idx) => {
+    const starexTable = HOURLY_RATE_TABLE && HOURLY_RATE_TABLE.starex ? HOURLY_RATE_TABLE.starex : [];
+    const starexRate = (starexTable[idx] && starexTable[idx].ratePerHour) != null
+      ? starexTable[idx].ratePerHour
+      : (starexTable.length > 0 ? starexTable[starexTable.length - 1].ratePerHour : r.ratePerHour);
+    return {
+      maxMinutes: r.maxMinutes,
+      ray: r.ratePerHour,
+      starex: starexRate,
+    };
+  });
 
   // initialActiveTab이 변경되면 activeTab도 업데이트
   useEffect(() => {
@@ -435,6 +448,15 @@ export default function QuoteDetailModal({
               onClick={() => setActiveTab('export')}
             >
               💾 자료추출
+            </button>
+            <button
+              className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${activeTab === 'rate'
+                ? 'bg-white text-slate-700 border-b-2 border-slate-700'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                }`}
+              onClick={() => setActiveTab('rate')}
+            >
+              📑 운임표
             </button>
           </div>
         </div>
@@ -1201,6 +1223,61 @@ export default function QuoteDetailModal({
                     인쇄하기
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 운임표 탭 */}
+          {activeTab === 'rate' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl p-4 border">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">시간당 요금제 (과금시간 구간표)</h3>
+                <div className="overflow-auto">
+                  <table className="min-w-[520px] w-full text-xs border">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="p-2 border text-left">구간(최대 분)</th>
+                        <th className="p-2 border text-right">레이(원/시간)</th>
+                        <th className="p-2 border text-right">스타렉스(원/시간)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hourlyRows.map((r, idx) => (
+                        <tr key={idx}>
+                          <td className="p-2 border">≤ {r.maxMinutes}분</td>
+                          <td className="p-2 border text-right">{r.ray.toLocaleString()}</td>
+                          <td className="p-2 border text-right">{r.starex.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">실제 청구는 과금시간 × 단가 + 유류비(과금시간 기준 기본거리 초과분) 규칙을 따릅니다.</p>
+              </div>
+
+              <div className="bg-white rounded-xl p-4 border">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">단건 요금제 (거리 구간표)</h3>
+                <div className="overflow-auto">
+                  <table className="min-w-[520px] w-full text-xs border">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="p-2 border text-left">구간(km)</th>
+                        <th className="p-2 border text-right">레이(원)</th>
+                        <th className="p-2 border text-right">스타렉스(원)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PER_JOB_TABLE.map((r, idx) => (
+                        <tr key={idx}>
+                          <td className="p-2 border">{r.fromKm}~{r.toKm}</td>
+                          <td className="p-2 border text-right">{r.ray.toLocaleString()}</td>
+                          <td className="p-2 border text-right">{r.starex.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">정기/비정기, 경유지 수 가산 등 세부 규칙은 ‘단건’ 탭 계산 로직을 따릅니다.</p>
               </div>
             </div>
           )}

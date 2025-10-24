@@ -20,10 +20,12 @@
     "jspdf": "^3.0.1",
     "lucide-react": "^0.541.0",
     "next": "^15.5.0",
+    "papaparse": "^5.5.3",
     "pdfkit": "^0.17.1",
     "react": "^18",
     "react-dom": "^18",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20",
