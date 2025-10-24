@@ -81,7 +81,7 @@ async function geocodeAddress(address: string): Promise<AddressSelection | null>
 export default function BulkUploadModal({ isOpen, onClose, onApply }: Props) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<any[]>([]);
-  const [mapping, setMapping] = useState<Record<string, keyof BulkRow | ''>>({});
+  const [mapping, setMapping] = useState<Record<string, keyof BulkRow | '' | 'meta'>>({});
   const [loading, setLoading] = useState(false);
   const [aiSuggest, setAiSuggest] = useState<{ mapping: Record<string, string>; reasons: Record<string, string> } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -119,7 +119,7 @@ export default function BulkUploadModal({ isOpen, onClose, onApply }: Props) {
   }, []);
 
   const autoMap = useCallback((hdrs: string[]) => {
-    const m: Record<string, keyof BulkRow | ''> = {};
+    const m: Record<string, keyof BulkRow | '' | 'meta'> = {};
     hdrs.forEach(h => {
       const key = headerAliases[normalizeHeader(h)];
       if (key) m[h] = key;
@@ -147,10 +147,18 @@ export default function BulkUploadModal({ isOpen, onClose, onApply }: Props) {
       const obj: BulkRow = {};
       headers.forEach(h => {
         const key = mapping[h];
-        if (!key) return;
+        if (!key || key === 'meta') return;
         const v = r[h];
-        if (key === 'dwellMinutes') obj[key] = Number(v);
-        else obj[key] = typeof v === 'string' ? v.trim() : String(v);
+        if (key === 'dwellMinutes') {
+          obj[key] = Number(v);
+        } else if (key === 'role') {
+          const rv = (typeof v === 'string' ? v.trim().toLowerCase() : '');
+          if (rv === 'start' || rv === 'stop' || rv === 'end') {
+            obj.role = rv as 'start' | 'stop' | 'end';
+          }
+        } else {
+          obj[key] = typeof v === 'string' ? v.trim() : String(v);
+        }
       });
       return obj;
     });
