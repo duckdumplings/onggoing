@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_quote_chat_messages_session_id_created_at
     ON public.quote_chat_messages(session_id, created_at ASC);
 
 -- 공용 updated_at 트리거 함수가 이미 존재한다고 가정
+DROP TRIGGER IF EXISTS update_quote_chat_sessions_updated_at ON public.quote_chat_sessions;
 CREATE TRIGGER update_quote_chat_sessions_updated_at
     BEFORE UPDATE ON public.quote_chat_sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

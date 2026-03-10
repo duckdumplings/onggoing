@@ -130,11 +130,11 @@ export default function TmapMainMap() {
     // 다중 배송원 모드 처리
     if (multiDriverResult && multiDriverResult.success) {
       console.log('[TmapMainMap] 다중 배송원 모드 - waypoints 생성');
-      
+
       // 각 배송원별로 waypoints 생성
       multiDriverResult.drivers.forEach((driver: any, driverIndex: number) => {
         const color = DRIVER_COLORS[driverIndex % DRIVER_COLORS.length];
-        
+
         // 출발지 (각 배송원 공통)
         if (driver.origin) {
           points.push({
@@ -155,11 +155,11 @@ export default function TmapMainMap() {
           const isLast = index === driver.destinations.length - 1;
           // routeData에서 waypoint 정보 가져오기
           const waypoints = driver.routeData?.waypoints || [];
-          const waypoint = waypoints.find((wp: any) => 
+          const waypoint = waypoints.find((wp: any) =>
             Math.abs(wp.latitude - dest.latitude) < 0.0001 &&
             Math.abs(wp.longitude - dest.longitude) < 0.0001
           ) || waypoints[index];
-          
+
           points.push({
             lat: dest.latitude,
             lng: dest.longitude,
@@ -172,9 +172,9 @@ export default function TmapMainMap() {
             driverIndex,
             arrivalTime: waypoint?.arrivalTime,
             departureTime: waypoint?.departureTime,
-          dwellTime: waypoint?.dwellTime,
-          etaLabel: waypoint?.arrivalTime ? formatHm(waypoint.arrivalTime) : undefined,
-          riskColor: '#22C55E'
+            dwellTime: waypoint?.dwellTime,
+            etaLabel: waypoint?.arrivalTime ? formatHm(waypoint.arrivalTime) : undefined,
+            riskColor: '#22C55E'
           });
         });
       });
@@ -366,7 +366,7 @@ export default function TmapMainMap() {
   // 다중 배송원 모드일 때 routeData 배열 생성
   const multiDriverRouteData = useMemo(() => {
     if (!multiDriverResult || !multiDriverResult.success) return null;
-    
+
     return multiDriverResult.drivers.map((driver: any) => ({
       ...driver.routeData,
       driverId: driver.driverId,
@@ -454,8 +454,8 @@ export default function TmapMainMap() {
                 {multiDriverResult.drivers.map((driver: any, idx: number) => {
                   const color = DRIVER_COLORS[idx % DRIVER_COLORS.length];
                   return (
-                    <div 
-                      key={driver.driverId} 
+                    <div
+                      key={driver.driverId}
                       className="p-3 rounded-xl border transition-all hover:shadow-md bg-white hover:border-indigo-200 group"
                       style={{ borderColor: `${color}40` }}
                     >
@@ -530,7 +530,7 @@ export default function TmapMainMap() {
                   ETA 상세
                 </button>
               </div>
-              
+
               {/* 주요 정보 카드 */}
               {detailTab === 'kpi' && (
                 <div className="grid grid-cols-3 gap-3">
@@ -547,7 +547,7 @@ export default function TmapMainMap() {
                       {Math.ceil((routeData.summary as any).totalTime / 60)}<span className="text-xs font-normal text-slate-500 ml-0.5">분</span>
                     </div>
                   </div>
-                  
+
                   <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center hover:border-indigo-100 transition-colors group">
                     <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">경유지</div>
                     <div className="text-lg font-black text-slate-800">
@@ -556,7 +556,7 @@ export default function TmapMainMap() {
                   </div>
                 </div>
               )}
-              
+
               {detailTab === 'kpi' && Array.isArray((routeData.summary as any)?.roadComparisons) && (
                 <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 space-y-2">
                   <div className="flex items-center justify-between px-1">
@@ -580,27 +580,28 @@ export default function TmapMainMap() {
                     const isFreeRoadEstimated = item.option === 'free-road-first' && item.tollSource === 'estimated';
                     const isCurrent = Boolean(item.isSelected);
                     return (
-                    <button
-                      type="button"
-                      key={`${item.option}-${idx}`}
-                      onClick={() => openRoadOptionDialog(item.option)}
-                      disabled={isLoading || isApplyingRoadOption || isCurrent}
-                      title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
-                      className={`grid grid-cols-4 gap-2 text-xs rounded-lg px-3 py-2 border transition-all ${item.isSelected 
-                        ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/20' 
-                        : 'bg-slate-50/50 border-transparent text-slate-400 hover:bg-white hover:border-indigo-100'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
-                    >
-                      <span className={`font-bold ${item.isSelected ? 'text-indigo-700' : 'text-slate-500'}`}>{item.label}</span>
-                      <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{(item.estimatedDistance / 1000).toFixed(1)}km</span>
-                      <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{Math.ceil(item.estimatedTime / 60)}분</span>
-                      <span className={`font-medium text-right ${item.isSelected ? 'text-slate-900' : 'text-slate-500'}`}>
-                        {isFreeRoadEstimated ? '확인 불가' : `${item.estimatedToll.toLocaleString()}원`}
-                        {item.tollSource === 'estimated' && !isFreeRoadEstimated && (
-                          <span className="ml-1 text-[10px] text-amber-600 font-semibold">(추정)</span>
-                        )}
-                      </span>
-                    </button>
-                  )})}
+                      <button
+                        type="button"
+                        key={`${item.option}-${idx}`}
+                        onClick={() => openRoadOptionDialog(item.option)}
+                        disabled={isLoading || isApplyingRoadOption || isCurrent}
+                        title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
+                        className={`grid grid-cols-4 gap-2 text-xs rounded-lg px-3 py-2 border transition-all ${item.isSelected
+                          ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/20'
+                          : 'bg-slate-50/50 border-transparent text-slate-400 hover:bg-white hover:border-indigo-100'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
+                      >
+                        <span className={`font-bold ${item.isSelected ? 'text-indigo-700' : 'text-slate-500'}`}>{item.label}</span>
+                        <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{(item.estimatedDistance / 1000).toFixed(1)}km</span>
+                        <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{Math.ceil(item.estimatedTime / 60)}분</span>
+                        <span className={`font-medium text-right ${item.isSelected ? 'text-slate-900' : 'text-slate-500'}`}>
+                          {isFreeRoadEstimated ? '확인 불가' : `${item.estimatedToll.toLocaleString()}원`}
+                          {item.tollSource === 'estimated' && !isFreeRoadEstimated && (
+                            <span className="ml-1 text-[10px] text-amber-600 font-semibold">(추정)</span>
+                          )}
+                        </span>
+                      </button>
+                    )
+                  })}
                   <div className="text-[10px] text-slate-500 px-1">
                     * 통행료는 API 제공값을 우선 사용하며, 미제공 구간은 거리 기반 추정값으로 표시됩니다.
                   </div>
@@ -678,7 +679,7 @@ export default function TmapMainMap() {
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
                   <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">도로 옵션</span>
                   <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
@@ -689,12 +690,12 @@ export default function TmapMainMap() {
                         : <><span className="text-amber-500">⚡</span> 시간 우선</>}
                   </span>
                 </div>
-                
+
                 <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
                   <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">종료 정책</span>
                   <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
-                    {(routeData.summary as any)?.returnedToOrigin 
-                      ? <><span className="text-indigo-500">↩️</span> 출발지 복귀</> 
+                    {(routeData.summary as any)?.returnedToOrigin
+                      ? <><span className="text-indigo-500">↩️</span> 출발지 복귀</>
                       : <><span className="text-rose-500">🏁</span> 마지막 경유지 종료</>}
                   </span>
                 </div>

@@ -593,20 +593,19 @@ export default function RouteOptimizerPanel() {
                           setReturnToOrigin(false);
                         }
                       }}
-                      className={`flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${
-                        (option.id === 'return-origin' && destinationPolicy === 'return-origin') ||
-                        (option.id === 'explicit' && destinationPolicy === 'explicit') ||
-                        (option.id === null && destinationPolicy === null)
+                      className={`flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${(option.id === 'return-origin' && destinationPolicy === 'return-origin') ||
+                          (option.id === 'explicit' && destinationPolicy === 'explicit') ||
+                          (option.id === null && destinationPolicy === null)
                           ? 'bg-white border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500/20'
                           : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
-                      }`}
+                        }`}
                     >
                       <span className="text-sm mb-0.5">{option.icon}</span>
                       <span className="text-[10px] font-bold">{option.label}</span>
                     </button>
                   ))}
                 </div>
-                
+
                 {/* 별도 도착지 입력창 */}
                 {useExplicitDestination && (
                   <div className="mt-2 animate-in fade-in">
@@ -632,11 +631,10 @@ export default function RouteOptimizerPanel() {
                     <button
                       key={opt.id}
                       onClick={() => setRoadOption(opt.id as any)}
-                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${
-                        roadOption === opt.id
+                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${roadOption === opt.id
                           ? 'bg-indigo-50 text-indigo-700 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
-                      }`}
+                        }`}
                     >
                       {opt.label}
                     </button>
@@ -936,7 +934,7 @@ export default function RouteOptimizerPanel() {
             } else {
               // 단일 차량 최적화
               console.log('🚀 [RouteOptimizerPanel] 단일 차량 최적화 시작');
-              
+
               try {
                 await optimizeRouteWith({
                   origins: originSelection ? {
@@ -1048,7 +1046,7 @@ export default function RouteOptimizerPanel() {
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
               <h3 className="text-lg font-bold text-slate-800">다중 배송원 최적화 결과</h3>
-              <button 
+              <button
                 onClick={() => setMultiDriverResult(null)}
                 className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
               >

@@ -27,6 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_quote_documents_created_at ON public.quote_docume
 CREATE INDEX IF NOT EXISTS idx_quote_documents_file_type ON public.quote_documents(file_type);
 
 -- 3. 업데이트 트리거 생성
+DROP TRIGGER IF EXISTS update_quote_documents_updated_at ON public.quote_documents;
 CREATE TRIGGER update_quote_documents_updated_at 
     BEFORE UPDATE ON public.quote_documents 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
