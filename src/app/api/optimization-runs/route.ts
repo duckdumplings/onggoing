@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
     const {
       requestData,    // 원본 요청 데이터
       resultData,     // 최적화 결과 데이터
-      userId          // 사용자 ID (선택사항)
+      userId,         // 사용자 ID (선택사항)
+      mode            // 'single' | 'multi-driver'
     } = body;
 
     // 입력 검증
@@ -21,12 +22,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 다중 배송원 모드 처리
+    const isMultiDriver = mode === 'multi-driver' || resultData.drivers;
+
     // 메타데이터 추출
-    const totalDistance = resultData.summary?.totalDistance || 0;
-    const totalTime = resultData.summary?.totalTime || 0;
-    const vehicleType = resultData.summary?.vehicleTypeCode === '1' ? '레이' : '스타렉스';
+    let totalDistance, totalTime, vehicleType;
+    
+    if (isMultiDriver) {
+      // 다중 배송원 모드
+      totalDistance = resultData.summary?.totalDistance || 0;
+      totalTime = resultData.summary?.totalTime || 0;
+      vehicleType = requestData.vehicleType || '레이';
+    } else {
+      // 단일 차량 모드
+      totalDistance = resultData.summary?.totalDistance || 0;
+      totalTime = resultData.summary?.totalTime || 0;
+      vehicleType = resultData.summary?.vehicleTypeCode === '1' ? '레이' : '스타렉스';
+    }
+    
     const optimizeOrder = requestData.optimizeOrder || false;
-    const usedTraffic = resultData.summary?.usedTraffic || true;
+    const usedTraffic = resultData.summary?.usedTraffic || requestData.useRealtimeTraffic !== false;
     const departureAt = requestData.departureAt ? new Date(requestData.departureAt) : null;
 
     // 엔진 정보 (현재는 Tmap만 사용)
@@ -37,7 +52,10 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('optimization_runs')
       .insert([{
-        request_data: requestData,
+        request_data: {
+          ...requestData,
+          mode: isMultiDriver ? 'multi-driver' : 'single'
+        },
         result_data: resultData,
         total_distance: totalDistance,
         total_time: totalTime,
@@ -55,7 +73,15 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('최적화 실행 결과 저장 실패:', error);
       return NextResponse.json(
-        { error: '데이터 저장에 실패했습니다' },
+        {
+          error: '데이터 저장에 실패했습니다',
+          details: {
+            code: error.code,
+            message: error.message,
+            hint: error.hint,
+            details: error.details
+          }
+        },
         { status: 500 }
       );
     }

@@ -2,113 +2,67 @@
 
 import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
-import QuoteCalculatorPanel from '@/components/panels/QuoteCalculatorPanel';
-import QuoteDetailModal from '@/components/modals/QuoteDetailModal';
-import { useState, useCallback } from 'react';
-// OptimizationHistoryPanel import 제거 - 고도화 필요로 인한 일시 중단
+import AIQuoteLauncher from '@/components/panels/AIQuoteLauncher';
+import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Home() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [quoteData, setQuoteData] = useState({
-    detail: null,
-    plans: null,
-    total: '₩0',
-    vehicle: 'ray' as 'ray' | 'starex',
-    scheduleType: 'ad-hoc' as 'ad-hoc' | 'regular',
-    routeData: null,
-    destinations: [],
-    effectiveStopsCount: 0
-  });
-
-  const handleQuoteDataChange = useCallback((data: any) => {
-    setQuoteData(data);
-  }, []);
+  const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
 
   return (
-    <div className="h-screen bg-gray-50 flex overflow-hidden">
+    <div className="h-screen bg-slate-50 flex overflow-hidden font-sans">
       {/* 좌측 패널 */}
-      <aside className="hidden md:flex flex-col p-4 gap-3 bg-white/60 backdrop-blur-xl border-r border-white/40" style={{ width: '28rem' }}>
-        <header className="px-2 pb-1 flex-shrink-0">
-          <div className="flex items-center space-x-3 select-none">
-            <span
-              className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-br from-indigo-400 to-emerald-400 shadow-sm"
-              aria-hidden="true"
+      <motion.aside
+        initial={{ x: -300, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="hidden md:flex flex-col z-30 w-[28rem] bg-white/80 backdrop-blur-2xl border-r border-white/50 shadow-2xl shadow-indigo-500/5"
+      >
+        <header className="px-6 py-5 flex-shrink-0 border-b border-slate-100/50 bg-white/40 backdrop-blur-sm">
+          <div className="flex items-center gap-3 select-none group cursor-default">
+            <motion.div
+              whileHover={{ rotate: 180 }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
+              className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/30 text-white"
             >
-              <span className="text-lg">🧭</span>
-            </span>
-            <h1 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600">
-              옹라우팅
-            </h1>
+              <div className="absolute inset-0 bg-white/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <span className="text-xl filter drop-shadow-md">🧭</span>
+            </motion.div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-slate-800 flex items-center gap-1">
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 animate-gradient-x">옹라우팅</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-bold tracking-wide border border-indigo-100">BETA</span>
+              </h1>
+            </div>
           </div>
         </header>
+
         {/* 통합 기능 패널 - 스크롤 영역 */}
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-2">
           <RouteOptimizerPanel />
 
           {/* 섹션 구분선 */}
-          <div className="border-t-2 border-gray-200 my-4 mx-4"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent my-4 mx-4"></div>
 
-          <QuoteCalculatorPanel onDataChange={handleQuoteDataChange} />
+          <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
         </div>
 
-        {/* 좌측 네비게이션 최하단 - 상세보기 버튼 */}
-        <div className="flex-shrink-0 pt-4 border-t border-gray-200">
-          {quoteData.routeData ? (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-4 rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl"
-            >
-              📋 견적 상세 정보 보기
-            </button>
-          ) : (
-            <div className="w-full bg-gray-100 text-gray-500 py-3 px-4 rounded-lg text-center text-sm">
-              🚛 최적 경로 계산 후 상세 정보를 확인할 수 있습니다
-            </div>
-          )}
-        </div>
-      </aside>
+      </motion.aside>
 
       {/* 모바일 상단 패널 */}
-      <div className="md:hidden w-full p-4 space-y-3">
+      <div className="md:hidden w-full p-4 space-y-3 bg-slate-50">
         <RouteOptimizerPanel />
-        <QuoteCalculatorPanel onDataChange={handleQuoteDataChange} />
+        <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
 
-        {/* 모바일용 상세보기 버튼 */}
-        <div className="pt-4 border-t border-gray-200">
-          {quoteData.routeData ? (
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-4 rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 flex items-center justify-center gap-2 font-medium shadow-lg hover:shadow-xl"
-            >
-              📋 견적 상세 정보 보기
-            </button>
-          ) : (
-            <div className="w-full bg-gray-100 text-gray-500 py-3 px-4 rounded-lg text-center text-sm">
-              🚛 최적 경로 계산 후 상세 정보를 확인할 수 있습니다
-            </div>
-          )}
-        </div>
       </div>
 
       {/* 우측 지도 - 전체 화면 차지 */}
-      <main className="relative" style={{ width: 'calc(100vw - 28rem)', height: '100vh' }}>
+      <main className="relative flex-1 h-full bg-slate-100">
         <TmapMainMap />
       </main>
 
-      {/* 견적 상세 정보 모달 */}
-      <QuoteDetailModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        detail={quoteData.detail}
-        plans={quoteData.plans}
-        vehicle={quoteData.vehicle}
-        scheduleType={quoteData.scheduleType}
-        total={quoteData.total}
-        initialActiveTab="summary"
-        routeData={quoteData.routeData}
-        destinations={quoteData.destinations}
-        effectiveStopsCount={quoteData.effectiveStopsCount}
-      />
+      <AIQuoteChatModal isOpen={isAiQuoteModalOpen} onClose={() => setIsAiQuoteModalOpen(false)} />
     </div>
   );
 }

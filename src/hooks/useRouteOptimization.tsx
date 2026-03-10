@@ -10,13 +10,32 @@ export interface RouteSummary {
   vehicleTypeCode?: string;
   optimizeOrder?: boolean;
   usedTraffic?: 'realtime' | 'standard';
+  roadOptionApplied?: 'time-first' | 'toll-saving' | 'free-road-first';
+  roadComparisons?: Array<{
+    option: 'time-first' | 'toll-saving' | 'free-road-first';
+    label: string;
+    estimatedDistance: number;
+    estimatedTime: number;
+    estimatedToll: number;
+    tollSource?: 'api' | 'estimated';
+    isSelected: boolean;
+  }>;
 }
 
 export interface RouteData {
   type?: string;
   features?: any[];
   summary?: RouteSummary;
-  waypoints?: Array<{ latitude: number; longitude: number }>
+  waypoints?: Array<{
+    latitude: number;
+    longitude: number;
+    address?: string;
+    arrivalTime?: string;
+    departureTime?: string;
+    dwellTime?: number;
+    deliveryTime?: string | null;
+    isNextDay?: boolean;
+  }>;
 }
 
 export interface OptimizationOptions {
@@ -24,6 +43,8 @@ export interface OptimizationOptions {
   useRealtimeTraffic: boolean;
   departureAt?: string | null;
   useExplicitDestination?: boolean; // 도착지 별도 입력 사용
+  roadOption?: 'time-first' | 'toll-saving' | 'free-road-first';
+  returnToOrigin?: boolean;
   deliveryTimes?: string[]; // 배송완료시간 배열 (24시간 형식: "14:30")
   isNextDayFlags?: boolean[]; // 다음날 배송 여부 배열
 }
@@ -64,7 +85,15 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [origins, setOrigins] = useState<Coordinate | null>(null);
   const [destinations, setDestinations] = useState<Coordinate[]>([]);
   const [vehicleType, setVehicleType] = useState<'레이' | '스타렉스' | string>('레이');
-  const [options, setOptionsState] = useState<OptimizationOptions>({ optimizeOrder: true, useRealtimeTraffic: true, departureAt: null, useExplicitDestination: false, deliveryTimes: [] });
+  const [options, setOptionsState] = useState<OptimizationOptions>({
+    optimizeOrder: true,
+    useRealtimeTraffic: true,
+    departureAt: null,
+    useExplicitDestination: false,
+    roadOption: 'time-first',
+    returnToOrigin: true,
+    deliveryTimes: []
+  });
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +121,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       optimizeOrder: opt.optimizeOrder,
       useRealtimeTraffic: opt.useRealtimeTraffic,
       departureAt: opt.departureAt,
+      roadOption: opt.roadOption || 'time-first',
+      returnToOrigin: opt.returnToOrigin ?? true,
       dwellMinutes: dm,
       deliveryTimes: opt.deliveryTimes || [],
       isNextDayFlags: opt.isNextDayFlags || [],
@@ -144,6 +175,13 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       const data = await res.json();
       console.log('[useRouteOptimization] API 응답 데이터:', data);
 
+      // 최적화 결과를 전역에 저장 (저장 기능용)
+      try {
+        (window as any).lastOptimizationResult = data?.data || data;
+      } catch (e) {
+        console.warn('최적화 결과 전역 저장 실패:', e);
+      }
+
       if (data?.success && data?.data) {
         console.log('[useRouteOptimization] routeData 설정:', data.data);
         setRouteData(data.data as RouteData);
@@ -152,19 +190,40 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
         setError(null);
         try { (window as any).lastOptimizationError = null; } catch { }
 
+        const isInvalidCoord = (lat: number, lng: number) =>
+          !Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 0.000001 && Math.abs(lng) < 0.000001);
+
         // 최적화된 순서로 destinations 업데이트
         if (data.data.summary?.optimizationInfo?.optimizedOrder) {
           const optimizedOrder = data.data.summary.optimizationInfo.optimizedOrder;
+          const responseWaypoints = Array.isArray(data.data.waypoints) ? data.data.waypoints : [];
           const optimizedDestinations = optimizedOrder.map((item: any) => {
             // 원본 destinations에서 해당 주소를 찾아서 좌표 정보 복원
             const originalDest = payload.destinations.find((dest: any) =>
               dest.address === item.address
             );
-            return originalDest ? {
-              lat: originalDest.latitude,
-              lng: originalDest.longitude,
-              address: originalDest.address
-            } : null;
+            if (originalDest) {
+              const rawLat = Number(originalDest.latitude);
+              const rawLng = Number(originalDest.longitude);
+              if (!isInvalidCoord(rawLat, rawLng)) {
+                return {
+                  lat: rawLat,
+                  lng: rawLng,
+                  address: originalDest.address
+                };
+              }
+            }
+
+            // AI 챗 프리뷰처럼 payload 좌표가 0,0인 경우 API 응답 waypoint 좌표를 우선 사용
+            const matchedWaypoint = responseWaypoints.find((wp: any) => wp?.address === item.address);
+            if (matchedWaypoint) {
+              return {
+                lat: Number(matchedWaypoint.latitude),
+                lng: Number(matchedWaypoint.longitude),
+                address: matchedWaypoint.address || item.address
+              };
+            }
+            return null;
           }).filter(Boolean);
 
           console.log('[useRouteOptimization] 최적화된 destinations 업데이트:', optimizedDestinations);

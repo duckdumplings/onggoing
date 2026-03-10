@@ -69,6 +69,8 @@ export async function GET() {
             let overlayTip = null;     // marker tooltip div
             let lastMarkerKey = null;  // 토글 상태 추적용
             let lastSegmentKey = null; // 토글 상태 추적용
+            let lastRenderRequestId = null;
+            let lastPayloadHash = null;
             
             // 전역 디버그 노출 (초기 no-op)
             try { window.toggleNearest = function(){ console.log('[TmapEmbed] toggleNearest noop (not ready)'); }; } catch(e){}
@@ -135,7 +137,7 @@ export async function GET() {
             function handleMessage(event) {
               try {
                 console.log('[TmapEmbed] Message received:', event.data);
-                const { type, routeData, center, waypoints } = event.data;
+                const { type, routeData, center, waypoints, multiDriverMode, requestId, payloadHash } = event.data;
                 
                 switch (type) {
                   case 'init':
@@ -147,11 +149,43 @@ export async function GET() {
                     break;
                     
                   case 'route':
-                    console.log('[TmapEmbed] Handling route message:', { routeData: !!routeData, waypoints: !!waypoints, waypointsCount: waypoints?.length });
+                    console.log('[TmapEmbed] Handling route message:', { 
+                      routeData: !!routeData, 
+                      waypoints: !!waypoints, 
+                      waypointsCount: waypoints?.length,
+                      multiDriverMode: !!multiDriverMode,
+                      isRouteDataArray: Array.isArray(routeData),
+                      requestId
+                    });
+                    let renderApplied = false;
                     if (routeData || waypoints) {
-                      drawRoute(routeData, waypoints);
+                      if (multiDriverMode && Array.isArray(routeData)) {
+                        renderApplied = drawMultiDriverRoutes(routeData, waypoints);
+                      } else {
+                        renderApplied = drawRoute(routeData, waypoints);
+                      }
                     } else {
                       console.log('[TmapEmbed] No route data or waypoints provided');
+                      clearOverlays();
+                      renderApplied = true;
+                    }
+                    lastRenderRequestId = requestId || null;
+                    lastPayloadHash = payloadHash || null;
+                    window.parent.postMessage({
+                      type: 'routeRendered',
+                      requestId: lastRenderRequestId,
+                      payloadHash: lastPayloadHash,
+                      applied: renderApplied
+                    }, '*');
+                    break;
+
+                  case 'focusWaypoint':
+                    if (event.data?.waypoint && map) {
+                      const wp = event.data.waypoint;
+                      if (wp.lat && wp.lng) {
+                        map.setCenter(new Tmapv2.LatLng(wp.lat, wp.lng));
+                        try { map.setZoom(Math.max(map.getZoom(), 15)); } catch (e) {}
+                      }
                     }
                     break;
                     
@@ -189,6 +223,193 @@ export async function GET() {
               if (overlayTip) { try { overlayTip.remove(); } catch(e){} overlayTip = null; }
             }
 
+            // 다중 배송원 경로 그리기
+            function drawMultiDriverRoutes(routeDataArray, waypoints) {
+              try {
+                console.log('[TmapEmbed] drawMultiDriverRoutes 시작:', { 
+                  driversCount: routeDataArray.length,
+                  waypointsCount: waypoints?.length || 0
+                });
+                
+                clearOverlays();
+                
+                const driverColors = [
+                  '#3B82F6', // 파란색
+                  '#EF4444', // 빨간색
+                  '#10B981', // 초록색
+                  '#F59E0B', // 노란색
+                  '#8B5CF6', // 보라색
+                  '#EC4899', // 핑크색
+                  '#06B6D4', // 청록색
+                  '#F97316', // 주황색
+                  '#14B8A6', // 틸색
+                  '#6366F1', // 인디고색
+                ];
+                
+                // 각 배송원별로 경로 그리기
+                routeDataArray.forEach((driverRouteData, driverIndex) => {
+                  const color = driverRouteData.color || driverColors[driverIndex % driverColors.length];
+                  const driverId = driverRouteData.driverId || \`driver-\${driverIndex + 1}\`;
+                  
+                  console.log(\`[TmapEmbed] 배송원 \${driverId} 경로 그리기:\`, {
+                    color,
+                    featuresCount: driverRouteData.features?.length || 0
+                  });
+                  
+                  if (driverRouteData.features && driverRouteData.features.length > 0) {
+                    // 전체 경로 좌표 수집
+                    const fullPath = [];
+                    driverRouteData.features.forEach((feature) => {
+                      if (!feature.geometry || !feature.geometry.coordinates) return;
+                      const coords = feature.geometry.coordinates;
+                      if (Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
+                        coords.forEach((c) => fullPath.push(new Tmapv2.LatLng(c[1], c[0])));
+                      } else if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
+                        const flat = coords.flat(1);
+                        flat.forEach((c) => fullPath.push(new Tmapv2.LatLng(c[1], c[0])));
+                      }
+                    });
+                    
+                    // 배송원별 색상으로 폴리라인 그리기
+                    if (fullPath.length > 1) {
+                      const polyline = new Tmapv2.Polyline({ 
+                        path: fullPath, 
+                        strokeColor: color, 
+                        strokeWeight: 6, 
+                        strokeOpacity: 0.8, 
+                        map 
+                      });
+                      routePolylines.push(polyline);
+                    }
+                  }
+                });
+                
+                // waypoints 마커 표시 (배송원별 색상 적용 및 툴팁)
+                if (waypoints && waypoints.length > 0) {
+                  console.log('[TmapEmbed] 다중 배송원 waypoints:', waypoints.length, '개');
+                  waypoints.forEach((wp, wpIndex) => {
+                    if (!wp || !wp.lat || !wp.lng) {
+                      console.warn('[TmapEmbed] 잘못된 waypoint:', wp);
+                      return;
+                    }
+                    
+                    const wpColor = wp.color || '#3B82F6';
+                    const wpLabel = wp.label || '';
+                    const wpIcon = wp.icon || '📍';
+                    const driverIndex = wp.driverIndex !== undefined ? wp.driverIndex : -1;
+                    const wpAddress = wp.address || '';
+                    
+                    try {
+                      console.log('[TmapEmbed] 마커 생성:', { lat: wp.lat, lng: wp.lng, label: wpLabel, address: wpAddress });
+                      const marker = new Tmapv2.Marker({
+                        position: new Tmapv2.LatLng(wp.lat, wp.lng),
+                        map: map,
+                        icon: wpIcon,
+                        iconSize: new Tmapv2.Size(32, 32),
+                        label: wpLabel,
+                        title: wpAddress || wpLabel
+                      });
+                      
+                      markers.push(marker);
+                      
+                      // 툴팁 생성 (기존 drawRoute와 동일한 방식)
+                      try {
+                        const tipPos = new Tmapv2.LatLng(wp.lat, wp.lng);
+                        const tipText = wpAddress || wpLabel || \`경유지 \${wpIndex + 1}\`;
+                        const tipLabel = driverIndex >= 0 ? \`배송원 \${driverIndex + 1} - \${tipText}\` : tipText;
+                        
+                        markerInteracts.push({ 
+                          marker: marker, 
+                          position: tipPos, 
+                          address: wpAddress, 
+                          label: tipLabel,
+                          driverIndex: driverIndex,
+                          color: wpColor
+                        });
+                        
+                        // 마커 클릭/터치 이벤트로 툴팁 토글
+                        const bind = (obj, event, handler) => {
+                          try {
+                            if (Tmapv2 && Tmapv2.Event && typeof Tmapv2.Event.addListener === 'function') {
+                              Tmapv2.Event.addListener(obj, event, handler);
+                            } else if (obj.addEventListener) {
+                              obj.addEventListener(event, handler);
+                            }
+                          } catch(e) { console.warn('[TmapEmbed] 이벤트 바인딩 실패', e); }
+                        };
+                        
+                        const toggleTip = () => {
+                          try {
+                            const layer = marker.getLayer ? marker.getLayer() : null;
+                            if (!layer) return;
+                            
+                            let tip = layer.querySelector('._markerTip');
+                            if (!tip) {
+                              tip = document.createElement('div');
+                              tip.className = '_markerTip';
+                              tip.style.position = 'absolute';
+                              tip.style.transform = 'translate(-50%, -120%)';
+                              tip.style.background = driverIndex >= 0 ? wpColor : '#111';
+                              tip.style.color = '#fff';
+                              tip.style.padding = '8px 12px';
+                              tip.style.borderRadius = '8px';
+                              tip.style.fontSize = '12px';
+                              tip.style.fontWeight = '500';
+                              tip.style.boxShadow = '0 2px 8px rgba(0,0,0,.3)';
+                              tip.style.whiteSpace = 'nowrap';
+                              tip.style.zIndex = '1000';
+                              tip.textContent = tipLabel;
+                              layer.appendChild(tip);
+                            }
+                            
+                            tip.style.display = (tip.style.display === 'block') ? 'none' : 'block';
+                          } catch(e) {
+                            console.warn('[TmapEmbed] 툴팁 토글 실패', e);
+                          }
+                        };
+                        
+                        bind(marker, 'click', toggleTip);
+                        bind(marker, 'touchstart', () => { setTimeout(toggleTip, 0); });
+                      } catch(e) {
+                        console.warn('[TmapEmbed] 마커 툴팁 생성 실패', e);
+                      }
+                    } catch(e) {
+                      console.warn('[TmapEmbed] 마커 생성 실패:', wp, e);
+                    }
+                  });
+                  
+                  console.log('[TmapEmbed] 다중 배송원 마커 그리기 완료:', markers.length, '개 마커');
+                  try { window.markerInteracts = markerInteracts; } catch(e){}
+                }
+                
+                // 모든 경로를 포함하도록 지도 범위 조정
+                if (routePolylines.length > 0 || markers.length > 0) {
+                  const bounds = new Tmapv2.LatLngBounds();
+                  routePolylines.forEach(polyline => {
+                    if (polyline.getPath && polyline.getPath().getArray) {
+                      polyline.getPath().getArray().forEach(latlng => bounds.extend(latlng));
+                    }
+                  });
+                  markers.forEach(marker => {
+                    if (marker.getPosition) bounds.extend(marker.getPosition());
+                  });
+                  if (!bounds.isEmpty()) {
+                    map.fitBounds(bounds);
+                    map.setZoom(Math.min(map.getZoom(), 14)); // 너무 확대되지 않도록
+                  }
+                }
+                
+                console.log('[TmapEmbed] drawMultiDriverRoutes 완료:', {
+                  polylines: routePolylines.length,
+                  markers: markers.length
+                });
+                return true;
+              } catch (error) {
+                console.error('[TmapEmbed] drawMultiDriverRoutes 오류:', error);
+                return false;
+              }
+            }
+
             function drawRoute(routeData, waypoints) {
               try {
                 console.log('[TmapEmbed] drawRoute 시작:', { 
@@ -218,13 +439,7 @@ export async function GET() {
                     }
                   });
 
-                  // 2) 기본 경로(연녹색)로 전체 라인 한 번 그리기 → 교통 스타일 위에 우리 라인을 올리기
-                  if (fullPath.length > 1) {
-                    const base = new Tmapv2.Polyline({ path: fullPath, strokeColor: '#2DD4BF', strokeWeight: 5, strokeOpacity: 0.7, map });
-                    routePolylines.push(base);
-                  }
-
-                  // 3) 세그먼트 분리: waypoints 위치를 fullPath 내 가장 가까운 인덱스로 매핑하여 슬라이스
+                  // 2) 세그먼트 분리: waypoints 위치를 fullPath 내 가장 가까운 인덱스로 매핑하여 슬라이스
                   const wp = (waypoints || []).map(p => new Tmapv2.LatLng(p.lat, p.lng));
                   // 좌표 안전 접근 헬퍼
                   const getLatSafe = (p) => {
@@ -266,14 +481,65 @@ export async function GET() {
                   // 정렬 보정 및 유니크
                   const ordered = Array.from(new Set(anchors)).sort((a,b)=>a-b);
 
+                  // 외곽선 + 본선 2중 라인으로 가독성 강화
+                  if (fullPath.length > 1) {
+                    const outline = new Tmapv2.Polyline({
+                      path: fullPath,
+                      strokeColor: '#FFFFFF',
+                      strokeWeight: 14,
+                      strokeOpacity: 0.98,
+                      map
+                    });
+                    routePolylines.push(outline);
+
+                    const mainLine = new Tmapv2.Polyline({
+                      path: fullPath,
+                      strokeColor: '#7C3AED',
+                      strokeWeight: 7,
+                      strokeOpacity: 0.98,
+                      map
+                    });
+                    routePolylines.push(mainLine);
+                  }
+
+                  // 경로 방향 보조(화살표)
+                  const step = Math.max(7, Math.floor(fullPath.length / 12));
+                  const mercatorY = (lat) => {
+                    const clamped = Math.max(-85, Math.min(85, lat));
+                    const rad = clamped * Math.PI / 180;
+                    return Math.log(Math.tan(Math.PI / 4 + rad / 2));
+                  };
+                  for (let i = step; i < fullPath.length - 2; i += step) {
+                    const curr = fullPath[i];
+                    const next = fullPath[i + 1];
+                    if (!curr || !next) continue;
+                    const currLng = getLngSafe(curr);
+                    const currLat = getLatSafe(curr);
+                    const nextLng = getLngSafe(next);
+                    const nextLat = getLatSafe(next);
+                    if ([currLng, currLat, nextLng, nextLat].some(v => isNaN(v))) continue;
+
+                    // 지도(메르카토르) 화면 축 기준으로 각도를 계산해 화살표 뒤집힘을 방지
+                    const dx = nextLng - currLng;
+                    const dyMerc = mercatorY(nextLat) - mercatorY(currLat);
+                    const screenDy = -dyMerc;
+                    const angle = Math.atan2(screenDy, dx) * 180 / Math.PI;
+                    const arrowMarker = new Tmapv2.Marker({
+                      position: new Tmapv2.LatLng(currLat, currLng),
+                      icon: createDirectionArrowIcon(angle),
+                      iconSize: new Tmapv2.Size(22, 22),
+                      map: map
+                    });
+                    markers.push(arrowMarker);
+                  }
+
                   for (let si = 0; si < ordered.length - 1; si++) {
                     const a = ordered[si];
                     const b = ordered[si+1];
                     if (b - a < 2) continue; // 너무 짧으면 스킵
                     const segment = fullPath.slice(a, b+1);
-                    const hue = 210 + si * 20;
-                    const color = 'hsl(' + hue + ',85%,55%)';
-                    const segLine = new Tmapv2.Polyline({ path: segment, strokeColor: color, strokeWeight: 7, strokeOpacity: 0.95, map });
+                    const color = '#7C3AED';
+                    const segLine = new Tmapv2.Polyline({ path: segment, strokeColor: color, strokeWeight: 7, strokeOpacity: 0.25, map });
                     routePolylines.push(segLine);
                     // 이벤트 캡처 라인은 제거 (DOM overlay로 대체)
 
@@ -334,7 +600,8 @@ export async function GET() {
                     if (point.lat && point.lng) {
                       const marker = new Tmapv2.Marker({
                         position: new Tmapv2.LatLng(point.lat, point.lng),
-                        icon: createPinIcon(point.label || String(index + 1)),
+                        icon: createPinIcon(point.label || String(index + 1), point.etaLabel, point.riskColor),
+                        iconSize: new Tmapv2.Size(70, 56),
                         map: map
                       });
                       
@@ -719,9 +986,11 @@ export async function GET() {
                 }
                 
                 console.log('[TmapEmbed] drawRoute 완료');
+                return true;
                 
               } catch (error) {
                 console.error('[TmapEmbed] drawRoute 오류:', error);
+                return false;
               }
             }
 
@@ -1003,16 +1272,31 @@ export async function GET() {
             }
             try { installGlobalInteraction(false); } catch (e) { console.warn('[TmapEmbed] installGlobalInteraction failed at module tail', e); }
             
-            function createPinIcon(label) {
+            function createPinIcon(label, etaLabel, riskColor) {
               const canvas = document.createElement('canvas');
-              canvas.width = 40;
-              canvas.height = 40;
+              canvas.width = 70;
+              canvas.height = 56;
               const ctx = canvas.getContext('2d');
+              if (!ctx) return '';
+
+              const etaText = etaLabel || '';
+              if (etaText) {
+                const bg = riskColor || '#22C55E';
+                drawRoundedRect(ctx, 9, 0, 52, 19, 9, bg);
+                ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+                ctx.lineWidth = 1;
+                drawRoundedRect(ctx, 9, 0, 52, 19, 9, null, true);
+                ctx.fillStyle = '#F9FAFB';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(etaText, 35, 9);
+              }
               
               // 원형 배경
               ctx.fillStyle = '#3B82F6';
               ctx.beginPath();
-              ctx.arc(20, 20, 18, 0, 2 * Math.PI);
+              ctx.arc(35, 36, 16, 0, 2 * Math.PI);
               ctx.fill();
               
               // 흰색 테두리
@@ -1022,11 +1306,60 @@ export async function GET() {
               
               // 텍스트
               ctx.fillStyle = '#FFFFFF';
-              ctx.font = 'bold 12px Arial';
+              ctx.font = 'bold 11px Arial';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(label, 20, 20);
+              ctx.fillText(label, 35, 36);
               
+              return canvas.toDataURL();
+            }
+
+            function drawRoundedRect(ctx, x, y, w, h, r, fillColor, strokeOnly) {
+              const rr = Math.min(r, h / 2, w / 2);
+              ctx.beginPath();
+              ctx.moveTo(x + rr, y);
+              ctx.lineTo(x + w - rr, y);
+              ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+              ctx.lineTo(x + w, y + h - rr);
+              ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+              ctx.lineTo(x + rr, y + h);
+              ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+              ctx.lineTo(x, y + rr);
+              ctx.quadraticCurveTo(x, y, x + rr, y);
+              ctx.closePath();
+              if (strokeOnly) {
+                ctx.stroke();
+              } else {
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+              }
+            }
+
+            function createDirectionArrowIcon(angle) {
+              const canvas = document.createElement('canvas');
+              canvas.width = 24;
+              canvas.height = 24;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) return '';
+              ctx.translate(12, 12);
+              ctx.rotate((angle * Math.PI) / 180);
+
+              // 가시성 확보용 배경원
+              ctx.fillStyle = 'rgba(255,255,255,0.95)';
+              ctx.beginPath();
+              ctx.arc(0, 0, 9, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.strokeStyle = 'rgba(124,58,237,0.45)';
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+
+              ctx.fillStyle = 'rgba(124,58,237,0.95)';
+              ctx.beginPath();
+              ctx.moveTo(6.5, 0);
+              ctx.lineTo(-4.5, -4);
+              ctx.lineTo(-4.5, 4);
+              ctx.closePath();
+              ctx.fill();
               return canvas.toDataURL();
             }
             
