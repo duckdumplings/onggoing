@@ -5,37 +5,88 @@ type Suggestion = {
   address: string // 도로명주소 우선(없으면 지번)
   latitude: number
   longitude: number
+  confidence: number
+  matchType: 'name_prefix' | 'address_prefix' | 'name_contains' | 'address_contains' | 'fuzzy' | 'unknown'
+  normalizedQuery: string
 }
 
-// 고급 TTL 메모리 캐시 (프로세스 생명주기 동안)
-const cache = new Map<string, { ts: number; data: Suggestion[]; hitCount: number }>()
-const TTL_MS = 5 * 60_000 // 5분으로 단축 (더 자주 업데이트)
-const MAX_CACHE_SIZE = 1000 // 최대 캐시 크기 제한
+type ApiStatus = 'ok' | 'no_results' | 'rate_limited' | 'error'
 
-// 레이트리밋 추적 (메모리 기반)
+type ApiResponse = {
+  status: ApiStatus
+  suggestions: Suggestion[]
+  normalizedQuery: string
+  message?: string
+}
+
+const cache = new Map<string, { ts: number; data: Suggestion[]; hitCount: number }>()
+const TTL_MS = 5 * 60_000
+const MAX_CACHE_SIZE = 1000
+
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
-const RATE_LIMIT_WINDOW = 60 * 1000 // 1분
-const MAX_REQUESTS_PER_WINDOW = 10 // 1분당 최대 10개 요청
+const RATE_LIMIT_WINDOW = 60 * 1000
+const MAX_REQUESTS_PER_WINDOW = 10
+const DEV_MODE = process.env.NODE_ENV === 'development'
+
+const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, '').trim()
+
+function rankSuggestion(rawQuery: string, name: string, address: string): Pick<Suggestion, 'confidence' | 'matchType' | 'normalizedQuery'> {
+  const normalizedQuery = normalize(rawQuery)
+  const normalizedName = normalize(name)
+  const normalizedAddress = normalize(address)
+
+  if (!normalizedQuery) {
+    return { confidence: 0, matchType: 'unknown', normalizedQuery }
+  }
+  if (normalizedName.startsWith(normalizedQuery)) {
+    return { confidence: 0.95, matchType: 'name_prefix', normalizedQuery }
+  }
+  if (normalizedAddress.startsWith(normalizedQuery)) {
+    return { confidence: 0.9, matchType: 'address_prefix', normalizedQuery }
+  }
+  if (normalizedName.includes(normalizedQuery)) {
+    return { confidence: 0.82, matchType: 'name_contains', normalizedQuery }
+  }
+  if (normalizedAddress.includes(normalizedQuery)) {
+    return { confidence: 0.74, matchType: 'address_contains', normalizedQuery }
+  }
+  if (normalizedQuery.length >= 2) {
+    const n = normalizedQuery.slice(0, 2)
+    if (normalizedName.includes(n) || normalizedAddress.includes(n)) {
+      return { confidence: 0.62, matchType: 'fuzzy', normalizedQuery }
+    }
+  }
+  return { confidence: 0.5, matchType: 'unknown', normalizedQuery }
+}
+
+function okResponse(payload: ApiResponse, status = 200) {
+  return NextResponse.json(payload, { status })
+}
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q')?.trim() || ''
+  const normalizedQuery = normalize(q)
+
   if (!q || q.length < 2) {
-    return NextResponse.json({ suggestions: [] }, { status: 200 })
+    return okResponse({ status: 'no_results', suggestions: [], normalizedQuery })
   }
 
   const now = Date.now()
 
-  // 레이트리밋 체크
   const clientIP = req.headers.get('x-forwarded-for') || 'unknown'
   const clientRateLimit = rateLimitMap.get(clientIP)
 
   if (clientRateLimit && now < clientRateLimit.resetTime) {
     if (clientRateLimit.count >= MAX_REQUESTS_PER_WINDOW) {
-      console.warn(`[POI Search] Rate limit exceeded for IP: ${clientIP}`)
-      return NextResponse.json({
-        error: 'Rate limit exceeded. Please try again later.',
-        suggestions: []
-      }, { status: 429 })
+      return okResponse(
+        {
+          status: 'rate_limited',
+          suggestions: [],
+          normalizedQuery,
+          message: '요청이 많습니다. 잠시 후 다시 시도해 주세요.',
+        },
+        429
+      )
     }
     clientRateLimit.count++
   } else {
@@ -48,36 +99,28 @@ export async function GET(req: NextRequest) {
   const cacheKey = q.toLowerCase()
   const cached = cache.get(cacheKey)
   if (cached && now - cached.ts < TTL_MS) {
-    // 캐시 히트 시 hitCount 증가
     cached.hitCount++
-    return NextResponse.json({ suggestions: cached.data }, { status: 200 })
+    return okResponse({
+      status: cached.data.length > 0 ? 'ok' : 'no_results',
+      suggestions: cached.data,
+      normalizedQuery,
+    })
   }
 
-  // 환경변수 디버깅 강화
   const nextPublicKey = process.env.NEXT_PUBLIC_TMAP_API_KEY
   const tmapKey = process.env.TMAP_API_KEY
   const finalKey = nextPublicKey || tmapKey || ''
 
-  console.log('[POI Search] Query:', q)
-  console.log('[POI Search] NEXT_PUBLIC_TMAP_API_KEY exists:', !!nextPublicKey)
-  console.log('[POI Search] NEXT_PUBLIC_TMAP_API_KEY length:', nextPublicKey?.length || 0)
-  console.log('[POI Search] TMAP_API_KEY exists:', !!tmapKey)
-  console.log('[POI Search] TMAP_API_KEY length:', tmapKey?.length || 0)
-  console.log('[POI Search] Final key exists:', !!finalKey)
-  console.log('[POI Search] Final key length:', finalKey.length)
-  console.log('[POI Search] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
-
   if (!finalKey) {
-    console.error('[POI Search] No TMAP key found in any environment variable')
-    return NextResponse.json({
-      error: 'TMAP API key not configured. Please check Vercel environment variables.',
-      suggestions: [],
-      debug: {
-        nextPublicExists: !!nextPublicKey,
-        tmapExists: !!tmapKey,
-        envKeys: Object.keys(process.env).filter(k => k.includes('TMAP'))
-      }
-    }, { status: 500 })
+    return okResponse(
+      {
+        status: 'error',
+        suggestions: [],
+        normalizedQuery,
+        message: '지도 검색 키가 설정되지 않았습니다.',
+      },
+      500
+    )
   }
 
   try {
@@ -94,32 +137,52 @@ export async function GET(req: NextRequest) {
       next: { revalidate: 0 },
     })
 
-    console.log('[POI Search] TMAP API response status:', res.status)
-
     if (!res.ok) {
-      console.log('[POI Search] TMAP API failed:', res.status, res.statusText)
-      return NextResponse.json({ suggestions: [] }, { status: 200 })
+      if (DEV_MODE) {
+        console.warn('[POI Search] TMAP API failed', res.status, res.statusText)
+      }
+      return okResponse({
+        status: 'error',
+        suggestions: [],
+        normalizedQuery,
+        message: '검색 API 호출에 실패했습니다.',
+      })
     }
 
     const data = await res.json()
     const pois = data?.searchPoiInfo?.pois?.poi || []
-    const suggestions: (Suggestion & { label: string })[] = pois.slice(0, 10).map((p: any) => {
-      const road = p?.newAddressList?.newAddress?.[0]?.fullAddressRoad
+    const rawSuggestions: Suggestion[] = pois.slice(0, 15).map((p: any) => {
+      const road = p?.newAddressList?.newAddress?.[0]?.fullAddressRoad || ''
       const jibun = [p.upperAddrName, p.middleAddrName, p.lowerAddrName, p.detailAddrName]
         .filter(Boolean)
         .join(' ')
+      const address = road || jibun
+      const ranked = rankSuggestion(q, p.name ?? '', address)
       return {
-        name: p.name,
-        address: road || jibun,
+        name: p.name ?? '',
+        address,
         latitude: parseFloat(p.noorLat ?? p.frontLat ?? p.newLat ?? p.lat),
         longitude: parseFloat(p.noorLon ?? p.frontLon ?? p.newLon ?? p.lon),
-        label: p.name ? `${p.name} · ${road || jibun}` : (road || jibun)
+        confidence: ranked.confidence,
+        matchType: ranked.matchType,
+        normalizedQuery: ranked.normalizedQuery,
       }
     }).filter((s: Suggestion) => Number.isFinite(s.latitude) && Number.isFinite(s.longitude))
 
-    // 캐시 크기 제한 체크 및 LRU 정책 적용
+    const deduped = new Map<string, Suggestion>()
+    for (const suggestion of rawSuggestions) {
+      const key = `${suggestion.latitude.toFixed(6)}:${suggestion.longitude.toFixed(6)}:${suggestion.address}`
+      const existing = deduped.get(key)
+      if (!existing || suggestion.confidence > existing.confidence) {
+        deduped.set(key, suggestion)
+      }
+    }
+
+    const suggestions = [...deduped.values()]
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 10)
+
     if (cache.size >= MAX_CACHE_SIZE) {
-      // 가장 오래된 항목 제거
       const oldestKey = Array.from(cache.entries())
         .sort(([, a], [, b]) => a.ts - b.ts)[0]?.[0]
       if (oldestKey) {
@@ -128,11 +191,21 @@ export async function GET(req: NextRequest) {
     }
 
     cache.set(cacheKey, { ts: now, data: suggestions, hitCount: 1 })
-    return NextResponse.json({ suggestions }, { status: 200 })
-  } catch {
-    return NextResponse.json({ suggestions: [] }, { status: 200 })
+    return okResponse({
+      status: suggestions.length > 0 ? 'ok' : 'no_results',
+      suggestions,
+      normalizedQuery,
+      message: suggestions.length > 0 ? undefined : '검색 결과가 없습니다.',
+    })
+  } catch (error) {
+    if (DEV_MODE) {
+      console.warn('[POI Search] unexpected error', error)
+    }
+    return okResponse({
+      status: 'error',
+      suggestions: [],
+      normalizedQuery,
+      message: '검색 처리 중 오류가 발생했습니다.',
+    })
   }
 }
-
-
-

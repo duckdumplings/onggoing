@@ -7,9 +7,6 @@ export interface ChatHistoryItem {
   content: string;
 }
 
-import { PRICING_RULES_DESC } from '@/domains/quote/knowledge/pricingRules';
-import { SERVICE_INFO_DESC } from '@/domains/quote/knowledge/serviceInfo';
-
 export interface FollowUpQuestion {
   field: string;
   question: string;
@@ -152,11 +149,6 @@ export async function extractQuoteInfoWithLLM(
 
   const systemPrompt = `너는 물류 견적 입력 분석 및 상담 전문가다. 사용자와의 대화 히스토리와 현재 입력을 분석하여, '현재 시점의 유효한 전체 견적 정보'를 JSON으로 추출하고, 사용자의 질문에 대해 친절하고 자연스럽게 답변해라.
 
-### 참고 지식 (RAG Context)
-${SERVICE_INFO_DESC}
-
-${PRICING_RULES_DESC}
-
 ### 필수 필드 (견적 산출용)
 - origin: 출발지 주소 (address 필수)
 - destinations: 경유지/목적지 배열 (각각 address 필수, deliveryTime은 HH:mm, isNextDay, dwellMinutes)
@@ -177,6 +169,7 @@ ${PRICING_RULES_DESC}
 2. 'assistantResponse'는 항상 포함해야 하며, 사용자가 읽게 될 유일한 메시지라고 생각하고 작성하라.
 3. 견적 정보가 변경되면 해당 필드를 업데이트하라.
 4. '내일', '오후 3시' 등은 구체적인 값으로 변환하라.
+5. assistantResponse가 길어질 경우 2~4개 단락으로 나누고, 필요하면 목록 형태(불릿/번호)를 사용해 가독성을 높여라.
 
 응답 형식:
 {
@@ -231,11 +224,6 @@ ${PRICING_RULES_DESC}
     }
 
     extractedData = normalizeExtractedQuoteInfo(extractedData);
-
-    // 기본 검증: 최소한 출발지 또는 목적지가 있어야 함
-    if (!extractedData.origin?.address && (!extractedData.destinations || extractedData.destinations.length === 0)) {
-      throw new Error('출발지 또는 목적지 정보를 찾을 수 없습니다');
-    }
 
     // 신뢰도 점수 계산 (간단한 휴리스틱)
     let confidenceScore = 0.5; // 기본값

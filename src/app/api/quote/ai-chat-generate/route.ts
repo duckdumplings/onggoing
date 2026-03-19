@@ -13,11 +13,30 @@ import {
   pickHourlyRate,
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
+import { createServerClient } from '@/libs/supabase-client';
+import {
+  buildConversationSummary,
+  createInitialSlotState,
+  getMissingSlots,
+  mergeSlotState,
+  SlotState,
+  toExtractedFromSlots,
+} from '@/domains/quote/services/conversationStateManager';
+import { resolvePoiHintsFromText, saveToolCallLog } from '@/domains/quote/services/toolRouter';
+import { retrieveRagContext, retrieveSimilarQueryCandidate } from '@/domains/quote/services/ragRetriever';
+import { searchWebKnowledge } from '@/domains/quote/services/webKnowledgeRetriever';
 
 type ExtractedContext = {
   vehicleType?: '레이' | '스타렉스';
   scheduleType?: 'regular' | 'ad-hoc';
   knownAddresses?: string[];
+};
+
+type SessionContextRow = {
+  session_id: string;
+  slot_state: SlotState;
+  summary: string | null;
+  updated_at: string;
 };
 
 type QuotePlan = {
@@ -30,6 +49,70 @@ type RouteErrorSuggestion = {
   title?: string;
   description?: string;
 };
+
+type EvidenceSource = {
+  type: 'internal' | 'attachment' | 'web';
+  label: string;
+  url?: string;
+};
+
+type EvidencePayload = {
+  basis: string[];
+  sources: EvidenceSource[];
+  fetchedAt?: string;
+};
+
+function buildEvidencePayload(params: {
+  ragSources: string[];
+  webSources?: Array<{ title: string; url: string }>;
+  usedWeb: boolean;
+  usedRag: boolean;
+  hasSessionSummary: boolean;
+}): EvidencePayload {
+  const basis: string[] = [];
+  const sources: EvidenceSource[] = [];
+
+  if (params.usedRag) basis.push('내부 지식/세션 컨텍스트를 우선 반영했습니다.');
+  if (params.hasSessionSummary) basis.push('세션 요약 메모리를 반영해 맥락을 유지했습니다.');
+  if (params.usedWeb) basis.push('부족한 일반 지식은 웹 검색 결과를 보강해 반영했습니다.');
+
+  const uniqueRag = Array.from(new Set(params.ragSources));
+  for (const src of uniqueRag) {
+    if (src.startsWith('attachment:')) {
+      sources.push({ type: 'attachment', label: src.replace('attachment:', '') });
+      continue;
+    }
+    sources.push({ type: 'internal', label: src.replace(/^knowledge:/, 'knowledge: ') });
+  }
+
+  for (const web of params.webSources || []) {
+    sources.push({ type: 'web', label: web.title || web.url, url: web.url });
+  }
+
+  return {
+    basis: basis.length ? basis : ['사용자 입력과 세션 컨텍스트를 기반으로 응답했습니다.'],
+    sources: sources.slice(0, 8),
+  };
+}
+
+function buildPreferenceInstruction(slotState: SlotState): string {
+  const lines: string[] = [];
+  const responseStyle = slotState.preferences?.responseStyle;
+  if (responseStyle === 'concise') {
+    lines.push('답변은 2~4문장으로 간결하게 작성하세요.');
+  } else if (responseStyle === 'detailed') {
+    lines.push('답변은 핵심 요약 후 상세 설명을 포함해 작성하세요.');
+  }
+  if (slotState.preferences?.preferredVehicleType) {
+    lines.push(`차량 정보가 누락되면 ${slotState.preferences.preferredVehicleType}를 우선 제안하세요.`);
+  }
+  if (slotState.preferences?.preferredScheduleType) {
+    lines.push(
+      `스케줄 정보가 누락되면 ${slotState.preferences.preferredScheduleType === 'regular' ? '정기' : '비정기'}를 우선 제안하세요.`
+    );
+  }
+  return lines.join('\n');
+}
 
 function buildRouteFailureConversation(errorPayload: any): {
   assistantMessage: string;
@@ -121,6 +204,93 @@ function formatWon(value: number): string {
   return `₩${Math.round(value).toLocaleString('ko-KR')}`;
 }
 
+async function loadSessionContext(sessionId?: string | null): Promise<SlotState> {
+  if (!sessionId) return createInitialSlotState();
+  try {
+    const supabase = createServerClient();
+    const { data } = await supabase
+      .from('quote_chat_session_contexts')
+      .select('session_id, slot_state, summary, updated_at')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+    const row = data as SessionContextRow | null;
+    if (!row?.slot_state) return createInitialSlotState();
+    return {
+      ...createInitialSlotState(),
+      ...row.slot_state,
+      destinations: Array.isArray(row.slot_state.destinations) ? row.slot_state.destinations : [],
+      constraints: Array.isArray(row.slot_state.constraints) ? row.slot_state.constraints : [],
+    };
+  } catch {
+    return createInitialSlotState();
+  }
+}
+
+async function upsertSessionContext(sessionId: string | null | undefined, slotState: SlotState) {
+  if (!sessionId) return;
+  try {
+    const supabase = createServerClient();
+    await supabase.from('quote_chat_session_contexts').upsert(
+      [
+        {
+          session_id: sessionId,
+          slot_state: slotState,
+          summary: buildConversationSummary(slotState),
+        },
+      ],
+      { onConflict: 'session_id' }
+    );
+    await supabase
+      .from('quote_chat_sessions')
+      .update({ last_summary: buildConversationSummary(slotState).slice(0, 500) })
+      .eq('id', sessionId);
+  } catch {
+    // 컨텍스트 저장 실패는 메인 플로우를 막지 않음
+  }
+}
+
+async function logFailureCase(params: {
+  sessionId?: string | null;
+  userInput: string;
+  assistantOutput?: string;
+  errorCode: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    const supabase = createServerClient();
+    await supabase.from('quote_chat_failure_cases').insert([
+      {
+        session_id: params.sessionId || null,
+        user_input: params.userInput,
+        assistant_output: params.assistantOutput || null,
+        error_code: params.errorCode,
+        reason: params.reason || null,
+        tags: ['api'],
+        metadata: params.metadata || {},
+      },
+    ]);
+  } catch {
+    // 실패 수집 로깅 실패는 메인 플로우를 방해하지 않음
+  }
+}
+
+function mergeWithSlotExtracted(extracted: any, slotState: SlotState) {
+  const slotExtracted = toExtractedFromSlots(slotState);
+  return normalizeExtractedQuoteInfo({
+    ...slotExtracted,
+    ...extracted,
+    origin: extracted?.origin || slotExtracted.origin,
+    destinations: extracted?.destinations?.length ? extracted.destinations : slotExtracted.destinations,
+    vehicleType: extracted?.vehicleType || slotExtracted.vehicleType,
+    scheduleType: extracted?.scheduleType || slotExtracted.scheduleType,
+    departureTime: extracted?.departureTime || slotExtracted.departureTime,
+    specialRequirements: extracted?.specialRequirements?.length
+      ? extracted.specialRequirements
+      : slotExtracted.specialRequirements,
+  });
+}
+
 function calculateQuoteFromRoute(params: {
   totalDistanceM: number;
   totalTimeSec: number;
@@ -196,6 +366,11 @@ export async function POST(request: NextRequest) {
     const message = String(body?.message || '').trim();
     const history = (body?.history || []) as ChatHistoryItem[];
     const conversationContext = (body?.conversationContext || {}) as ExtractedContext;
+    const sessionId = body?.sessionId ? String(body.sessionId) : null;
+    const sessionSummary = body?.sessionSummary ? String(body.sessionSummary) : '';
+    const attachmentIds = Array.isArray(body?.attachmentIds)
+      ? body.attachmentIds.map((id: unknown) => String(id))
+      : [];
 
     if (!message) {
       return NextResponse.json(
@@ -217,25 +392,155 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const extraction = await extractQuoteInfo(message, true, history);
-    const extracted = normalizeExtractedQuoteInfo({
+    const rawIntentHint =
+      /견적|요금|금액|비용|배송|경유|동선|경로|차량|정기|비정기|출발|도착|주소|ETA/i.test(message)
+        ? 'business'
+        : 'general';
+    const isTimeSensitiveQuery = /오늘|내일|지금|현재|방금|이번주|다음주|오늘자|최신|업데이트|시각|시간/i.test(message);
+    const similarCandidate =
+      rawIntentHint === 'general' && !isTimeSensitiveQuery
+        ? await retrieveSimilarQueryCandidate({
+          sessionId,
+          query: message,
+          threshold: 0.78,
+          limit: 100,
+        })
+        : null;
+    if (similarCandidate && similarCandidate.similarityScore >= 0.78) {
+      return NextResponse.json({
+        success: true,
+        extracted: {},
+        missingFields: [],
+        followUpQuestions: [],
+        assistantMessage: `${similarCandidate.assistantText}\n\n(이전 유사 요청 답변을 재사용했어요. 최신성/정확성이 중요하면 “다시 검색해서 답변해줘”라고 말씀해주세요.)`,
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        evidence: {
+          basis: ['세션 내 유사 질의-응답 이력을 우선 재사용했습니다.'],
+          sources: [
+            {
+              type: 'internal',
+              label: `session-similarity:${similarCandidate.similarityScore.toFixed(2)}`,
+            },
+          ],
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
+
+    const previousSlotState = await loadSessionContext(sessionId);
+    const preferenceInstruction = buildPreferenceInstruction(previousSlotState);
+
+    const shouldUseRag = rawIntentHint === 'business' || attachmentIds.length > 0 || message.length > 120;
+    const rag = shouldUseRag
+      ? await retrieveRagContext({
+        query: message,
+        sessionId,
+        limit: attachmentIds.length > 0 ? 4 : 2,
+      })
+      : { snippets: [], sources: [] };
+
+    const llmPromptText = [
+      sessionSummary ? `[세션 요약]\n${sessionSummary}` : '',
+      preferenceInstruction ? `[응답 선호]\n${preferenceInstruction}` : '',
+      `[현재 입력]\n${message}`,
+      ...(rag.snippets || []).map((snippet, idx) => `[참고${idx + 1}] ${snippet}`),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    const shouldUseWebSearch =
+      rawIntentHint === 'general' ||
+      /회사|주식회사|브랜드|뉴스|최신|요약|정의|뜻|누구|무엇|비교|설명/i.test(message);
+    const web = shouldUseWebSearch
+      ? await searchWebKnowledge({ query: message, maxResults: 3, timeoutMs: 3500 })
+      : { snippets: [], sources: [], fetchedAt: new Date().toISOString() };
+    const finalPromptText = [
+      llmPromptText,
+      ...(web.snippets || []).map((snippet, idx) => `[웹참고${idx + 1}] ${snippet}`),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+    const extraction = await extractQuoteInfo(finalPromptText, true, history);
+    let extracted = normalizeExtractedQuoteInfo({
       ...extraction.extractedData,
       vehicleType: extraction.extractedData.vehicleType || conversationContext.vehicleType,
       scheduleType: extraction.extractedData.scheduleType || conversationContext.scheduleType,
     });
+    extracted = mergeWithSlotExtracted(extracted, previousSlotState);
+
+    if ((!extracted.origin?.address || !extracted.destinations?.length) && message.length <= 120) {
+      const poiCandidates = await resolvePoiHintsFromText(message);
+      if (poiCandidates.length) {
+        if (!extracted.origin?.address) {
+          extracted.origin = { address: poiCandidates[0].address };
+        }
+        if ((!extracted.destinations || extracted.destinations.length === 0) && poiCandidates.length > 1) {
+          extracted.destinations = poiCandidates.slice(1).map((poi) => ({ address: poi.address }));
+        }
+        await saveToolCallLog({
+          sessionId,
+          tool: 'tmapGeocodeTool',
+          input: { message },
+          output: {
+            count: poiCandidates.length,
+            resolved: poiCandidates.map((poi) => ({ name: poi.name, address: poi.address })),
+          },
+        });
+      }
+    }
+
+    let slotState = mergeSlotState(previousSlotState, extracted, message);
     const isMultiScenario = detectMultiScenarioInput(message);
 
-    const missingFields: string[] = [];
-    if (!extracted.origin?.address) missingFields.push('origin');
-    if (!extracted.destinations || extracted.destinations.length === 0) missingFields.push('destinations');
-    if (!extracted.vehicleType) missingFields.push('vehicleType');
-    if (!extracted.scheduleType) missingFields.push('scheduleType');
+    const missingFields: string[] = getMissingSlots(slotState, false);
 
     const followUpQuestions = buildFollowUpQuestions(extracted, missingFields);
     const departureAt = buildDepartureIso(extracted.departureTime);
 
+    const isNonQuoteIntent = slotState.lastUserIntent === 'document' || slotState.lastUserIntent === 'general';
+    const evidence = buildEvidencePayload({
+      ragSources: rag.sources || [],
+      webSources: web.sources || [],
+      usedWeb: Boolean(web.sources?.length),
+      usedRag: Boolean(rag.sources?.length),
+      hasSessionSummary: Boolean(sessionSummary),
+    });
+
+    // 문서/일반 질의는 견적 필드 강제 없이 대화형으로 응답
+    if (isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) {
+      const ragHint = rag.snippets.slice(0, 2).join('\n');
+      await upsertSessionContext(sessionId, slotState);
+      return NextResponse.json({
+        success: true,
+        extracted,
+        missingFields,
+        followUpQuestions: [],
+        assistantMessage: extracted.assistantResponse || `요청하신 내용을 확인했어요. 참고 가능한 내부 문서를 기반으로 정리하면 아래와 같습니다.\n${ragHint || '현재 세션에서 참고할 문서가 부족해요. 파일을 업로드하면 더 정확히 도와드릴 수 있어요.'}`,
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        rag: {
+          sources: rag.sources,
+          attachmentIds,
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
+
     // 핵심 필드가 부족하거나 멀티 시나리오 입력이면 계산을 생략
     if (isMultiScenario || missingFields.includes('origin') || missingFields.includes('destinations')) {
+      await upsertSessionContext(sessionId, slotState);
       return NextResponse.json({
         success: true,
         extracted,
@@ -250,9 +555,16 @@ export async function POST(request: NextRequest) {
         quote: null,
         routeSummary: null,
         assumptions: [],
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
         actions: {
           canApplyToPanel: false,
           canPreviewMap: false,
+        },
+        rag: {
+          sources: rag.sources,
         },
       });
     }
@@ -262,13 +574,24 @@ export async function POST(request: NextRequest) {
     const deliveryTimes = extracted.destinations!.map((d) => d.deliveryTime || '');
     const isNextDayFlags = extracted.destinations!.map((d) => Boolean(d.isNextDay));
     const dwellMinutes = [10, ...extracted.destinations!.map((d) => d.dwellMinutes || 10)];
-    const vehicleType = extracted.vehicleType || '레이';
-    const scheduleType = extracted.scheduleType || 'ad-hoc';
+    const vehicleType = extracted.vehicleType || slotState.vehicleType || '레이';
+    const scheduleType = extracted.scheduleType || slotState.scheduleType || 'ad-hoc';
+    slotState = {
+      ...slotState,
+      origin: originAddress,
+      destinations: destinationAddresses,
+      vehicleType,
+      scheduleType,
+      departureTime: extracted.departureTime || slotState.departureTime,
+      lastUpdatedAt: new Date().toISOString(),
+    };
 
     // 동일 서버 내부 API 호출
     const routePayload = {
       origins: [originAddress],
       destinations: destinationAddresses,
+      finalDestinationAddress: destinationAddresses[destinationAddresses.length - 1] || null,
+      useExplicitDestination: destinationAddresses.length > 0,
       vehicleType,
       optimizeOrder: true,
       useRealtimeTraffic: !departureAt,
@@ -295,13 +618,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (!routeRes.ok) {
+      await upsertSessionContext(sessionId, slotState);
       const err = await routeRes.json().catch(() => ({}));
       const failure = buildRouteFailureConversation(err);
+      await logFailureCase({
+        sessionId,
+        userInput: message,
+        assistantOutput: failure.assistantMessage,
+        errorCode: 'ROUTE_OPTIMIZATION_FAILED',
+        reason: err?.message || err?.error || 'route optimization failed',
+        metadata: { details: err?.details || null },
+      });
       return NextResponse.json(
         {
           success: false,
           assistantMessage: failure.assistantMessage,
           suggestedPrompts: failure.suggestedPrompts,
+          evidence: {
+            ...evidence,
+            fetchedAt: web.fetchedAt,
+          },
           extracted,
           missingFields,
           followUpQuestions,
@@ -317,14 +653,26 @@ export async function POST(request: NextRequest) {
 
     const routeJson = await routeRes.json();
     if (!routeJson?.success || !routeJson?.data?.summary) {
+      await upsertSessionContext(sessionId, slotState);
       const failure = buildRouteFailureConversation({
         message: '경로 계산 응답 형식이 올바르지 않습니다.',
+      });
+      await logFailureCase({
+        sessionId,
+        userInput: message,
+        assistantOutput: failure.assistantMessage,
+        errorCode: 'ROUTE_RESULT_INVALID',
+        reason: '경로 계산 응답 형식이 올바르지 않습니다.',
       });
       return NextResponse.json(
         {
           success: false,
           assistantMessage: failure.assistantMessage,
           suggestedPrompts: failure.suggestedPrompts,
+          evidence: {
+            ...evidence,
+            fetchedAt: web.fetchedAt,
+          },
           extracted,
           missingFields,
           followUpQuestions,
@@ -353,6 +701,7 @@ export async function POST(request: NextRequest) {
     if (!extracted.scheduleType) assumptions.push('스케줄 타입 미기재로 비정기(ad-hoc) 기준으로 계산했습니다.');
     if (!extracted.vehicleType) assumptions.push('차량 타입 미기재로 레이 기준으로 계산했습니다.');
 
+    await upsertSessionContext(sessionId, slotState);
     return NextResponse.json({
       success: true,
       extracted: {
@@ -387,7 +736,15 @@ export async function POST(request: NextRequest) {
         basis: quote.basis,
       },
       assumptions,
+      evidence: {
+        ...evidence,
+        fetchedAt: web.fetchedAt,
+      },
       routeRequest: routePayload,
+      rag: {
+        sources: rag.sources,
+        attachmentIds,
+      },
       actions: {
         canApplyToPanel: true,
         canPreviewMap: true,
@@ -396,6 +753,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : '알 수 없는 오류';
     const code = message.includes('OPENAI') ? 'OPENAI_ERROR' : 'INTERNAL_ERROR';
+    await logFailureCase({
+      sessionId: null,
+      userInput: 'unknown',
+      assistantOutput: '일시적인 시스템 오류가 발생했어요. 잠시 후 다시 시도해 주세요.',
+      errorCode: code,
+      reason: message,
+      metadata: { stage: 'catch' },
+    });
     return NextResponse.json(
       {
         success: false,

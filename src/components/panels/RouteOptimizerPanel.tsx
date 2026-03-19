@@ -76,7 +76,8 @@ export default function RouteOptimizerPanel() {
       setDepartureDateTime(requestData.departureAt);
     }
 
-    if (requestData.useExplicitDestination) {
+    const hasExplicitDestination = Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress);
+    if (hasExplicitDestination) {
       setDestinationPolicy('explicit');
       setUseExplicitDestination(true);
       setReturnToOrigin(false);
@@ -92,13 +93,35 @@ export default function RouteOptimizerPanel() {
 
     // 경유지 설정 (destinations를 waypoints로 변환)
     if (requestData.destinations && requestData.destinations.length > 0) {
-      const newWaypoints = requestData.destinations.map((dest: string, index: number) => ({
+      const allDestinations = requestData.destinations as string[];
+      const explicitDestinationAddress =
+        typeof requestData.finalDestinationAddress === 'string' && requestData.finalDestinationAddress.trim()
+          ? requestData.finalDestinationAddress.trim()
+          : hasExplicitDestination
+            ? allDestinations[allDestinations.length - 1]
+            : null;
+      const waypointAddresses = explicitDestinationAddress
+        ? allDestinations.filter((address, index) => index < allDestinations.length - 1)
+        : allDestinations;
+
+      const newWaypoints = waypointAddresses.map((dest: string, index: number) => ({
         id: `waypoint-${index + 1}`,
         selection: { latitude: 0, longitude: 0, address: dest, name: dest },
         dwellTime: 10,
         deliveryTime: undefined
       }));
       setWaypoints(newWaypoints);
+
+      if (explicitDestinationAddress) {
+        setDestinationSelection({
+          latitude: 0,
+          longitude: 0,
+          address: explicitDestinationAddress,
+          name: explicitDestinationAddress,
+        });
+      } else {
+        setDestinationSelection(null);
+      }
     }
   }, [setVehicleType]);
 
@@ -182,6 +205,15 @@ export default function RouteOptimizerPanel() {
     setFieldErrors(byIndex);
   }, [lastError]);
 
+  // 고급 설정 요약 텍스트 생성
+  const getAdvancedSettingsSummary = () => {
+    const parts = [];
+    parts.push(roadOption === 'time-first' ? '시간 우선' : roadOption === 'toll-saving' ? '요금 절약' : '무료 우선');
+    parts.push(destinationPolicy === 'return-origin' ? '출발지 복귀' : destinationPolicy === 'explicit' ? '별도 도착지' : '마지막 종료');
+    parts.push(optimizeOrder ? '자동 순서' : '수동 순서');
+    return parts.join(' · ');
+  };
+
   // 시간 문자열 보정 헬퍼
   const adjustHHMM = useCallback((time: string, deltaMin: number) => {
     const [h, m] = time.split(':').map(Number);
@@ -237,6 +269,42 @@ export default function RouteOptimizerPanel() {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   });
   const [useRealtimeTraffic, setUseRealtimeTraffic] = useState(true);
+
+  // 경로 계산 결과가 없을 때만, 확정된 입력값을 지도 프리뷰 핀으로 동기화
+  useEffect(() => {
+    if (routeData) {
+      return;
+    }
+
+    const previewDestinations = waypoints
+      .filter((w) => !!w.selection)
+      .map((w) => ({
+        lat: w.selection!.latitude,
+        lng: w.selection!.longitude,
+        address: w.selection!.address || w.selection!.name
+      }));
+
+    if (useExplicitDestination && destinationSelection) {
+      previewDestinations.push({
+        lat: destinationSelection.latitude,
+        lng: destinationSelection.longitude,
+        address: destinationSelection.address || destinationSelection.name
+      });
+    }
+
+    setDestinations(previewDestinations);
+  }, [routeData, waypoints, useExplicitDestination, destinationSelection, setDestinations]);
+
+  // 지도/후속 로직에서 옵션 상태를 일관되게 사용하도록 동기화
+  useEffect(() => {
+    setOptions({
+      useExplicitDestination,
+      optimizeOrder,
+      useRealtimeTraffic,
+      roadOption,
+      returnToOrigin
+    });
+  }, [useExplicitDestination, optimizeOrder, useRealtimeTraffic, roadOption, returnToOrigin, setOptions]);
 
   // 시간 설정 감지 (컴포넌트 상단에서 계산)
   const hasAnyDeliveryTime = waypoints.some(w => w.deliveryTime && w.deliveryTime.trim() !== '');
@@ -396,7 +464,7 @@ export default function RouteOptimizerPanel() {
   return (
     <section className="flex flex-col bg-white/90 backdrop-blur-xl border-r border-slate-200/60 shadow-2xl shadow-indigo-500/5 font-sans transition-all duration-300">
       {/* Header */}
-      <div className="flex-none px-5 py-5 border-b border-slate-100 bg-white/60 backdrop-blur-md sticky top-0 z-20">
+      <div className="flex-none px-5 py-5 border-b border-slate-100 bg-white/60 backdrop-blur-md">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-xl shadow-lg shadow-indigo-200 text-white flex items-center justify-center">
@@ -485,16 +553,19 @@ export default function RouteOptimizerPanel() {
         </div>
 
         {/* 2. Route Section (Origin & Waypoints) */}
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
+          {/* 타임라인 연결선 (출발지부터 경유지까지) */}
+          <div className="absolute left-[11px] top-6 bottom-[100px] w-0.5 bg-slate-200/60 -z-10 rounded-full" />
+          
           {/* 출발지 입력 */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]"></div>
+              <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)] z-10 -ml-[5px] ring-4 ring-white"></div>
               출발지 정보
             </label>
-            <div className="relative group">
+            <div className="relative group ml-4">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl opacity-0 group-hover:opacity-10 transition duration-500 blur"></div>
-              <div className="relative bg-white rounded-xl">
+              <div className="relative bg-white rounded-xl shadow-sm border border-slate-200/60">
                 <AddressAutocomplete
                   label=""
                   placeholder="출발지를 검색하세요"
@@ -508,8 +579,8 @@ export default function RouteOptimizerPanel() {
 
             {/* 출발지 시간 설정 (인라인 배치) */}
             {originSelection && (
-              <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="flex-1 flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+              <div className="flex gap-2 ml-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex-1 flex items-center gap-2 bg-white shadow-sm px-3 py-2 rounded-lg border border-slate-200/60">
                   <span className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">체류</span>
                   <input
                     type="number"
@@ -521,7 +592,7 @@ export default function RouteOptimizerPanel() {
                   />
                   <span className="text-[10px] text-slate-400">분</span>
                 </div>
-                <div className={`flex-[1.5] flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-200 bg-rose-50' : 'border-slate-100'}`}>
+                <div className={`flex-[1.5] shadow-sm flex items-center gap-2 bg-white px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-300 bg-rose-50' : 'border-slate-200/60'}`}>
                   <span className={`text-[10px] font-semibold whitespace-nowrap ${isOriginDepartureTimeRequired ? 'text-rose-600' : 'text-slate-500'}`}>
                     출발 {isOriginDepartureTimeRequired && '*'}
                   </span>
@@ -536,13 +607,34 @@ export default function RouteOptimizerPanel() {
             )}
           </div>
 
-          {/* 경유지 리스트 Header */}
-          <div className="flex items-center justify-between pt-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">경유지 목록</label>
+          {/* 경유지 리스트 Header & Bulk Actions */}
+          <div className="flex items-center justify-between pt-2 ml-4">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full border-2 border-slate-300 bg-white z-10 -ml-[25px] ring-4 ring-white"></div>
+              경유지 목록
+            </label>
+            <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={() => setWaypoints(prev => prev.map(w => ({ ...w, dwellTime: 10 })))}
+                className="text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors"
+                title="모든 경유지 체류시간을 10분으로 통일"
+              >
+                10분 통일
+              </button>
+              <button
+                type="button"
+                onClick={() => setWaypoints(prev => prev.map(w => ({ ...w, deliveryTime: undefined })))}
+                className="text-[10px] font-medium bg-slate-100 hover:bg-rose-100 hover:text-rose-600 text-slate-600 px-2 py-1 rounded transition-colors"
+                title="모든 도착시간 설정 초기화"
+              >
+                시간 초기화
+              </button>
+            </div>
           </div>
 
           {/* 경유지 리스트 Content */}
-          <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-1">
+          <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-1 ml-4 shadow-sm">
             <WaypointList
               waypoints={waypoints}
               onWaypointsChange={setWaypoints}
@@ -553,7 +645,7 @@ export default function RouteOptimizerPanel() {
         </div>
 
         {/* 3. Strategy Section (Options Accordion) */}
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
           <button
             onClick={() => setIsOptionsOpen(!isOptionsOpen)}
             className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
@@ -561,6 +653,11 @@ export default function RouteOptimizerPanel() {
             <div className="flex items-center gap-2 text-slate-700">
               <Settings className="w-4 h-4 text-indigo-500" />
               <span className="text-sm font-bold">고급 설정</span>
+              {!isOptionsOpen && (
+                <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                  {getAdvancedSettingsSummary()}
+                </span>
+              )}
             </div>
             {isOptionsOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
           </button>
@@ -716,9 +813,9 @@ export default function RouteOptimizerPanel() {
             waypoints.forEach((w, i) => { if (!w.selection) unconfirmedIdx.push(i + 1); });
             if (unconfirmedIdx.length > 0) {
               console.log('❌ [RouteOptimizerPanel] 미확정 경유지 존재:', unconfirmedIdx);
-              setLocalError(`주소가 확정되지 않은 경유지(${unconfirmedIdx.join(', ')})가 있습니다. 각 경유지에서 검색 후 항목을 선택해 "확정됨" 상태로 만들어주세요.`);
+              setLocalError(`주소가 확정되지 않은 경유지(${unconfirmedIdx.join(', ')})가 있습니다. 각 경유지에서 검색 후 Enter로 자동 확정하거나 목록에서 선택해 "확정됨" 상태로 만들어주세요.`);
               const fe: Record<number, string> = {};
-              unconfirmedIdx.forEach((idx) => { fe[idx - 1] = '주소 미확정: 검색 후 제안 목록에서 선택해주세요.'; });
+              unconfirmedIdx.forEach((idx) => { fe[idx - 1] = '주소 미확정: 검색 후 Enter로 확정하거나 제안 목록에서 선택해주세요.'; });
               setFieldErrors(fe);
               return;
             }

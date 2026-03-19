@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { usePoiCache } from '@/hooks/usePoiCache'
 
 export type AddressSelection = {
@@ -17,205 +17,430 @@ interface Props {
   onSelect: (v: AddressSelection | null) => void
 }
 
+type InputState = 'idle' | 'searching' | 'ready' | 'ambiguous' | 'committed'
+
+type SuggestionMatchType = 'name_prefix' | 'address_prefix' | 'name_contains' | 'address_contains' | 'fuzzy' | 'unknown'
+
+type SuggestionSource = 'cache' | 'network'
+
+type SearchStatus = 'ok' | 'no_results' | 'rate_limited' | 'error'
+
+type SearchSuggestion = AddressSelection & {
+  label?: string
+  confidence?: number
+  matchType?: SuggestionMatchType
+  normalizedQuery?: string
+}
+
+const MIN_QUERY_LENGTH = 2
+const HIGH_CONFIDENCE_THRESHOLD = 0.88
+const MID_CONFIDENCE_THRESHOLD = 0.7
+const MAX_QUICK_PICK_COUNT = 3
+const DEV_MODE = process.env.NODE_ENV === 'development'
+
 export default function AddressAutocomplete({ label, placeholder, value, onSelect }: Props) {
   const [query, setQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<(AddressSelection & { label?: string })[]>([])
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [inputState, setInputState] = useState<InputState>('idle')
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>('ok')
+  const [statusMessage, setStatusMessage] = useState<string>('')
+  const [armedByEnter, setArmedByEnter] = useState(false)
+  const [pendingEnterCommit, setPendingEnterCommit] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
+  const inFlightQueryRef = useRef<string | null>(null)
+  const requestTokenRef = useRef(0)
+  const queryStartAtRef = useRef<number | null>(null)
+  const firstSuggestionMsRef = useRef<number | null>(null)
+  const enterCountRef = useRef(0)
+  const autoCommitCountRef = useRef(0)
   const [highlight, setHighlight] = useState(0)
-  const [isEditing, setIsEditing] = useState(false) // 수정 모드 상태 추가
+  const [isEditing, setIsEditing] = useState(false)
+  const listboxId = useId()
+  const statusId = useId()
 
-  // POI 캐싱 시스템 사용
-  const { getFromCache, setCache, checkRateLimit, recordApiCall, rateLimit } = usePoiCache()
+  const { getFromCache, getFromPrefixCache, setCache, checkRateLimit, recordApiCall } = usePoiCache()
 
-  const debouncedQuery = useDebounce(query, 300)
+  const debouncedQuery = useAdaptiveDebounce(query)
+  const selectedLabel = value ? (value.name || value.address) : ''
+  const visibleSuggestions = useMemo(
+    () => (inputState === 'ambiguous' ? suggestions.slice(0, MAX_QUICK_PICK_COUNT) : suggestions),
+    [inputState, suggestions]
+  )
+
+  const setFirstSuggestionMetric = () => {
+    if (firstSuggestionMsRef.current !== null || queryStartAtRef.current === null) {
+      return
+    }
+    firstSuggestionMsRef.current = Date.now() - queryStartAtRef.current
+  }
+
+  const reportMetrics = (commitMs: number | null) => {
+    if (typeof window === 'undefined') return
+    const metricsStore = ((window as any).__addressAutocompleteMetrics ??= {
+      sessions: 0,
+      totalEnterCount: 0,
+      totalAutoCommitCount: 0,
+      firstSuggestionMsSamples: [] as number[],
+      commitMsSamples: [] as number[],
+    })
+
+    metricsStore.sessions += 1
+    metricsStore.totalEnterCount = enterCountRef.current
+    metricsStore.totalAutoCommitCount = autoCommitCountRef.current
+    if (firstSuggestionMsRef.current !== null) {
+      metricsStore.firstSuggestionMsSamples.push(firstSuggestionMsRef.current)
+    }
+    if (commitMs !== null) {
+      metricsStore.commitMsSamples.push(commitMs)
+    }
+  }
+
+  const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, '').trim()
+
+  const estimateConfidence = (candidate: SearchSuggestion, rawQuery: string): number => {
+    const normalizedQuery = normalize(rawQuery)
+    const normalizedName = normalize(candidate.name || '')
+    const normalizedAddress = normalize(candidate.address || '')
+    if (!normalizedQuery) return 0
+
+    if (normalizedName.startsWith(normalizedQuery)) return 0.93
+    if (normalizedAddress.startsWith(normalizedQuery)) return 0.9
+    if (normalizedName.includes(normalizedQuery)) return 0.82
+    if (normalizedAddress.includes(normalizedQuery)) return 0.74
+    return 0.58
+  }
+
+  const getCandidateConfidence = (candidate: SearchSuggestion, rawQuery: string): number => {
+    if (typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)) {
+      return Math.max(0, Math.min(1, candidate.confidence))
+    }
+    return estimateConfidence(candidate, rawQuery)
+  }
 
   useEffect(() => {
     const q = debouncedQuery.trim()
-    console.log('[AddressAutocomplete] Query changed:', q) // 디버깅 로그
-    if (q.length < 2) {
+    if (q.length < MIN_QUERY_LENGTH) {
+      controllerRef.current?.abort()
+      setLoading(false)
       setSuggestions([])
+      setSearchStatus('ok')
+      setStatusMessage('')
+      setInputState(value ? 'committed' : 'idle')
+      setArmedByEnter(false)
       return
     }
 
-    // 먼저 캐시에서 검색
-    const cachedResults = getFromCache(q)
+    if (!isEditing && selectedLabel && q === selectedLabel) {
+      return
+    }
+
+    queryStartAtRef.current = Date.now()
+    firstSuggestionMsRef.current = null
+    setInputState('searching')
+    setSearchStatus('ok')
+    setStatusMessage('')
+
+    const exactCachedResults = getFromCache(q) as SearchSuggestion[] | null
+    const prefixCachedResults = exactCachedResults ? null : (getFromPrefixCache(q) as SearchSuggestion[] | null)
+    const cachedResults = exactCachedResults ?? prefixCachedResults
+
     if (cachedResults) {
-      console.log('[AddressAutocomplete] Using cached results for:', q)
       setSuggestions(cachedResults)
+      setFirstSuggestionMetric()
+      setSearchStatus(cachedResults.length > 0 ? 'ok' : 'no_results')
+      setInputState(cachedResults.length > 0 ? 'ready' : 'idle')
+      if (isEditing) setOpen(true)
       return
     }
 
-    // 레이트리밋 체크
     if (checkRateLimit()) {
-      console.warn('[AddressAutocomplete] Rate limit reached, showing cached results only')
       setSuggestions([])
+      setSearchStatus('rate_limited')
+      setStatusMessage('요청이 많습니다. 잠시 후 다시 시도해 주세요.')
+      setInputState('idle')
+      return
+    }
+
+    if (inFlightQueryRef.current === q) {
       return
     }
 
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
+    inFlightQueryRef.current = q
     setLoading(true)
-    console.log('[AddressAutocomplete] Starting fetch for:', q) // 디버깅 로그
 
-    fetch(`/api/poi-search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
-      .then((r) => {
-        console.log('[AddressAutocomplete] Fetch response:', r.status, r.ok) // 디버깅 로그
-        return r.ok ? r.json() : Promise.reject(new Error('검색 실패'))
-      })
-      .then((d) => {
-        console.log('[AddressAutocomplete] Fetch data:', d) // 디버깅 로그
-        const suggestions = Array.isArray(d.suggestions) ? d.suggestions : []
+    const currentToken = requestTokenRef.current + 1
+    requestTokenRef.current = currentToken
 
-        // 성공적인 결과를 캐시에 저장
-        if (suggestions.length > 0) {
-          setCache(q, suggestions)
-          recordApiCall() // API 호출 기록
+    fetch(`/api/poi-search?q=${encodeURIComponent(q)}`, {
+      signal: controller.signal,
+      headers: { 'x-address-source': 'route-panel' },
+    })
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}))
+        if (currentToken !== requestTokenRef.current) {
+          return null
         }
 
-        setSuggestions(suggestions)
+        if (!r.ok) {
+          const status: SearchStatus = r.status === 429 ? 'rate_limited' : 'error'
+          setSearchStatus(status)
+          setStatusMessage(
+            status === 'rate_limited' ? '요청이 많습니다. 잠시 후 다시 시도해 주세요.' : '검색 중 문제가 발생했습니다.'
+          )
+          setSuggestions([])
+          setInputState('idle')
+          return null
+        }
+        return body
+      })
+      .then((d) => {
+        if (!d) return
+        const fetchedSuggestions = Array.isArray(d.suggestions) ? (d.suggestions as SearchSuggestion[]) : []
+        const status = (d.status as SearchStatus | undefined) ?? (fetchedSuggestions.length > 0 ? 'ok' : 'no_results')
+        setSearchStatus(status)
+        setStatusMessage(getStatusMessage(status))
+        setSuggestions(fetchedSuggestions)
+        setInputState(fetchedSuggestions.length > 0 ? 'ready' : 'idle')
+
+        if (fetchedSuggestions.length > 0) {
+          setFirstSuggestionMetric()
+          setCache(q, fetchedSuggestions)
+          recordApiCall()
+          if (isEditing) setOpen(true)
+        }
       })
       .catch((err) => {
-        console.log('[AddressAutocomplete] Fetch error:', err) // 디버깅 로그
+        if (controller.signal.aborted || currentToken !== requestTokenRef.current) {
+          return
+        }
+        if (DEV_MODE) {
+          console.warn('[AddressAutocomplete] suggestion fetch failed:', err)
+        }
         setSuggestions([])
+        setSearchStatus('error')
+        setStatusMessage('검색 중 문제가 발생했습니다.')
+        setInputState('idle')
       })
-      .finally(() => setLoading(false))
-  }, [debouncedQuery, getFromCache, setCache, checkRateLimit, recordApiCall])
+      .finally(() => {
+        if (currentToken === requestTokenRef.current) {
+          inFlightQueryRef.current = null
+          setLoading(false)
+        }
+      })
+  }, [debouncedQuery, getFromCache, getFromPrefixCache, isEditing, selectedLabel, setCache, checkRateLimit, recordApiCall, value])
 
-  const handleSelect = (s: AddressSelection) => {
-    console.log('[AddressAutocomplete] handleSelect called with:', s)
-
-    // 먼저 onSelect 호출
+  const handleSelect = (s: SearchSuggestion, source: SuggestionSource | 'enter-auto' | 'enter-confirm' | 'enter-pending') => {
     onSelect(s)
 
-    // 입력란에는 상호명이 있으면 상호명 우선 표시, 불필요한 "역" 텍스트 제거
     let label = s.name && s.name.trim().length > 0 ? s.name : (s.address || '')
 
-    // 불필요한 "역" 텍스트 제거 (예: "회기역[1호선]역" -> "회기역[1호선]")
     if (label.endsWith('역') && label.length > 1) {
       const withoutLast = label.slice(0, -1)
       if (withoutLast.endsWith('역')) {
-        // 이미 "역"이 포함되어 있으면 마지막 "역" 제거
         label = withoutLast
       }
     }
 
-    console.log('[AddressAutocomplete] Setting query to:', label)
-
-    // 상태 완전 초기화
     setQuery(label)
     setOpen(false)
-    setSuggestions([]) // 선택 후 제안 목록 비우기
-    setHighlight(0) // 하이라이트 초기화
-    setIsEditing(false) // 수정 모드 해제
+    setSuggestions([])
+    setHighlight(0)
+    setIsEditing(false)
+    setInputState('committed')
+    setArmedByEnter(false)
+    setPendingEnterCommit(false)
+    setStatusMessage('')
+
+    if (source === 'enter-auto' || source === 'enter-pending') {
+      autoCommitCountRef.current += 1
+    }
+
+    const commitMs = queryStartAtRef.current ? Date.now() - queryStartAtRef.current : null
+    reportMetrics(commitMs)
+
+    if (DEV_MODE) {
+      const autoCommitRate =
+        enterCountRef.current > 0 ? Math.round((autoCommitCountRef.current / enterCountRef.current) * 100) : 0
+      console.debug('[AddressAutocomplete][metrics]', {
+        firstSuggestionMs: firstSuggestionMsRef.current,
+        commitMs,
+        autoCommitRatePercent: autoCommitRate,
+      })
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!open || suggestions.length === 0) return
     if (e.key === 'ArrowDown') {
+      if (visibleSuggestions.length === 0) return
       e.preventDefault()
-      setHighlight((h) => Math.min(h + 1, suggestions.length - 1))
+      setOpen(true)
+      setArmedByEnter(false)
+      setHighlight((h) => Math.min(h + 1, visibleSuggestions.length - 1))
     } else if (e.key === 'ArrowUp') {
+      if (visibleSuggestions.length === 0) return
       e.preventDefault()
+      setOpen(true)
+      setArmedByEnter(false)
       setHighlight((h) => Math.max(h - 1, 0))
     } else if (e.key === 'Enter') {
+      if (query.trim().length < MIN_QUERY_LENGTH) return
       e.preventDefault()
-      console.log('[AddressAutocomplete] Enter pressed:', {
-        highlight,
-        suggestionsLength: suggestions.length,
-        selectedItem: suggestions[highlight]
-      })
+      enterCountRef.current += 1
 
-      // 안전한 인덱스 체크
-      if (highlight >= 0 && highlight < suggestions.length && suggestions[highlight]) {
-        handleSelect(suggestions[highlight])
-      } else {
-        console.warn('[AddressAutocomplete] Invalid highlight index or empty suggestion')
+      if (visibleSuggestions.length === 0) {
+        setOpen(true)
+        setPendingEnterCommit(true)
+        setStatusMessage('검색 중입니다. 결과가 도착하면 자동 확정합니다.')
+        return
       }
+
+      const safeIndex = Math.max(0, Math.min(highlight, visibleSuggestions.length - 1))
+      const selectedCandidate = visibleSuggestions[safeIndex]
+      const confidence = getCandidateConfidence(selectedCandidate, query)
+
+      if (armedByEnter || inputState === 'ambiguous') {
+        handleSelect(selectedCandidate, 'enter-confirm')
+        return
+      }
+
+      if (confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+        handleSelect(selectedCandidate, 'enter-auto')
+        return
+      }
+
+      if (confidence >= MID_CONFIDENCE_THRESHOLD) {
+        setInputState('ambiguous')
+        setArmedByEnter(true)
+        setOpen(true)
+        setHighlight(0)
+        setStatusMessage('유사 결과입니다. Enter 한 번 더 누르면 상단 결과로 확정됩니다.')
+        return
+      }
+
+      setOpen(true)
+      setInputState('ready')
+      setPendingEnterCommit(false)
+      setStatusMessage('정확한 항목을 선택해 주세요.')
     } else if (e.key === 'Escape') {
       setOpen(false)
+      setArmedByEnter(false)
+      setPendingEnterCommit(false)
     }
   }
 
   useEffect(() => {
-    // 수정 모드일 때만 드롭다운 열기 (재열림 방지)
-    if (suggestions.length > 0 && isEditing) {
+    if (!pendingEnterCommit || suggestions.length === 0) return
+
+    const first = suggestions[0]
+    const confidence = getCandidateConfidence(first, query)
+    if (confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+      handleSelect(first, 'enter-pending')
+      return
+    }
+
+    if (confidence >= MID_CONFIDENCE_THRESHOLD) {
+      setInputState('ambiguous')
+      setArmedByEnter(true)
       setOpen(true)
-      setHighlight(0) // 드롭다운이 열릴 때만 하이라이트 초기화
-      console.log('[AddressAutocomplete] Dropdown opened with suggestions:', suggestions.length)
+      setHighlight(0)
+      setStatusMessage('유사 결과입니다. Enter 한 번 더 누르면 상단 결과로 확정됩니다.')
+      setPendingEnterCommit(false)
+      return
+    }
+
+    setInputState('ready')
+    setStatusMessage('정확한 항목을 선택해 주세요.')
+    setPendingEnterCommit(false)
+    setOpen(true)
+  }, [pendingEnterCommit, suggestions, query])
+
+  useEffect(() => {
+    if (isEditing && (loading || suggestions.length > 0)) {
+      setOpen(true)
+      if (highlight >= visibleSuggestions.length) {
+        setHighlight(0)
+      }
     } else {
       setOpen(false)
     }
-  }, [suggestions, isEditing])
+  }, [suggestions, isEditing, loading, highlight, visibleSuggestions.length])
 
   useEffect(() => {
-    console.log('[AddressAutocomplete] value changed:', value)
     if (value) {
       const newQuery = value.name || value.address
-      console.log('[AddressAutocomplete] Setting query from value:', newQuery)
-      // 현재 query와 다를 때만 설정하여 중복 방지
       if (query !== newQuery) {
         setQuery(newQuery)
       }
+      setInputState('committed')
     } else {
-      // value가 null로 변경되는 것을 방지
-      console.log('[AddressAutocomplete] Ignoring null value change to prevent UI reset')
-      // setQuery('') // 주석 처리하여 query 상태 유지
+      setInputState(query.trim().length >= MIN_QUERY_LENGTH ? 'searching' : 'idle')
     }
   }, [value, query])
+
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort()
+    }
+  }, [])
 
   return (
     <div className="w-full relative">
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-expanded={open}
+        aria-activedescendant={open && visibleSuggestions[highlight] ? `${listboxId}-option-${highlight}` : undefined}
+        aria-describedby={statusMessage ? statusId : undefined}
+        aria-busy={loading}
         value={query}
         onChange={(e) => {
           const newValue = e.target.value
-          console.log('[AddressAutocomplete] onChange:', newValue, 'current value:', value)
           setQuery(newValue)
-
-          // 입력값이 비워지거나 기존 선택과 다르면 선택 해제
-          if (value && (newValue.trim() === '' || newValue !== (value.name || value.address))) {
-            console.log('[AddressAutocomplete] Input changed, calling onSelect(null)')
-            onSelect(null)
-            setIsEditing(false)
-            return
+          setArmedByEnter(false)
+          setPendingEnterCommit(false)
+          setStatusMessage('')
+          setSearchStatus('ok')
+          if (newValue.trim().length >= MIN_QUERY_LENGTH) {
+            setInputState('searching')
           }
 
-          // 입력값이 기존 선택과 다르면 수정 모드 활성화
           if (value && newValue !== (value.name || value.address)) {
-            setIsEditing(true)
-          } else if (!value && newValue.length >= 2) {
-            // 새로운 검색 시작
-            setIsEditing(true)
+            onSelect(null)
           }
+          setIsEditing(newValue.trim().length >= MIN_QUERY_LENGTH)
         }}
         onFocus={() => {
-          // 수정 모드이거나 제안이 있을 때 드롭다운 열기
-          if (isEditing || suggestions.length > 0) {
+          if (query.trim().length >= MIN_QUERY_LENGTH && (isEditing || suggestions.length > 0 || loading)) {
             setOpen(true)
           }
         }}
         onBlur={() => {
-          // 약간의 지연을 두어 클릭 이벤트가 처리될 시간을 줌
           setTimeout(() => setOpen(false), 150)
         }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full h-11 border rounded px-3"
+        role="combobox"
       />
       {loading && <div className="absolute right-2 top-9 text-xs text-gray-500">검색중...</div>}
       {open && (
-        <ul className="absolute z-10 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto" role="listbox">
-          {suggestions.map((s, i) => (
+        <ul id={listboxId} className="absolute z-10 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto" role="listbox">
+          {visibleSuggestions.map((s, i) => (
             <li
-              key={`${s.address}-${i}`}
+              id={`${listboxId}-option-${i}`}
+              key={`${s.address}-${i}-${s.name}`}
               role="option"
-              onPointerDown={(e) => { e.preventDefault(); handleSelect(s) }}
-              onMouseDown={(e) => { e.preventDefault(); handleSelect(s) }}
-              onClick={(e) => { e.preventDefault(); handleSelect(s) }}
+              aria-selected={i === highlight}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                handleSelect(s, 'network')
+              }}
               className={`px-3 py-2 cursor-pointer ${i === highlight ? 'bg-gray-100' : ''}`}
             >
               <div className="text-sm font-medium">{s.name || s.label || s.address}</div>
@@ -224,10 +449,15 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
               )}
             </li>
           ))}
-          {suggestions.length === 0 && !loading && (
-            <li className="px-3 py-2 text-sm text-gray-500">검색 결과 없음</li>
+          {visibleSuggestions.length === 0 && !loading && (
+            <li className="px-3 py-2 text-sm text-gray-500">{getStatusMessage(searchStatus)}</li>
           )}
         </ul>
+      )}
+      {statusMessage && (
+        <div id={statusId} className="mt-1 text-[11px] text-gray-500" aria-live="polite">
+          {statusMessage}
+        </div>
       )}
       {value && (
         <div className="mt-2 flex items-center gap-2 text-xs text-gray-700 flex-nowrap min-w-0">
@@ -249,6 +479,25 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   )
 }
 
+function getStatusMessage(status: SearchStatus): string {
+  if (status === 'rate_limited') return '요청이 많습니다. 잠시 후 다시 시도해 주세요.'
+  if (status === 'error') return '검색 중 문제가 발생했습니다.'
+  if (status === 'no_results') return '검색 결과 없음'
+  return ''
+}
+
+function getDebounceDelay(query: string): number {
+  const len = query.trim().length
+  if (len <= 2) return 230
+  if (len <= 4) return 180
+  return 140
+}
+
+function useAdaptiveDebounce(val: string) {
+  const delay = getDebounceDelay(val)
+  return useDebounce(val, delay)
+}
+
 function useDebounce<T>(val: T, ms: number) {
   const [v, setV] = useState(val)
   useEffect(() => {
@@ -257,7 +506,3 @@ function useDebounce<T>(val: T, ms: number) {
   }, [val, ms])
   return v
 }
-
-
-
-

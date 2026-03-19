@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  serverExternalPackages: ['pdf-parse'],
   experimental: {
     serverActions: {
       allowedOrigins: ['localhost:3000', 'localhost:3001'],
     },
-    serverComponentsExternalPackages: ['pdf-parse'],
   },
   images: {
     domains: ['localhost'],

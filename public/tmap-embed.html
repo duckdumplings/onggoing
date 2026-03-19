@@ -46,16 +46,16 @@
       polylines = []; markers = []; segmentPolylines = [];
     }
 
-    function drawRoute(routeData) {
-      if (!routeData) return;
-      var features = routeData.features || [];
+    function drawRoute(payload) {
+      var routeData = payload && payload.routeData ? payload.routeData : null;
+      var waypointOverride = payload && Array.isArray(payload.waypoints) ? payload.waypoints : [];
+      var features = routeData && Array.isArray(routeData.features) ? routeData.features : [];
       var T = window.Tmapv2;
       clearMap();
       var bounds = new T.LatLngBounds();
-      var waypoints = (routeData.waypoints || []).map(function (w) { return new T.LatLng(w.latitude, w.longitude); });
 
       // 세그먼트 메타 (optional)
-      var segmentSummary = routeData.segmentSummary || [];
+      var segmentSummary = routeData && routeData.segmentSummary ? routeData.segmentSummary : [];
 
       // 경로 그리기
       for (var idx = 0; idx < features.length; idx++) {
@@ -71,7 +71,7 @@
 
       // 경로를 세그먼트 단위로 강조 가능한 라인으로 다시 그림 (출발→1, 1→2, ...)
       try {
-        var wp = routeData.waypoints || [];
+        var wp = routeData && Array.isArray(routeData.waypoints) ? routeData.waypoints : [];
         for (var si = 0; si < wp.length - 1; si++) {
           var seg = features.filter(function (f) { return f.properties && f.properties.segmentIndex === si; });
           var segCoords = [];
@@ -101,18 +101,22 @@
         }
       } catch (e) { console.warn('Segment draw failed', e); }
 
-      // 개선된 핀 렌더링 - 새로운 속성들 처리
-      var waypointData = routeData.waypoints || [];
+      // 개선된 핀 렌더링 - 프리뷰/확정 상태 구분
+      var waypointData = waypointOverride.length > 0
+        ? waypointOverride
+        : (routeData && Array.isArray(routeData.waypoints) ? routeData.waypoints : []);
       for (var i = 0; i < waypointData.length; i++) {
         var waypoint = waypointData[i];
-        // lat/lng 속성 사용 (TmapMainMap에서 전달하는 속성명)
-        var position = new T.LatLng(waypoint.lat, waypoint.lng);
+        var lat = Number(waypoint.lat ?? waypoint.latitude);
+        var lng = Number(waypoint.lng ?? waypoint.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        var position = new T.LatLng(lat, lng);
 
         // 새로운 속성들 확인
         var icon = waypoint.icon || '📍';
         var color = waypoint.color || '#3B82F6';
         var label = waypoint.label || (i + 1);
-        var priority = waypoint.priority || 1;
+        var isPreview = !!waypoint.isPreview;
 
         // 아이콘과 색상에 따른 배경색 결정
         var backgroundColor;
@@ -133,15 +137,25 @@
         }
 
         // 핀 내용 생성
+        var previewBorder = isPreview ? '1px dashed rgba(255,255,255,0.9)' : '2px solid white';
+        var previewOpacity = isPreview ? '0.85' : '1';
+        var previewScale = isPreview ? 'scale(0.95)' : 'scale(1)';
+        var previewBadge = isPreview
+          ? '<span style="position:absolute;top:-7px;right:-7px;background:#111827;color:#fff;border-radius:999px;padding:0 6px;font-size:9px;line-height:16px;height:16px;font-weight:700;letter-spacing:.2px">미리보기</span>'
+          : '';
+
         var content = '<div style="' +
+          'position:relative;' +
           'background:' + backgroundColor + ';' +
           'color:' + textColor + ';' +
           'border-radius:12px;' +
           'padding:4px 8px;' +
           'font-size:14px;' +
           'font-weight:bold;' +
-          'box-shadow:0 2px 8px rgba(0,0,0,0.3);' +
-          'border:2px solid white;' +
+          'box-shadow:0 4px 14px rgba(0,0,0,0.28);' +
+          'border:' + previewBorder + ';' +
+          'opacity:' + previewOpacity + ';' +
+          'transform:' + previewScale + ';' +
           'min-width:24px;' +
           'text-align:center;' +
           'display:flex;' +
@@ -151,6 +165,7 @@
           '">' +
           '<span style="font-size:12px;">' + icon + '</span>' +
           '<span>' + label + '</span>' +
+          previewBadge +
           '</div>';
 
         infoWindows.push(new T.InfoWindow({
@@ -164,6 +179,7 @@
         (function (wp, pos) {
           var tooltipHtml = '<div style="background:#111;color:#fff;padding:6px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
             (wp.address ? wp.address : '') + (wp.label ? ' · ' + wp.label : '') +
+            (wp.isPreview ? ' · 입력 확정 미리보기' : '') +
             '</div>';
           var tip = new T.InfoWindow({ position: pos, content: tooltipHtml, type: 2 });
           var marker = new T.Marker({ position: pos, icon: new T.IconHtml('<div style="width:14px;height:14px;opacity:0"></div>') });
@@ -177,7 +193,7 @@
         bounds.extend(position);
       }
 
-      // 경로 영역으로 자동 맞춤
+      // 경로/핀 영역으로 자동 맞춤
       try {
         if (bounds && typeof bounds.isEmpty === 'function' && !bounds.isEmpty()) {
           map.fitBounds(bounds, 30);
@@ -208,7 +224,7 @@
           ensureMap(data.center);
         } else if (data.type === 'route') {
           ensureMap(data.center);
-          drawRoute(data.routeData);
+          drawRoute({ routeData: data.routeData, waypoints: data.waypoints || [] });
         }
       } catch (e) { console.error(e); }
     });

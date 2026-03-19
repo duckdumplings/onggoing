@@ -16,6 +16,7 @@ type RenderPayload = {
     icon?: string;
     color?: string;
     priority?: number;
+    isPreview?: boolean;
     driverId?: string;
     driverIndex?: number;
     address?: string;
@@ -41,6 +42,7 @@ interface TmapMapProps {
     icon?: string;
     color?: string;
     priority?: number;
+    isPreview?: boolean;
     driverId?: string;
     driverIndex?: number;
     address?: string;

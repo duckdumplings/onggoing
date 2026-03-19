@@ -65,15 +65,15 @@ export interface RouteOptimizationState {
   setOptions: (o: Partial<OptimizationOptions>) => void;
   setRouteData: (d: RouteData | null) => void;
   setDwellMinutes: (list: number[]) => void;
-  optimizeRoute: () => Promise<void>;
+  optimizeRoute: () => Promise<{ success: boolean; error?: string; details?: any }>;
   optimizeRouteWith: (override?: Partial<{
     origins: Coordinate | null;
     destinations: Coordinate[];
     vehicleType: RouteOptimizationState['vehicleType'];
     options: Partial<OptimizationOptions>;
     dwellMinutes: number[];
-  }>) => Promise<void>;
-  retry: () => Promise<void>;
+  }>) => Promise<{ success: boolean; error?: string; details?: any }>;
+  retry: () => Promise<{ success: boolean; error?: string; details?: any }>;
   cancel: () => void;
   reset: () => void;
   lastError: any | null;
@@ -117,10 +117,12 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     return {
       origins: originPayload,
       destinations: destPayload,
+      finalDestinationAddress: opt.useExplicitDestination && d.length ? d[d.length - 1]?.address || null : null,
       vehicleType: v,
       optimizeOrder: opt.optimizeOrder,
       useRealtimeTraffic: opt.useRealtimeTraffic,
       departureAt: opt.departureAt,
+      useExplicitDestination: Boolean(opt.useExplicitDestination),
       roadOption: opt.roadOption || 'time-first',
       returnToOrigin: opt.returnToOrigin ?? true,
       dwellMinutes: dm,
@@ -142,7 +144,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     if (!payload.origins?.length || !payload.destinations?.length) {
       console.log('[useRouteOptimization] 유효하지 않은 payload:', { origins: payload.origins, destinations: payload.destinations });
       setError('출발지와 목적지를 입력하세요.');
-      return;
+      return { success: false, error: '출발지와 목적지를 입력하세요.' };
     }
 
     abortRef.current?.abort();
@@ -169,7 +171,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
         setError(err?.message || err?.error || `HTTP_${res.status}`);
         // UI에서 배너와 인라인 가이드를 띄우기 위해 throw 대신 상태로 전달하고 조용히 종료
         try { (window as any).lastOptimizationError = err; } catch { }
-        return;
+        return {
+          success: false,
+          error: err?.message || err?.error || `HTTP_${res.status}`,
+          details: err,
+        };
       }
 
       const data = await res.json();
@@ -232,24 +238,33 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       } else {
         throw new Error('INVALID_RESPONSE');
       }
+      return { success: true };
     } catch (e: any) {
-      if (e?.name === 'AbortError') return; // 취소
+      if (e?.name === 'AbortError') {
+        return { success: false, error: '요청이 취소되었습니다.' };
+      }
       console.error('[useRouteOptimization] API 호출 오류:', e);
       if (!lastError) setError(e?.message || '경로 최적화 실패');
       try { if (lastError) (window as any).lastOptimizationError = lastError; } catch { }
+      return {
+        success: false,
+        error: e?.message || '경로 최적화 실패',
+        details: e,
+      };
     } finally {
       setIsLoading(false);
     }
   }, [buildPayload]);
 
   const optimizeRoute = useCallback(async () => {
-    await optimizeRouteWith();
+    return optimizeRouteWith();
   }, [optimizeRouteWith]);
 
   const retry = useCallback(async () => {
     if (lastPayloadRef.current) {
-      await optimizeRoute();
+      return optimizeRoute();
     }
+    return { success: false, error: '재시도할 요청이 없습니다.' };
   }, [optimizeRoute]);
 
   const cancel = useCallback(() => {

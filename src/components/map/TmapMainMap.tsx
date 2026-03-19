@@ -39,6 +39,8 @@ export default function TmapMainMap() {
   const [showTollDetailDialog, setShowTollDetailDialog] = useState(false);
   const [showQuoteDetailDialog, setShowQuoteDetailDialog] = useState(false);
   const [quoteDetailTab, setQuoteDetailTab] = useState<'pricing' | 'eta' | 'route'>('pricing');
+  const [sliderExtraWaitMin, setSliderExtraWaitMin] = useState(0);
+  const [sliderExtraDistancePercent, setSliderExtraDistancePercent] = useState(0);
   const [pendingRoadOption, setPendingRoadOption] = useState<'time-first' | 'toll-saving' | 'free-road-first' | null>(null);
   const [isApplyingRoadOption, setIsApplyingRoadOption] = useState(false);
   const [roadOptionApplyError, setRoadOptionApplyError] = useState<string | null>(null);
@@ -182,13 +184,7 @@ export default function TmapMainMap() {
       return points;
     }
 
-    // 단일 차량 모드 (기존 로직)
-    // 디버깅 로그 추가
-    console.log('[TmapMainMap] origins:', origins);
-    console.log('[TmapMainMap] destinations:', destinations);
-    console.log('[TmapMainMap] routeData exists:', !!routeData);
-
-    // 경로 계산이 완료되었을 때만 핀 표시 (직관성을 위해)
+    // 단일 차량 모드
     if (routeData) {
       // 출발지 추가 (더 명확한 아이콘과 색상)
       if (origins) {
@@ -203,10 +199,9 @@ export default function TmapMainMap() {
           address: (origins as any).address || ''
         });
       } else {
-        console.log('[TmapMainMap] No origins data available');
       }
 
-      // 목적지들 추가 (순서와 중요도에 따른 시각적 구분)
+      // 경로 계산 완료 상태의 목적지 핀
       const routeWaypoints = ((routeData as any)?.waypoints || []) as Array<{
         latitude: number;
         longitude: number;
@@ -218,6 +213,12 @@ export default function TmapMainMap() {
 
       destinations.forEach((dest, index) => {
         const isLastDestination = index === destinations.length - 1;
+        const hasExplicitDestination = Boolean(
+          (routeData.summary as any)?.useExplicitDestination ||
+          (routeData.summary as any)?.finalDestinationAddress ||
+          options?.useExplicitDestination
+        );
+        const isDestinationNode = isLastDestination && hasExplicitDestination;
         const matched = routeWaypoints.find((wp) =>
           Math.abs(wp.latitude - dest.lat) < 0.0001 &&
           Math.abs(wp.longitude - dest.lng) < 0.0001
@@ -225,7 +226,7 @@ export default function TmapMainMap() {
 
         let label, icon, color, priority;
 
-        if (isLastDestination) {
+        if (isDestinationNode) {
           // 최종 도착지
           label = '도착';
           icon = '🎯';
@@ -252,7 +253,7 @@ export default function TmapMainMap() {
           dwellTime: matched?.dwellTime,
           etaLabel: matched?.arrivalTime ? formatHm(matched.arrivalTime) : undefined,
           riskColor: (() => {
-            if (isLastDestination) return '#2563EB';
+            if (isDestinationNode) return '#2563EB';
             const deliveryTime = (matched as any)?.deliveryTime as string | undefined;
             if (!deliveryTime || !matched?.arrivalTime) return '#22C55E';
             const [dh, dm] = deliveryTime.split(':').map(Number);
@@ -266,10 +267,32 @@ export default function TmapMainMap() {
         });
       });
     } else {
-      console.log('[TmapMainMap] No route data - pins will not be shown');
-    }
+      // 경로 계산 전: 입력 확정 프리뷰 핀 렌더링
+      if (origins) {
+        points.push({
+          lat: origins.lat,
+          lng: origins.lng,
+          label: '출발',
+          icon: '🚀',
+          color: '#10B981',
+          priority: 1,
+          address: (origins as any).address || ''
+        });
+      }
 
-    console.log('[TmapMainMap] Final waypoints:', points);
+      destinations.forEach((dest, index) => {
+        const isExplicitDestination = !!options?.useExplicitDestination && index === destinations.length - 1;
+        points.push({
+          lat: dest.lat,
+          lng: dest.lng,
+          label: isExplicitDestination ? '도착' : String(index + 1),
+          icon: isExplicitDestination ? '🎯' : '📍',
+          color: isExplicitDestination ? '#EF4444' : '#3B82F6',
+          priority: 2,
+          address: (dest as any).address || ''
+        });
+      });
+    }
     return points;
   }, [origins, destinations, options?.useExplicitDestination, routeData, multiDriverResult]);
 
@@ -318,6 +341,39 @@ export default function TmapMainMap() {
     const perJobTotal = perJobBase + perJobStopFee;
     const recommendedPlan: 'hourly' | 'perJob' = hourlyTotal <= perJobTotal ? 'hourly' : 'perJob';
     const totalPrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+    const calculatePricing = (distance: number, billMin: number, stops: number) => {
+      const roundedBillMin = roundUpTo30Minutes(Math.max(30, billMin));
+      const calcHourlyRate = pickHourlyRate(vehicleKey, roundedBillMin);
+      const calcHourlyBase = Math.round((roundedBillMin / 60) * calcHourlyRate);
+      const calcHourlyFuel = fuelSurchargeHourlyCorrect(vehicleKey, distance, roundedBillMin);
+      const calcHourlyTotal = calcHourlyBase + calcHourlyFuel;
+
+      const calcPerJobBase = perJobBasePrice(vehicleKey, distance);
+      const calcEffectiveStops = Math.max(0, stops - 1);
+      const calcPerJobStopFee = calcEffectiveStops * STOP_FEE[vehicleKey];
+      const calcPerJobTotal = calcPerJobBase + calcPerJobStopFee;
+      const calcRecommended: 'hourly' | 'perJob' = calcHourlyTotal <= calcPerJobTotal ? 'hourly' : 'perJob';
+      const calcTotal = calcRecommended === 'hourly' ? calcHourlyTotal : calcPerJobTotal;
+
+      return {
+        hourlyTotal: calcHourlyTotal,
+        perJobTotal: calcPerJobTotal,
+        recommendedPlan: calcRecommended,
+        totalPrice: calcTotal,
+      };
+    };
+
+    const basePricing = calculatePricing(distanceKm, totalBillMinutes, destinationCount);
+
+    const interactiveDistanceKm = Number((distanceKm * (1 + sliderExtraDistancePercent / 100)).toFixed(1));
+    const interactiveBillMinutes = totalBillMinutes + sliderExtraWaitMin;
+    const interactivePricing = calculatePricing(interactiveDistanceKm, interactiveBillMinutes, destinationCount);
+    
+    const savings = Math.abs(interactivePricing.hourlyTotal - interactivePricing.perJobTotal);
+    const aiInsight = interactivePricing.recommendedPlan === 'hourly'
+      ? `시간당 요금제가 ${formatWon(savings)} 더 유리합니다! 경유지 대기 시간이 길거나 거리가 짧을수록 시간당 요금제가 추천됩니다.`
+      : `단건 요금제가 ${formatWon(savings)} 더 유리합니다! 경유지가 적고 운행 거리가 길수록 단건 요금제가 경제적입니다.`;
+
     const waypointRows = (((routeData as any)?.waypoints as Array<any>) || []).map((wp: any, idx: number) => ({
       order: idx + 1,
       address: wp.address || `경유지 ${idx + 1}`,
@@ -359,9 +415,16 @@ export default function TmapMainMap() {
       returnPolicyLabel: summary?.returnedToOrigin ? '출발지 복귀' : '마지막 경유지 종료',
       waypointRows,
       roadComparisons,
+      caseVariations: [], // removed
+      interactiveScenario: {
+        distanceKm: interactiveDistanceKm,
+        billMinutes: interactiveBillMinutes,
+        pricing: interactivePricing,
+      },
+      aiInsight,
       assumptions: ['좌측 패널 계산은 비정기(ad-hoc) 기준으로 견적을 표시합니다.'],
     };
-  }, [routeData, waypoints.length]);
+  }, [routeData, waypoints.length, sliderExtraWaitMin, sliderExtraDistancePercent]);
 
   // 다중 배송원 모드일 때 routeData 배열 생성
   const multiDriverRouteData = useMemo(() => {
@@ -387,11 +450,11 @@ export default function TmapMainMap() {
         focusedWaypoint={focusedWaypoint}
       />
 
-      {/* 우측 하단 오버레이 - 경로 정보 (개선된 디자인) */}
+      {/* 우측 사이드 패널 (Drawer) - 경로 정보 */}
       {multiDriverResult && multiDriverResult.success ? (
-        <div className="absolute bottom-6 right-6 z-[1000]">
-          <div className="bg-white/90 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-6 min-w-[380px] max-w-[420px]">
-            <div className="flex items-center gap-3 mb-4">
+        <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
+          <div className="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
+            <div className="flex-none flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
                 <span className="text-white text-2xl">🚛</span>
               </div>
@@ -401,7 +464,7 @@ export default function TmapMainMap() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
               {/* 전체 통계 */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
@@ -428,9 +491,9 @@ export default function TmapMainMap() {
               <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <span className="text-indigo-900 font-bold text-sm">균형도</span>
+                    <span className="text-indigo-900 font-bold text-sm">작업량 균형도</span>
                     <div className="text-[10px] text-indigo-600/80 mt-0.5 font-medium">
-                      배송원 간 작업량 균형 지표
+                      배송원 간 작업량 분배 비율
                     </div>
                   </div>
                   <div className="text-right">
@@ -441,6 +504,20 @@ export default function TmapMainMap() {
                       {multiDriverResult.summary.balanceScore >= 0.7 ? 'Balanced' : 'Unbalanced'}
                     </div>
                   </div>
+                </div>
+                {/* Visual Progress Bar for Balance */}
+                <div className="w-full bg-indigo-200/50 rounded-full h-2 mb-3 overflow-hidden flex">
+                  {multiDriverResult.drivers.map((driver: any, idx: number) => {
+                    const totalDist = multiDriverResult.summary.totalDistance;
+                    const widthPercent = totalDist > 0 ? (driver.totalDistance / totalDist) * 100 : 0;
+                    return (
+                      <div 
+                        key={`bar-${idx}`} 
+                        className="h-full border-r border-white/50" 
+                        style={{ width: `${widthPercent}%`, backgroundColor: DRIVER_COLORS[idx % DRIVER_COLORS.length] }}
+                      ></div>
+                    );
+                  })}
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-indigo-700 font-medium">
                   <div className="bg-white/60 rounded px-2 py-1">평균 거리: {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}km</div>
@@ -501,9 +578,9 @@ export default function TmapMainMap() {
           </div>
         </div>
       ) : routeData?.summary && (
-        <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 z-[1000]">
-          <div className="bg-white/90 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-5 w-[calc(100vw-2rem)] max-w-[420px]">
-            <div className="flex items-center gap-3 mb-5">
+        <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
+          <div className="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
+            <div className="flex-none flex items-center gap-3 mb-5">
               <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
                 <span className="text-white text-lg">🗺️</span>
               </div>
@@ -513,8 +590,8 @@ export default function TmapMainMap() {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex p-1 bg-slate-100 rounded-lg">
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4">
+              <div className="flex-none flex p-1 bg-slate-100 rounded-lg">
                 <button
                   type="button"
                   onClick={() => setDetailTab('kpi')}
@@ -586,14 +663,18 @@ export default function TmapMainMap() {
                         onClick={() => openRoadOptionDialog(item.option)}
                         disabled={isLoading || isApplyingRoadOption || isCurrent}
                         title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
-                        className={`grid grid-cols-4 gap-2 text-xs rounded-lg px-3 py-2 border transition-all ${item.isSelected
-                          ? 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/20'
-                          : 'bg-slate-50/50 border-transparent text-slate-400 hover:bg-white hover:border-indigo-100'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
+                        className={`group relative grid grid-cols-4 gap-2 text-xs rounded-lg px-3 py-2 border transition-all duration-300 overflow-hidden ${item.isSelected
+                          ? 'bg-white border-indigo-300 shadow-md ring-2 ring-indigo-500/20 z-10 scale-[1.02]'
+                          : 'bg-slate-50/80 border-slate-200/60 text-slate-400 hover:bg-white hover:border-indigo-200 hover:shadow-sm hover:z-10 hover:scale-[1.01]'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
                       >
-                        <span className={`font-bold ${item.isSelected ? 'text-indigo-700' : 'text-slate-500'}`}>{item.label}</span>
-                        <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{(item.estimatedDistance / 1000).toFixed(1)}km</span>
-                        <span className={`${item.isSelected ? 'text-slate-700' : 'text-slate-400'}`}>{Math.ceil(item.estimatedTime / 60)}분</span>
-                        <span className={`font-medium text-right ${item.isSelected ? 'text-slate-900' : 'text-slate-500'}`}>
+                        {/* Hover Glow Effect */}
+                        {!isCurrent && (
+                          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/5 to-indigo-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
+                        )}
+                        <span className={`font-bold transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-slate-500 group-hover:text-indigo-600'}`}>{item.label}</span>
+                        <span className={`transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>{(item.estimatedDistance / 1000).toFixed(1)}km</span>
+                        <span className={`transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>{Math.ceil(item.estimatedTime / 60)}분</span>
+                        <span className={`font-medium text-right transition-colors ${item.isSelected ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-800'}`}>
                           {isFreeRoadEstimated ? '확인 불가' : `${item.estimatedToll.toLocaleString()}원`}
                           {item.tollSource === 'estimated' && !isFreeRoadEstimated && (
                             <span className="ml-1 text-[10px] text-amber-600 font-semibold">(추정)</span>
@@ -772,27 +853,108 @@ export default function TmapMainMap() {
             </div>
             {quoteDetailTab === 'pricing' && (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500 mb-0.5">시간당 플랜</div>
-                    <div className="font-bold text-slate-800">{formatWon(routeQuoteDetail.hourlyTotal)}</div>
-                    <div className="text-[11px] text-slate-500 mt-2 space-y-0.5">
-                      <div>과금시간: {routeQuoteDetail.hourlyBreakdown.billMinutes}분</div>
-                      <div>시간단가: {routeQuoteDetail.hourlyBreakdown.hourlyRate.toLocaleString()}원/h</div>
-                      <div>기본요금: {formatWon(routeQuoteDetail.hourlyBreakdown.base)}</div>
-                      <div>유류할증: {formatWon(routeQuoteDetail.hourlyBreakdown.fuelSurcharge)}</div>
+                {/* 요금 비교 시각화 바 */}
+                <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3 shadow-sm">
+                  <h5 className="text-[11px] font-bold text-slate-500 mb-3">요금제 비교 (현재 기준)</h5>
+                  <div className="relative pt-2 pb-6">
+                    {/* Hourly Bar */}
+                    <div className="flex items-center mb-4 relative z-10">
+                      <div className="w-16 text-[10px] font-bold text-slate-600">시간당</div>
+                      <div className="flex-1 ml-2 flex items-center">
+                        <div 
+                          className={`h-6 rounded-r-lg transition-all duration-500 flex items-center px-2 ${routeQuoteDetail.recommendedPlan === 'hourly' ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                          style={{ width: `${Math.min(100, (routeQuoteDetail.hourlyTotal / Math.max(routeQuoteDetail.hourlyTotal, routeQuoteDetail.perJobTotal)) * 100)}%` }}
+                        >
+                          <span className="text-[10px] font-bold text-white shadow-sm">{formatWon(routeQuoteDetail.hourlyTotal)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* PerJob Bar */}
+                    <div className="flex items-center relative z-10">
+                      <div className="w-16 text-[10px] font-bold text-slate-600">단건</div>
+                      <div className="flex-1 ml-2 flex items-center">
+                        <div 
+                          className={`h-6 rounded-r-lg transition-all duration-500 flex items-center px-2 ${routeQuoteDetail.recommendedPlan === 'perJob' ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                          style={{ width: `${Math.min(100, (routeQuoteDetail.perJobTotal / Math.max(routeQuoteDetail.hourlyTotal, routeQuoteDetail.perJobTotal)) * 100)}%` }}
+                        >
+                          <span className="text-[10px] font-bold text-white shadow-sm">{formatWon(routeQuoteDetail.perJobTotal)}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500 mb-0.5">단건 플랜</div>
-                    <div className="font-bold text-slate-800">{formatWon(routeQuoteDetail.perJobTotal)}</div>
-                    <div className="text-[11px] text-slate-500 mt-2 space-y-0.5">
-                      <div>기본요금: {formatWon(routeQuoteDetail.perJobBreakdown.base)}</div>
-                      <div>경유 추가비: {formatWon(routeQuoteDetail.perJobBreakdown.stopFee)}</div>
-                      <div>추가 경유 수: {routeQuoteDetail.perJobBreakdown.effectiveStopsCount}곳</div>
+                  
+                  {/* AI Insight */}
+                  <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-xs text-indigo-800 flex items-start gap-2 mt-2">
+                    <span className="text-lg leading-none">💡</span>
+                    <p className="leading-relaxed font-medium">{routeQuoteDetail.aiInsight}</p>
+                  </div>
+                </div>
+
+                {/* 요금 변동 시뮬레이터 */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs shadow-sm mb-3">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="font-bold text-slate-800 text-sm">운임 시뮬레이터</div>
+                    <button 
+                      onClick={() => { setSliderExtraWaitMin(0); setSliderExtraDistancePercent(0); }}
+                      className="text-[10px] text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 px-2 py-1 rounded"
+                    >
+                      초기화
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-5">
+                    {/* 추가 대기 시간 슬라이더 */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="font-semibold text-slate-600">추가 대기/작업 시간</label>
+                        <span className="font-bold text-indigo-600">+{sliderExtraWaitMin}분</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="120" 
+                        step="10" 
+                        value={sliderExtraWaitMin} 
+                        onChange={(e) => setSliderExtraWaitMin(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                      <div className="text-[10px] text-slate-400 mt-1">상하차 또는 지연 시간 추가 시 요금 변화 확인</div>
+                    </div>
+
+                    {/* 거리 할증 슬라이더 */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="font-semibold text-slate-600">실제 운행 거리 오차</label>
+                        <span className="font-bold text-indigo-600">+{sliderExtraDistancePercent}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="50" 
+                        step="5" 
+                        value={sliderExtraDistancePercent} 
+                        onChange={(e) => setSliderExtraDistancePercent(Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                      <div className="text-[10px] text-slate-400 mt-1">우회 도로 이용 등 실주행 거리 증가 시 요금 변화 확인</div>
+                    </div>
+
+                    {/* 시뮬레이션 결과 */}
+                    <div className="mt-4 p-3 bg-white rounded-lg border border-indigo-100 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] text-slate-500 font-bold mb-0.5">시뮬레이션 적용 요금</div>
+                        <div className="text-xs text-slate-600">
+                          {routeQuoteDetail.interactiveScenario.distanceKm}km · {routeQuoteDetail.interactiveScenario.billMinutes}분
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-black text-indigo-700">{formatWon(routeQuoteDetail.interactiveScenario.pricing.totalPrice)}</div>
+                        <div className="text-[10px] font-bold text-slate-500">추천: {routeQuoteDetail.interactiveScenario.pricing.recommendedPlan === 'hourly' ? '시간당' : '단건'}</div>
+                      </div>
                     </div>
                   </div>
                 </div>
+
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
                   <div>총 거리: {routeQuoteDetail.distanceKm}km</div>
                   <div>총 과금시간: {routeQuoteDetail.totalBillMinutes}분</div>
