@@ -750,32 +750,29 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     }
   };
 
-  const submitNegativeFeedback = async (message: ChatMessage) => {
-    if (feedbackSentByMessageId[message.id]) return;
-    const userInput = message.sourceUserText || '';
-    if (!userInput.trim()) return;
+  const submitFeedback = async (msg: ChatMessage, type: 'positive' | 'negative') => {
+    if (!currentSessionId || currentSessionId.startsWith('local-')) return;
     try {
       const res = await fetch('/api/quote/chat-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: currentSessionId,
-          messageId: message.id,
-          userInput,
-          assistantOutput: message.content,
-          isHelpful: false,
-          reason: '사용자 도움 안됨 피드백',
-          tags: ['user-feedback', 'chat-modal'],
+          userInput: msg.sourceUserText || 'unknown',
+          assistantOutput: msg.content,
+          feedbackType: type,
+          messageId: msg.id,
+          metadata: { messageId: msg.id },
         }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.success) {
-        pushAssistantMessage('피드백 저장에 실패했어요. 잠시 후 다시 시도해주세요.', 'system');
-        return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `HTTP_${res.status}`);
       }
-      setFeedbackSentByMessageId((prev) => ({ ...prev, [message.id]: true }));
-    } catch {
-      pushAssistantMessage('피드백 저장 중 네트워크 오류가 발생했어요.', 'system');
+      setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: true }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류';
+      pushAssistantMessage(`피드백 저장 실패: ${message}`, 'system');
     }
   };
 
@@ -808,7 +805,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         rawDestinations: requestData.destinations || [],
         vehicleType: requestData.vehicleType,
         options: {
-          optimizeOrder: requestData.optimizeOrder,
+          // AI 채팅에서 "지도에서 경로 확인하기"는 구조화된 입력 순서 검증 목적이 크므로
+          // 자동 재정렬을 끄고(입력 순서 유지) 번호/순서 혼선을 방지한다.
+          optimizeOrder: false,
           useRealtimeTraffic: requestData.useRealtimeTraffic,
           departureAt: requestData.departureAt || null,
           deliveryTimes: requestData.deliveryTimes || [],
@@ -837,11 +836,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const renderQuoteDetailModal = () => {
     if (!isQuoteDetailOpen || !latestResult?.quote) return null;
     const q = latestResult.quote;
+    
+    const formatWonStr = (val: number) => `₩${Math.round(val).toLocaleString('ko-KR')}`;
+    
     return (
       <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h3 className="text-base font-bold text-gray-900">견적 상세</h3>
+        <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+            <h3 className="text-base font-bold text-gray-900">운임 시나리오 상세</h3>
             <button
               onClick={() => setIsQuoteDetailOpen(false)}
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -849,30 +851,101 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-5 space-y-4 text-sm">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-              <div className="text-xs text-indigo-600 font-semibold mb-1">최종 추천</div>
-              <div className="text-xl font-black text-indigo-900">{q.totalPriceFormatted}</div>
-              <div className="text-xs text-indigo-700 mt-1">
-                {q.recommendedPlan === 'hourly' ? '시간당 요금제 추천' : '단건 요금제 추천'}
+          <div className="p-5 overflow-y-auto space-y-6 text-sm flex-1 custom-scrollbar">
+            {/* 기초 정보 요약 */}
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
+                <div className="text-base font-black text-slate-800">{q.basis?.distanceKm ?? '-'} km</div>
+              </div>
+              <div className="w-px h-8 bg-slate-200"></div>
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">예상 소요 시간</div>
+                <div className="text-base font-black text-slate-800">{q.basis?.totalBillMinutes ?? '-'} 분</div>
+              </div>
+              <div className="w-px h-8 bg-slate-200"></div>
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">경유지</div>
+                <div className="text-base font-black text-slate-800">{q.basis?.destinationCount ?? '-'} 곳</div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-gray-100 p-3">
-                <div className="text-xs text-gray-500">시간당 플랜</div>
-                <div className="font-bold text-gray-900">{q.hourly?.formatted || '-'}</div>
+
+            {/* 시나리오 매트릭스 */}
+            {q.scenarios && (
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                  <Calculator className="w-4 h-4 text-indigo-500" />
+                  전체 운임 비교 테이블
+                </h4>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[500px]">
+                    <thead>
+                      <tr>
+                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 rounded-tl-xl">차량/스케줄</th>
+                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500">시간당 요금제</th>
+                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 rounded-tr-xl">단건 요금제</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm">
+                      {/* 레이 / 비정기 */}
+                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-700">
+                          레이 <span className="text-slate-400 font-medium text-[11px] ml-1">비정기</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</div>
+                        </td>
+                      </tr>
+                      {/* 레이 / 정기 */}
+                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-700">
+                          레이 <span className="text-slate-400 font-medium text-[11px] ml-1">정기</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.regular?.hourlyTotal || 0)}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.regular?.perJobTotal || 0)}</div>
+                        </td>
+                      </tr>
+                      {/* 스타렉스 / 비정기 */}
+                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-700">
+                          스타렉스 <span className="text-slate-400 font-medium text-[11px] ml-1">비정기</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</div>
+                        </td>
+                      </tr>
+                      {/* 스타렉스 / 정기 */}
+                      <tr className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-700 rounded-bl-xl">
+                          스타렉스 <span className="text-slate-400 font-medium text-[11px] ml-1">정기</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.regular?.hourlyTotal || 0)}</div>
+                        </td>
+                        <td className="py-3 px-4 rounded-br-xl">
+                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.regular?.perJobTotal || 0)}</div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="rounded-lg border border-gray-100 p-3">
-                <div className="text-xs text-gray-500">단건 플랜</div>
-                <div className="font-bold text-gray-900">{q.perJob?.formatted || '-'}</div>
-              </div>
-            </div>
-            <div className="rounded-lg border border-gray-100 p-3 text-xs text-gray-600 space-y-1">
-              <div>총 거리: {q.basis?.distanceKm ?? '-'} km</div>
-              <div>총 과금시간: {q.basis?.totalBillMinutes ?? '-'} 분</div>
-              <div>목적지 수: {q.basis?.destinationCount ?? '-'} 곳</div>
-              <div>차량: {q.basis?.vehicleType ?? '-'}</div>
-              <div>스케줄: {q.basis?.scheduleType === 'regular' ? '정기' : '비정기'}</div>
+            )}
+            
+            <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
+              * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br/>
+              * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br/>
+              * 정기 배송의 단건 운임은 별도 정기 요금표가 적용되며, 시간당 운임은 동일한 단가를 기초로 계산됩니다.
             </div>
           </div>
         </div>
@@ -1030,14 +1103,23 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     {msg.role === 'assistant' && msg.kind !== 'system' && (
-                      <div className="mt-1 px-1">
+                      <div className="mt-1 px-1 flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => void submitNegativeFeedback(msg)}
-                          disabled={feedbackSentByMessageId[msg.id]}
-                          className="text-[10px] text-slate-400 hover:text-rose-600 disabled:text-emerald-600"
+                          onClick={() => void submitFeedback(msg, 'positive')}
+                          disabled={!!feedbackSentByMessageId[msg.id]}
+                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-indigo-600 font-bold' : 'text-slate-400 hover:text-indigo-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
                         >
-                          {feedbackSentByMessageId[msg.id] ? '피드백 저장됨' : '도움 안 됨'}
+                          👍 도움이 됐어요
+                        </button>
+                        {!feedbackSentByMessageId[msg.id] && <span className="text-slate-300 text-[8px]">|</span>}
+                        <button
+                          type="button"
+                          onClick={() => void submitFeedback(msg, 'negative')}
+                          disabled={!!feedbackSentByMessageId[msg.id]}
+                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'negative' ? 'text-rose-600 font-bold' : 'text-slate-400 hover:text-rose-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'negative' ? 'hidden' : ''}`}
+                        >
+                          👎 아쉬워요
                         </button>
                       </div>
                     )}
@@ -1361,19 +1443,35 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm space-y-4">
                 <div className="flex items-start gap-3">
                   <MapPin className="w-4 h-4 text-indigo-500 mt-0.5" />
-                  <div>
-                    <div className="text-xs text-gray-500 mb-0.5">출발지</div>
-                    <div className="text-sm font-medium text-gray-900 break-words">
-                      {latestResult?.extracted?.origin?.address || '-'}
+                  <div className="w-full min-w-0">
+                    <div className="text-xs text-gray-500 mb-0.5">경유지 정보</div>
+                    <div className="space-y-1.5 mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">출발</span>
+                        <span className="text-sm font-medium text-gray-900 truncate">{latestResult?.extracted?.origin?.address || '-'}</span>
+                      </div>
+                      {latestResult?.extracted?.destinations?.map((d: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2 relative">
+                          <div className="absolute -top-1.5 left-2 w-px h-1.5 bg-gray-200"></div>
+                          <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            idx === (latestResult.extracted.destinations.length - 1)
+                              ? 'bg-rose-100 text-rose-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {idx === (latestResult.extracted.destinations.length - 1) ? '도착' : `경유 ${idx + 1}`}
+                          </span>
+                          <span className="text-sm font-medium text-gray-900 truncate">{d.address || '-'}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Truck className="w-4 h-4 text-indigo-500 mt-0.5" />
                   <div>
-                    <div className="text-xs text-gray-500 mb-0.5">차량/목적지</div>
+                    <div className="text-xs text-gray-500 mb-0.5">차량 정보</div>
                     <div className="text-sm font-medium text-gray-900">
-                      {latestResult?.extracted?.vehicleType || '-'} · {latestResult?.extracted?.destinations?.length || 0}곳
+                      {latestResult?.extracted?.vehicleType || '-'}
                     </div>
                   </div>
                 </div>
@@ -1392,21 +1490,43 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             {/* Quote Result Card (Highlight) */}
             {latestResult?.quote && (
               <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">예상 견적</div>
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>예상 견적</span>
+                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium normal-case">
+                    기준: {latestResult.quote.basis?.vehicleType} · {latestResult.quote.basis?.scheduleType === 'regular' ? '정기' : '비정기'}
+                  </span>
+                </div>
                 <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200">
-                  <div className="text-indigo-100 text-xs font-medium mb-1">총 예상 금액</div>
-                  <div className="text-3xl font-black tracking-tight mb-4">
-                    {latestResult.quote.totalPriceFormatted}
+                  
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">시간당 요금제</div>
+                      <div className="text-xl font-black tracking-tight">
+                        {latestResult.quote.hourly?.formatted}
+                      </div>
+                    </div>
+                    <div className="w-px h-8 bg-indigo-400/30"></div>
+                    <div className="text-right">
+                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">단건 요금제</div>
+                      <div className="text-xl font-black tracking-tight">
+                        {latestResult.quote.perJob?.formatted}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
                     <div className="bg-white/10 rounded-lg p-2 backdrop-blur-sm">
-                      <div className="text-[10px] text-indigo-200">거리</div>
+                      <div className="text-[10px] text-indigo-200">운행 거리</div>
                       <div className="text-sm font-bold">{latestResult.quote.basis?.distanceKm}km</div>
                     </div>
                     <div className="bg-white/10 rounded-lg p-2 backdrop-blur-sm">
-                      <div className="text-[10px] text-indigo-200">시간</div>
-                      <div className="text-sm font-bold">{latestResult.quote.basis?.totalBillMinutes}분</div>
+                      <div className="text-[10px] text-indigo-200">총 소요 시간</div>
+                      <div className="text-sm font-bold">
+                        {latestResult.quote.basis?.totalBillMinutes}분
+                        <div className="text-[9px] font-normal text-indigo-200/80 mt-0.5">
+                          운행 {latestResult.quote.basis?.driveMinutes}분 + 체류 {latestResult.quote.basis?.dwellTotalMinutes}분
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -1428,7 +1548,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       onClick={() => setIsQuoteDetailOpen(true)}
                       className="w-full bg-indigo-100/70 text-indigo-800 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-100 transition-colors"
                     >
-                      견적 상세 보기
+                      전체 운임 시나리오 비교
                     </button>
                   </div>
                 </div>

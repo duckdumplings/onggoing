@@ -49,6 +49,26 @@ export interface OptimizationOptions {
   isNextDayFlags?: boolean[]; // 다음날 배송 여부 배열
 }
 
+function pickFirstRouteCoordinate(routeData: any): { lat: number; lng: number } | null {
+  const features = Array.isArray(routeData?.features) ? routeData.features : [];
+  for (const feature of features) {
+    const geom = feature?.geometry;
+    if (!geom) continue;
+    if (geom.type === 'Point' && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+      const [lng, lat] = geom.coordinates;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+    }
+    if (geom.type === 'LineString' && Array.isArray(geom.coordinates) && geom.coordinates.length > 0) {
+      const first = geom.coordinates[0];
+      if (Array.isArray(first) && first.length >= 2) {
+        const [lng, lat] = first;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+      }
+    }
+  }
+  return null;
+}
+
 export interface RouteOptimizationState {
   origins: Coordinate | null;
   destinations: Coordinate[];
@@ -227,29 +247,45 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
         const isInvalidCoord = (lat: number, lng: number) =>
           !Number.isFinite(lat) || !Number.isFinite(lng) || (Math.abs(lat) < 0.000001 && Math.abs(lng) < 0.000001);
 
-        // 최적화된 순서로 destinations 업데이트
-        if (data.data.summary?.optimizationInfo?.optimizedOrder) {
+        const responseWaypoints = Array.isArray(data.data.waypoints) ? data.data.waypoints : [];
+        const isRawPreviewRequest = Array.isArray(override?.rawOrigins) && override.rawOrigins.length > 0;
+
+        if (isRawPreviewRequest && responseWaypoints.length > 0) {
+          const normalizedFromApi = responseWaypoints
+            .map((wp: any) => ({
+              lat: Number(wp?.latitude),
+              lng: Number(wp?.longitude),
+              address: String(wp?.address || '').trim(),
+            }))
+            .filter((wp: any) => Number.isFinite(wp.lat) && Number.isFinite(wp.lng));
+
+          if (normalizedFromApi.length > 0) {
+            console.log('[useRouteOptimization] API waypoint 기준 destinations 동기화:', normalizedFromApi);
+            setDestinations(normalizedFromApi);
+          }
+
+          const startCoord = pickFirstRouteCoordinate(data.data);
+          const originAddress = String(payload?.origins?.[0]?.address || override?.rawOrigins?.[0] || '').trim();
+          if (startCoord && originAddress) {
+            setOrigins({
+              lat: startCoord.lat,
+              lng: startCoord.lng,
+              address: originAddress,
+            });
+          }
+        } else if (data.data.summary?.optimizationInfo?.optimizedOrder) {
+          // 최적화된 순서로 destinations 업데이트
           const optimizedOrder = data.data.summary.optimizationInfo.optimizedOrder;
-          const responseWaypoints = Array.isArray(data.data.waypoints) ? data.data.waypoints : [];
           const optimizedDestinations = optimizedOrder.map((item: any) => {
-            // 원본 destinations에서 해당 주소를 찾아서 좌표 정보 복원
-            const originalDest = payload.destinations.find((dest: any) =>
-              dest.address === item.address
-            );
+            const originalDest = payload.destinations.find((dest: any) => dest.address === item.address);
             if (originalDest) {
               const hasLatLng = 'latitude' in originalDest && 'longitude' in originalDest;
               const rawLat = hasLatLng ? Number((originalDest as any).latitude) : Number.NaN;
               const rawLng = hasLatLng ? Number((originalDest as any).longitude) : Number.NaN;
               if (hasLatLng && !isInvalidCoord(rawLat, rawLng)) {
-                return {
-                  lat: rawLat,
-                  lng: rawLng,
-                  address: originalDest.address
-                };
+                return { lat: rawLat, lng: rawLng, address: originalDest.address };
               }
             }
-
-            // AI 챗 프리뷰처럼 payload 좌표가 0,0인 경우 API 응답 waypoint 좌표를 우선 사용
             const matchedWaypoint = responseWaypoints.find((wp: any) => wp?.address === item.address);
             if (matchedWaypoint) {
               return {

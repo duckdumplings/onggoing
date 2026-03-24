@@ -46,9 +46,8 @@ function buildMarkdown(input: GenerationInput): string {
     lines.push('');
   }
   if (input.quote) {
-    lines.push('## 견적 요약');
-    lines.push(`- 총액: ${input.quote.totalPriceFormatted || input.quote.totalPrice || '-'}`);
-    lines.push(`- 추천 플랜: ${input.quote.recommendedPlan || '-'}`);
+    lines.push('## 견적 요약 (기준)');
+    lines.push(`- 기준 예상 운임: ${input.quote.totalPriceFormatted || input.quote.totalPrice || '-'}`);
     lines.push(`- 거리: ${input.quote?.basis?.distanceKm ?? '-'} km`);
     lines.push(`- 과금시간: ${input.quote?.basis?.totalBillMinutes ?? '-'} 분`);
     lines.push('');
@@ -95,9 +94,8 @@ async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
       doc.moveDown();
     }
     if (input.quote) {
-      doc.fontSize(13).text('견적 요약', { underline: true });
-      doc.fontSize(10).text(`총액: ${input.quote.totalPriceFormatted || input.quote.totalPrice || '-'}`);
-      doc.fontSize(10).text(`추천 플랜: ${input.quote.recommendedPlan || '-'}`);
+      doc.fontSize(13).text('견적 요약 (기준)', { underline: true });
+      doc.fontSize(10).text(`기준 예상 운임: ${input.quote.totalPriceFormatted || input.quote.totalPrice || '-'}`);
       doc.fontSize(10).text(`거리: ${input.quote?.basis?.distanceKm ?? '-'} km`);
       doc.fontSize(10).text(`과금시간: ${input.quote?.basis?.totalBillMinutes ?? '-'} 분`);
       doc.moveDown();
@@ -129,8 +127,7 @@ function generateXlsx(input: GenerationInput): GeneratedFile {
   const wb = XLSX.utils.book_new();
   const summaryRows = [
     ['항목', '값'],
-    ['총액', input.quote?.totalPriceFormatted || input.quote?.totalPrice || '-'],
-    ['추천플랜', input.quote?.recommendedPlan || '-'],
+    ['기준 예상 운임', input.quote?.totalPriceFormatted || input.quote?.totalPrice || '-'],
     ['거리(km)', input.quote?.basis?.distanceKm ?? '-'],
     ['과금시간(분)', input.quote?.basis?.totalBillMinutes ?? '-'],
     ['차량', input.quote?.basis?.vehicleType ?? '-'],

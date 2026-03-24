@@ -4,16 +4,13 @@ import { createServerClient } from '@/libs/supabase-client';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const isHelpful = Boolean(body?.isHelpful);
-    if (isHelpful) {
-      return NextResponse.json({ success: true, data: { skipped: true } });
-    }
+    const feedbackType = body?.feedbackType === 'positive' ? 'positive' : 'negative';
 
     const userInput = String(body?.userInput || '').trim();
     const assistantOutput = String(body?.assistantOutput || '').trim();
     const reason = body?.reason ? String(body.reason).trim().slice(0, 500) : null;
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
-    const rawMessageId = body?.messageId ? String(body.messageId) : null;
+    const rawMessageId = body?.messageId ? String(body.messageId) : (body?.metadata?.messageId ? String(body.metadata.messageId) : null);
     const messageId =
       rawMessageId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawMessageId)
         ? rawMessageId
@@ -36,11 +33,13 @@ export async function POST(request: NextRequest) {
           message_id: messageId,
           user_input: userInput,
           assistant_output: assistantOutput || null,
-          error_code: 'USER_FEEDBACK_NEGATIVE',
+          error_code: feedbackType === 'positive' ? 'USER_FEEDBACK_POSITIVE' : 'USER_FEEDBACK_NEGATIVE',
           reason,
           tags,
           metadata: {
             source: 'ui-feedback',
+            feedback_type: feedbackType,
+            raw_message_id: rawMessageId,
           },
         },
       ])

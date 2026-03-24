@@ -1468,7 +1468,7 @@ export async function POST(request: NextRequest) {
 
         // 검증용 시계 업데이트: 체류 미고려(운전시간만)
         validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
-        
+
         // 경유지별 도착시간 저장
         const waypoint = waypoints[waypoints.length - 1];
         waypoint.arrivalTime = arrivalTime.toISOString();
@@ -1511,7 +1511,7 @@ export async function POST(request: NextRequest) {
           const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
           currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
           validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
-          
+
           // 경유지별 도착시간 저장
           const waypoint = waypoints[waypoints.length - 1];
           waypoint.arrivalTime = arrivalTime.toISOString();
@@ -1582,8 +1582,8 @@ export async function POST(request: NextRequest) {
     }
     // 폴백: waypoints에 dwellTime이 없으면 기본값 사용
     if (totalDwellTime === 0 && waypoints.length > 0) {
-    const dwellTimePerWaypoint = 5; // 분
-    const dwellTimeAtDestination = 10; // 분
+      const dwellTimePerWaypoint = 5; // 분
+      const dwellTimeAtDestination = 10; // 분
       totalDwellTime = (waypoints.length - 1) * dwellTimePerWaypoint * 60 + dwellTimeAtDestination * 60; // 초 단위
     }
     const totalTimeWithDwell = totalTime + totalDwellTime;
@@ -1747,6 +1747,46 @@ function buildGeocodeQueryVariants(raw: string): string[] {
     if (x && !out.includes(x)) out.push(x);
   };
   push(t);
+  // "서울시" 표기를 "서울특별시"로 표준화
+  const normalizedSeoul = t.replace(/^서울시\s+/, '서울특별시 ');
+  if (normalizedSeoul !== t) push(normalizedSeoul);
+  // 광역시/도 접두를 제거한 코어 주소도 시도 (예: "서울특별시 서초구 ..." -> "서초구 ...")
+  const noMetroPrefix = t.replace(/^(서울특별시|서울시|서울|경기도|경기|인천|부산|대구|광주|대전|울산|세종)\s+/, '');
+  if (noMetroPrefix !== t) push(noMetroPrefix);
+  // 도로명+번지 코어 우선 추출: "서울특별시 금천구 가마산로 96 대륭테크노타운" -> "서울특별시 금천구 가마산로 96"
+  const roadCore = t.match(/^(.*?(?:로|길|대로)\s*\d+(?:-\d+)?)/)?.[1]?.trim();
+  if (roadCore && roadCore !== t) push(roadCore);
+  // "반포대로 21길 17" -> "반포대로21길 17" 형태 보정
+  const mergedRoadSubroad = t.replace(/(대로|로|길)\s*(\d+)\s*길\s*(\d+)/g, '$1$2길 $3');
+  if (mergedRoadSubroad !== t) push(mergedRoadSubroad);
+  // "1충" 오타를 "1층"으로 교정해 재시도
+  const typoFloorFixed = t.replace(/(\d+)\s*충\b/g, '$1층');
+  if (typoFloorFixed !== t) push(typoFloorFixed);
+  // "성수일로10" 같이 도로명과 번지가 붙은 표기를 분리해 재시도
+  const roadNumberSpaced = t.replace(/(로|길|대로)(\d)/g, '$1 $2');
+  if (roadNumberSpaced !== t) push(roadNumberSpaced);
+  // "회나무로 13가길 64" -> "회나무로13가길 64" 형태 보정
+  const mergedGaGil = t.replace(/(로)\s*(\d+)\s*가길\s*(\d+)/g, '$1$2가길 $3');
+  if (mergedGaGil !== t) push(mergedGaGil);
+  // 층/호/동 상세 제거 버전도 재시도
+  const strippedUnit = t
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(?:지하\s*)?\d+\s*(?:층|충)\b/g, ' ')
+    .replace(/\b\d+\s*호\b/g, ' ')
+    .replace(/\b\d+\s*동\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (strippedUnit && strippedUnit !== t) push(strippedUnit);
+  const strippedUnitNoMetroPrefix = strippedUnit.replace(/^(서울특별시|서울시|서울|경기도|경기|인천|부산|대구|광주|대전|울산|세종)\s+/, '');
+  if (strippedUnitNoMetroPrefix && strippedUnitNoMetroPrefix !== strippedUnit) push(strippedUnitNoMetroPrefix);
+  const strippedUnitMergedRoadSubroad = strippedUnit.replace(/(대로|로|길)\s*(\d+)\s*길\s*(\d+)/g, '$1$2길 $3');
+  if (strippedUnitMergedRoadSubroad && strippedUnitMergedRoadSubroad !== strippedUnit) push(strippedUnitMergedRoadSubroad);
+  const strippedRoadCore = strippedUnit.match(/^(.*?(?:로|길|대로)\s*\d+(?:-\d+)?)/)?.[1]?.trim();
+  if (strippedRoadCore && strippedRoadCore !== strippedUnit) push(strippedRoadCore);
+  const strippedUnitFloorFixed = strippedUnit.replace(/(\d+)\s*충\b/g, '$1층');
+  if (strippedUnitFloorFixed && strippedUnitFloorFixed !== strippedUnit) push(strippedUnitFloorFixed);
+  const strippedUnitMergedGaGil = strippedUnit.replace(/(로)\s*(\d+)\s*가길\s*(\d+)/g, '$1$2가길 $3');
+  if (strippedUnitMergedGaGil && strippedUnitMergedGaGil !== strippedUnit) push(strippedUnitMergedGaGil);
   for (const v of stripLeadingBrandToDistrictRoadVariants(t)) {
     push(v);
   }
@@ -1819,13 +1859,12 @@ async function geocodeWithNominatim(address: string): Promise<{ latitude: number
 
 // 서버사이드 Tmap 지오코딩 (우선)
 async function geocodeWithTmap(address: string, appKey: string): Promise<{ latitude: number; longitude: number; address: string }> {
-  const url = new URL('https://apis.openapi.sk.com/tmap/geo/geocoding');
+  // NOTE:
+  // 기존 geo/geocoding 호출은 환경에 따라 9401(필수 파라미터 없음) 오류가 빈번해
+  // 실제 운영에서 안정적인 POI 검색 엔드포인트를 우선 사용한다.
+  const url = new URL('https://apis.openapi.sk.com/tmap/pois');
   url.searchParams.set('version', '1');
   url.searchParams.set('searchKeyword', address);
-  url.searchParams.set('searchType', 'all');
-  url.searchParams.set('searchtypCd', 'A');
-  url.searchParams.set('radius', '0');
-  url.searchParams.set('page', '1');
   url.searchParams.set('count', '1');
   url.searchParams.set('reqCoordType', 'WGS84GEO');
   url.searchParams.set('resCoordType', 'WGS84GEO');
@@ -1834,19 +1873,27 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
     method: 'GET',
     headers: { appKey: appKey, 'Content-Type': 'application/json' },
   });
-  if (!res.ok) throw new Error('Tmap geocoding failed');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({} as any));
+    const code = body?.error?.code ? String(body.error.code) : String(res.status);
+    const message = body?.error?.message ? String(body.error.message) : 'Tmap geocoding failed';
+    throw new Error(`TMAP_GEOCODE_HTTP_${code}: ${message}`);
+  }
   const data = await res.json();
   const poi = data?.searchPoiInfo?.pois?.poi?.[0];
-  if (!poi) throw new Error('Address not found');
-  const latitude = parseFloat(poi.frontLat);
-  const longitude = parseFloat(poi.frontLon);
+  if (!poi) throw new Error('TMAP_GEOCODE_NO_POI');
+  const latitude = parseFloat(poi.frontLat || poi.noorLat);
+  const longitude = parseFloat(poi.frontLon || poi.noorLon);
   if (!isValidCoordinate(latitude, longitude)) {
-    throw new Error('Tmap returned invalid coordinates');
+    throw new Error('TMAP_GEOCODE_INVALID_COORDINATE');
   }
   return {
     latitude,
     longitude,
-    address: poi.name || address,
+    address: [poi.upperAddrName, poi.middleAddrName, poi.lowerAddrName, poi.roadName, poi.firstBuildNo]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || poi.name || address,
   };
 }
 

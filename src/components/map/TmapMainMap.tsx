@@ -7,6 +7,7 @@ import {
   STOP_FEE,
   fuelSurchargeHourlyCorrect,
   perJobBasePrice,
+  perJobRegularPrice,
   pickHourlyRate,
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
@@ -367,7 +368,57 @@ export default function TmapMainMap() {
 
     const interactiveDistanceKm = Number((distanceKm * (1 + sliderExtraDistancePercent / 100)).toFixed(1));
     const interactiveBillMinutes = totalBillMinutes + sliderExtraWaitMin;
-    const interactivePricing = calculatePricing(interactiveDistanceKm, interactiveBillMinutes, destinationCount);
+    
+    // 레이/스타렉스, 정기/비정기 4가지 조합 모두 계산
+    const calcPricingForScenario = (veh: 'ray' | 'starex', schedule: 'regular' | 'ad-hoc') => {
+      const roundedBillMin = roundUpTo30Minutes(Math.max(30, interactiveBillMinutes));
+      
+      // 시간당
+      const calcHourlyRate = pickHourlyRate(veh, roundedBillMin);
+      let calcHourlyBase = Math.round((roundedBillMin / 60) * calcHourlyRate);
+      if (schedule === 'regular') {
+        // 정기일 경우 시간당 단가 할인/할증 등을 여기에 적용 (현재는 동일하다고 가정하거나 로직 추가)
+        // 일단은 그대로 둠
+      }
+      const calcHourlyFuel = fuelSurchargeHourlyCorrect(veh, interactiveDistanceKm, roundedBillMin);
+      const calcHourlyTotal = calcHourlyBase + calcHourlyFuel;
+
+      // 단건
+      let calcPerJobBase = 0;
+      if (schedule === 'regular') {
+        calcPerJobBase = perJobRegularPrice(veh, interactiveDistanceKm);
+      } else {
+        calcPerJobBase = perJobBasePrice(veh, interactiveDistanceKm);
+      }
+      const calcEffectiveStops = Math.max(0, destinationCount - 1);
+      const calcPerJobStopFee = calcEffectiveStops * STOP_FEE[veh];
+      const calcPerJobTotal = calcPerJobBase + calcPerJobStopFee;
+      
+      const calcRecommended: 'hourly' | 'perJob' = calcHourlyTotal <= calcPerJobTotal ? 'hourly' : 'perJob';
+      
+      return {
+        hourlyTotal: calcHourlyTotal,
+        perJobTotal: calcPerJobTotal,
+        recommendedPlan: calcRecommended,
+        totalPrice: calcRecommended === 'hourly' ? calcHourlyTotal : calcPerJobTotal,
+        hourlyBreakdown: { billMinutes: roundedBillMin, hourlyRate: calcHourlyRate, base: calcHourlyBase, fuelSurcharge: calcHourlyFuel },
+        perJobBreakdown: { base: calcPerJobBase, stopFee: calcPerJobStopFee, effectiveStopsCount: calcEffectiveStops }
+      };
+    };
+
+    const scenarios = {
+      ray: {
+        'ad-hoc': calcPricingForScenario('ray', 'ad-hoc'),
+        regular: calcPricingForScenario('ray', 'regular')
+      },
+      starex: {
+        'ad-hoc': calcPricingForScenario('starex', 'ad-hoc'),
+        regular: calcPricingForScenario('starex', 'regular')
+      }
+    };
+    
+    // 현재 선택된 차량/스케줄 기준 인터랙티브 결과
+    const interactivePricing = scenarios[vehicleKey][scheduleType];
     
     const savings = Math.abs(interactivePricing.hourlyTotal - interactivePricing.perJobTotal);
     const aiInsight = interactivePricing.recommendedPlan === 'hourly'
@@ -416,6 +467,7 @@ export default function TmapMainMap() {
       waypointRows,
       roadComparisons,
       caseVariations: [], // removed
+      scenarios, // 4 combinations
       interactiveScenario: {
         distanceKm: interactiveDistanceKm,
         billMinutes: interactiveBillMinutes,
@@ -812,7 +864,7 @@ export default function TmapMainMap() {
         <div className="absolute inset-0 z-[2300] bg-slate-900/35 backdrop-blur-[2px] flex items-center justify-center px-4">
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl p-5 max-h-[86vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-base font-extrabold text-slate-800">견적 상세 정보</h4>
+              <h4 className="text-base font-extrabold text-slate-800">견적 상세 정보 (전체 시나리오)</h4>
               <button
                 type="button"
                 onClick={() => setShowQuoteDetailDialog(false)}
@@ -821,13 +873,24 @@ export default function TmapMainMap() {
                 닫기
               </button>
             </div>
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 mb-3">
-              <div className="text-[11px] font-semibold text-indigo-600 mb-1">추천 플랜</div>
-              <div className="text-lg font-black text-indigo-900">
-                {routeQuoteDetail.recommendedPlan === 'hourly' ? '시간당 요금제' : '단건 요금제'}
+            
+            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-3">
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
+                <div className="text-base font-black text-slate-800">{routeQuoteDetail.distanceKm} km</div>
               </div>
-              <div className="text-2xl font-black text-indigo-700 mt-1">{formatWon(routeQuoteDetail.totalPrice)}</div>
+              <div className="w-px h-8 bg-slate-200"></div>
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 과금시간</div>
+                <div className="text-base font-black text-slate-800">{routeQuoteDetail.totalBillMinutes} 분</div>
+              </div>
+              <div className="w-px h-8 bg-slate-200"></div>
+              <div className="flex-1">
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">경유지</div>
+                <div className="text-base font-black text-slate-800">{routeQuoteDetail.destinationCount} 곳</div>
+              </div>
             </div>
+
             <div className="flex p-1 bg-slate-100 rounded-lg mb-3">
               <button
                 type="button"
@@ -853,42 +916,49 @@ export default function TmapMainMap() {
             </div>
             {quoteDetailTab === 'pricing' && (
               <>
-                {/* 요금 비교 시각화 바 */}
-                <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3 shadow-sm">
-                  <h5 className="text-[11px] font-bold text-slate-500 mb-3">요금제 비교 (현재 기준)</h5>
-                  <div className="relative pt-2 pb-6">
-                    {/* Hourly Bar */}
-                    <div className="flex items-center mb-4 relative z-10">
-                      <div className="w-16 text-[10px] font-bold text-slate-600">시간당</div>
-                      <div className="flex-1 ml-2 flex items-center">
-                        <div 
-                          className={`h-6 rounded-r-lg transition-all duration-500 flex items-center px-2 ${routeQuoteDetail.recommendedPlan === 'hourly' ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                          style={{ width: `${Math.min(100, (routeQuoteDetail.hourlyTotal / Math.max(routeQuoteDetail.hourlyTotal, routeQuoteDetail.perJobTotal)) * 100)}%` }}
-                        >
-                          <span className="text-[10px] font-bold text-white shadow-sm">{formatWon(routeQuoteDetail.hourlyTotal)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    {/* PerJob Bar */}
-                    <div className="flex items-center relative z-10">
-                      <div className="w-16 text-[10px] font-bold text-slate-600">단건</div>
-                      <div className="flex-1 ml-2 flex items-center">
-                        <div 
-                          className={`h-6 rounded-r-lg transition-all duration-500 flex items-center px-2 ${routeQuoteDetail.recommendedPlan === 'perJob' ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                          style={{ width: `${Math.min(100, (routeQuoteDetail.perJobTotal / Math.max(routeQuoteDetail.hourlyTotal, routeQuoteDetail.perJobTotal)) * 100)}%` }}
-                        >
-                          <span className="text-[10px] font-bold text-white shadow-sm">{formatWon(routeQuoteDetail.perJobTotal)}</span>
-                        </div>
-                      </div>
+                {/* 시나리오 매트릭스 */}
+                {routeQuoteDetail.scenarios && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3 shadow-sm">
+                    <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
+                      <span className="text-indigo-500">📊</span>
+                      전체 운임 시나리오 비교
+                    </h4>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-[500px]">
+                        <thead>
+                          <tr>
+                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 rounded-tl-lg">차량 / 스케줄</th>
+                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500">시간당 요금제</th>
+                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 rounded-tr-lg">단건 요금제</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-xs">
+                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-slate-700">레이 <span className="text-slate-400 font-medium text-[10px] ml-1">비정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-slate-700">레이 <span className="text-slate-400 font-medium text-[10px] ml-1">정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.perJobTotal || 0)}</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-slate-700">스타렉스 <span className="text-slate-400 font-medium text-[10px] ml-1">비정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</td>
+                          </tr>
+                          <tr className="hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-slate-700 rounded-bl-lg">스타렉스 <span className="text-slate-400 font-medium text-[10px] ml-1">정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900 rounded-br-lg">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.perJobTotal || 0)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                  
-                  {/* AI Insight */}
-                  <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-3 text-xs text-indigo-800 flex items-start gap-2 mt-2">
-                    <span className="text-lg leading-none">💡</span>
-                    <p className="leading-relaxed font-medium">{routeQuoteDetail.aiInsight}</p>
-                  </div>
-                </div>
+                )}
 
                 {/* 요금 변동 시뮬레이터 */}
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs shadow-sm mb-3">
