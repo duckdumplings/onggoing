@@ -1000,6 +1000,7 @@ export async function POST(request: NextRequest) {
             diagnostics: {
               code: 'GEOCODE_ORIGIN_FAILED',
               failedAddresses: [{ role: 'origin', address: startAddress }],
+              usedQueries: buildGeocodeQueryVariants(startAddress),
               suggestedAddressHints: buildUserFacingAddressHints(startAddress),
               nextBestActions: [
                 '같은 내용이라도 도로명+번지 한 줄만 따로 적어 주세요.',
@@ -1049,6 +1050,7 @@ export async function POST(request: NextRequest) {
               diagnostics: {
                 code: 'GEOCODE_DESTINATION_FAILED',
                 failedAddresses: [{ role: 'destination', address: destAddress }],
+                usedQueries: buildGeocodeQueryVariants(destAddress),
                 suggestedAddressHints: buildUserFacingAddressHints(destAddress),
                 nextBestActions: [
                   '해당 구간만 도로명+번지로 한 줄 적어 주세요.',

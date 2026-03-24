@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2 } from 'lucide-react';
+import { supabase } from '@/libs/supabase-client';
 
 type ChatMessage = {
   id: string;
@@ -30,6 +31,13 @@ type AIQuoteResponse = {
   routeSummary?: any;
   assumptions?: string[];
   routeRequest?: any;
+  routeRequestMeta?: {
+    usedSanitizedPayload?: boolean;
+  };
+  pipeline?: {
+    stageState?: 'blocked' | 'need-input' | 'completed';
+    readiness?: { score?: number; isReady?: boolean; reasons?: string[] };
+  };
   rag?: { sources?: string[]; attachmentIds?: string[] };
   error?: { code: string; message: string };
 };
@@ -113,6 +121,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const [isGeneratingFile, setIsGeneratingFile] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'input-order' | 'optimized-order'>('input-order');
   const [expandedEvidenceByMessageId, setExpandedEvidenceByMessageId] = useState<Record<string, boolean>>({});
   const [feedbackSentByMessageId, setFeedbackSentByMessageId] = useState<Record<string, boolean>>({});
 
@@ -196,6 +205,34 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     ]);
   };
 
+  const normalizeAddressForPreview = (address: string) =>
+    String(address || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/^서울시\s+/, '서울특별시 ')
+      .replace(/(\d+)\s*충/g, '$1층')
+      .replace(/(로|길|대로)(\d)/g, '$1 $2')
+      .replace(/(로)\s*(\d+)\s*가길\s*(\d+)/g, '$1$2가길 $3')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/(?:지하\s*)?\d+\s*(?:층|충)/g, ' ')
+      .replace(/\d+\s*호/g, ' ')
+      .replace(/\d+\s*동/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const sanitizeRequestDataForPreview = (requestData: any) => {
+    const origin = requestData?.origins?.[0] ? normalizeAddressForPreview(String(requestData.origins[0])) : '';
+    const destinations = Array.isArray(requestData?.destinations)
+      ? requestData.destinations.map((d: string) => normalizeAddressForPreview(String(d)))
+      : [];
+    return {
+      ...requestData,
+      origins: origin ? [origin] : [],
+      destinations,
+      finalDestinationAddress: destinations.length ? destinations[destinations.length - 1] : null,
+    };
+  };
+
   const renderMessageBody = (msg: ChatMessage) => {
     if (msg.role === 'user') {
       return <div className="whitespace-pre-wrap break-words">{msg.content}</div>;
@@ -264,9 +301,19 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     return ['출발지: 강남역, 목적지: 판교역, 차량: 레이', '내일 오전 10시 출발, 정기 배송으로 계산해줘'];
   }, [latestResult?.suggestedPrompts, messages]);
 
+  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit> => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    const headers = new Headers(base || {});
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    return Object.fromEntries(headers.entries());
+  };
+
   const fetchSessions = async () => {
     try {
-      const res = await fetch('/api/quote/chat-sessions?limit=50');
+      const res = await fetch('/api/quote/chat-sessions?limit=50', {
+        headers: await getAuthHeaders(),
+      });
       if (!res.ok) {
         setSessionPersistenceEnabled(false);
         return [] as ChatSession[];
@@ -285,9 +332,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
   const createNewSession = async (title?: string) => {
     try {
+      const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch('/api/quote/chat-sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           title: title || `견적 대화 ${new Date().toLocaleDateString('ko-KR')}`,
         }),
@@ -320,7 +368,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     if (sessionId.startsWith('local-')) return;
     setIsSessionLoading(true);
     try {
-      const res = await fetch(`/api/quote/chat-sessions/${sessionId}/messages`);
+      const res = await fetch(`/api/quote/chat-sessions/${sessionId}/messages`, {
+        headers: await getAuthHeaders(),
+      });
       const json = await res.json();
       if (!json?.success) return;
       const persisted = (json.data || []) as PersistedChatMessage[];
@@ -362,9 +412,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     metadata?: Record<string, unknown>
   ) => {
     if (!sessionPersistenceEnabled || sessionId.startsWith('local-')) return;
+    const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
     await fetch(`/api/quote/chat-sessions/${sessionId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ role, content, metadata: metadata || {} }),
     });
   };
@@ -374,7 +425,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       setAttachments([]);
       return;
     }
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`);
+    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
+      headers: await getAuthHeaders(),
+    });
     const json = await res.json();
     if (!json?.success) return;
     setAttachments((json.data || []) as ChatAttachment[]);
@@ -385,7 +438,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       setGeneratedFiles([]);
       return;
     }
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/generated-files`);
+    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/generated-files`, {
+      headers: await getAuthHeaders(),
+    });
     const json = await res.json();
     if (!json?.success) return;
     setGeneratedFiles((json.data || []) as GeneratedFile[]);
@@ -411,6 +466,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         formData.append('file', file);
         const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
           method: 'POST',
+          headers: await getAuthHeaders(),
           body: formData,
         });
         const json = await res.json();
@@ -435,9 +491,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     try {
       const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
       const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
+      const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/quote/chat-sessions/${currentSessionId}/generated-files`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           fileType,
           input: {
@@ -715,7 +772,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       return;
     }
 
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}`, { method: 'DELETE' });
+    const res = await fetch(`/api/quote/chat-sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: await getAuthHeaders(),
+    });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json?.success) {
       pushAssistantMessage(`대화방 삭제 실패: ${json?.error?.message || '알 수 없는 오류'}`, 'system');
@@ -791,9 +851,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     );
   };
 
-  const handlePreviewOnMap = async () => {
+  const handlePreviewOnMap = async (useSanitizedFallback = false) => {
     if (!latestResult?.routeRequest) return;
-    const requestData = latestResult.routeRequest;
+    const requestData = useSanitizedFallback
+      ? sanitizeRequestDataForPreview(latestResult.routeRequest)
+      : latestResult.routeRequest;
     setPreviewError(null);
     setIsPreviewLoading(true);
     handleApplyToPanel();
@@ -805,9 +867,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         rawDestinations: requestData.destinations || [],
         vehicleType: requestData.vehicleType,
         options: {
-          // AI 채팅에서 "지도에서 경로 확인하기"는 구조화된 입력 순서 검증 목적이 크므로
-          // 자동 재정렬을 끄고(입력 순서 유지) 번호/순서 혼선을 방지한다.
-          optimizeOrder: false,
+          optimizeOrder: previewMode === 'optimized-order',
           useRealtimeTraffic: requestData.useRealtimeTraffic,
           departureAt: requestData.departureAt || null,
           deliveryTimes: requestData.deliveryTimes || [],
@@ -820,7 +880,21 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       });
 
       if (!result.success) {
-        const message = result.error || '경로 계산에 실패했습니다. 입력 값을 확인해주세요.';
+        const baseMessage = result.error || '경로 계산에 실패했습니다. 입력 값을 확인해주세요.';
+        const failedAddress = String(result?.details?.diagnostics?.failedAddresses?.[0]?.address || '').trim();
+        const usedQueries = Array.isArray(result?.details?.diagnostics?.usedQueries)
+          ? (result.details.diagnostics.usedQueries as string[]).filter(Boolean).slice(0, 3)
+          : [];
+        const detailSummary =
+          failedAddress || usedQueries.length
+            ? [
+              failedAddress ? `실패 주소: ${failedAddress}` : null,
+              usedQueries.length ? `시도 쿼리: ${usedQueries.join(' / ')}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n')
+            : null;
+        const message = detailSummary ? `${baseMessage}\n${detailSummary}` : baseMessage;
         setPreviewError(message);
         pushAssistantMessage(`지도로 반영하지 못했어요: ${message}`, 'system');
         return;
@@ -1531,8 +1605,32 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   </div>
 
                   <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMode('input-order')}
+                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
+                          previewMode === 'input-order'
+                            ? 'bg-white text-indigo-700 border-indigo-300'
+                            : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+                        }`}
+                      >
+                        입력순 미리보기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewMode('optimized-order')}
+                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
+                          previewMode === 'optimized-order'
+                            ? 'bg-white text-indigo-700 border-indigo-300'
+                            : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
+                        }`}
+                      >
+                        최적화순 미리보기
+                      </button>
+                    </div>
                     <button
-                      onClick={handlePreviewOnMap}
+                      onClick={() => void handlePreviewOnMap(false)}
                       disabled={isPreviewLoading}
                       className="w-full bg-white text-indigo-700 py-3 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
@@ -1540,8 +1638,17 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       {isPreviewLoading ? '지도 반영 중...' : '지도에서 경로 확인하기'}
                     </button>
                     {previewError && (
-                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
-                        {previewError}
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700 space-y-2">
+                        <div>{previewError}</div>
+                        <button
+                          type="button"
+                          onClick={() => void handlePreviewOnMap(true)}
+                          disabled={isPreviewLoading}
+                          className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isPreviewLoading ? 'animate-spin' : ''}`} />
+                          자동 수정으로 재시도
+                        </button>
                       </div>
                     )}
                     <button

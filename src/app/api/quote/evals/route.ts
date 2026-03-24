@@ -1,18 +1,22 @@
 import { NextResponse } from 'next/server';
 import { CHAT_EVAL_CASES } from '@/domains/quote/evals/chatEvalCases';
 import { createInitialSlotState, mergeSlotState } from '@/domains/quote/services/conversationStateManager';
+import { parseStructuredLogisticsMemo } from '@/domains/quote/services/structuredLogisticsParser';
 import { createServerClient } from '@/libs/supabase-client';
 
 export async function GET() {
   const rows = CHAT_EVAL_CASES.map((testCase) => {
+    const structured = parseStructuredLogisticsMemo(testCase.input);
+    const heuristicExtracted = /에서/.test(testCase.input) && /가는/.test(testCase.input)
+      ? {
+          origin: { address: testCase.input.split('에서')[0].trim() },
+          destinations: [{ address: testCase.input.split('에서')[1].split('가는')[0].trim() }],
+        }
+      : {};
+    const extractedForEval = structured?.extracted || (heuristicExtracted as any);
     const merged = mergeSlotState(
       createInitialSlotState(),
-      {
-        origin: /에서/.test(testCase.input) ? { address: testCase.input.split('에서')[0].trim() } : undefined,
-        destinations: /에서/.test(testCase.input) && /가는/.test(testCase.input)
-          ? [{ address: testCase.input.split('에서')[1].split('가는')[0].trim() }]
-          : undefined,
-      } as any,
+      extractedForEval as any,
       testCase.input
     );
 
@@ -23,7 +27,18 @@ export async function GET() {
     const passDestination = testCase.expected.shouldHaveDestination === undefined
       ? true
       : Boolean(merged.destinations.length) === testCase.expected.shouldHaveDestination;
-    const passed = passIntent && passOrigin && passDestination;
+    const passMinDestinationCount = testCase.expected.minDestinationCount === undefined
+      ? true
+      : merged.destinations.length >= testCase.expected.minDestinationCount;
+    const passStructuredMemo = testCase.expected.shouldUseStructuredMemo === undefined
+      ? true
+      : Boolean(structured) === testCase.expected.shouldUseStructuredMemo;
+    const passContainAddresses = (testCase.expected.shouldContainAddresses || []).every((token) =>
+      [merged.origin || '', ...merged.destinations].some((addr) => String(addr).includes(token))
+    );
+
+    const passed = passIntent && passOrigin && passDestination && passMinDestinationCount && passStructuredMemo && passContainAddresses;
+    const routeReady = Boolean(merged.origin && merged.destinations.length > 0);
 
     return {
       id: testCase.id,
@@ -33,6 +48,17 @@ export async function GET() {
         lastUserIntent: merged.lastUserIntent,
         origin: merged.origin || null,
         destinationCount: merged.destinations.length,
+        destinations: merged.destinations,
+        usedStructuredMemo: Boolean(structured),
+        routeReady,
+      },
+      checks: {
+        passIntent,
+        passOrigin,
+        passDestination,
+        passMinDestinationCount,
+        passStructuredMemo,
+        passContainAddresses,
       },
       passed,
     };
@@ -67,6 +93,8 @@ export async function GET() {
       total: rows.length,
       passed: rows.filter((row) => row.passed).length,
       failed: rows.filter((row) => !row.passed).length,
+      routeReadyCount: rows.filter((row: any) => row.actual.routeReady).length,
+      structuredMemoUsedCount: rows.filter((row: any) => row.actual.usedStructuredMemo).length,
       sampledFailureCount: sampledFailures.length,
     },
     rows,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -19,6 +20,9 @@ function extractStoragePathFromPublicUrl(url: string): string | null {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
+    const userId = await resolveUserIdFromRequest(_request);
+    if (!userId) return unauthorizedResponse();
+
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
@@ -28,6 +32,29 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     }
 
     const supabase = createServerClient();
+    const { data: sessionRow, error: sessionError } = await supabase
+      .from('quote_chat_sessions')
+      .select('id, created_by')
+      .eq('id', id)
+      .maybeSingle();
+    if (sessionError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'QUERY_FAILED', message: sessionError.message } },
+        { status: 500 }
+      );
+    }
+    if (!sessionRow) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: '대화방을 찾을 수 없습니다.' } },
+        { status: 404 }
+      );
+    }
+    if (String(sessionRow.created_by || '') !== userId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: '대화방 접근 권한이 없습니다.' } },
+        { status: 403 }
+      );
+    }
 
     const { data: generated } = await supabase
       .from('quote_generated_files')

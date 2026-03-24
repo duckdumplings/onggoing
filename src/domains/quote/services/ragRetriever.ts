@@ -17,6 +17,17 @@ export type SimilarQueryCandidate = {
   similarityScore: number;
 };
 
+export type FeedbackGuidance = {
+  snippets: string[];
+  sources: string[];
+  positiveCount: number;
+  negativeCount: number;
+  policyHints: {
+    addressNormalizationBoost: boolean;
+    duplicateGuardBoost: boolean;
+  };
+};
+
 function tokenize(text: string): string[] {
   return String(text || '')
     .toLowerCase()
@@ -170,6 +181,91 @@ export async function retrieveSimilarQueryCandidate(params: {
     return best;
   } catch {
     return null;
+  }
+}
+
+export async function retrieveFeedbackGuidance(params: {
+  sessionId?: string | null;
+  query: string;
+  limit?: number;
+}): Promise<FeedbackGuidance> {
+  const empty: FeedbackGuidance = {
+    snippets: [],
+    sources: [],
+    positiveCount: 0,
+    negativeCount: 0,
+    policyHints: {
+      addressNormalizationBoost: false,
+      duplicateGuardBoost: false,
+    },
+  };
+  if (!params.sessionId || !params.query?.trim()) return empty;
+
+  try {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+      .from('quote_chat_failure_cases')
+      .select('user_input, assistant_output, error_code, reason, metadata, created_at')
+      .eq('session_id', params.sessionId)
+      .order('created_at', { ascending: false })
+      .limit(120);
+    if (error || !data?.length) return empty;
+
+    const guidanceRows = data
+      .map((row: any) => {
+        const score = similarityScore(params.query, String(row.user_input || ''));
+        return { row, score };
+      })
+      .filter((item) => item.score >= 0.2)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(1, Math.min(params.limit ?? 6, 12)));
+
+    if (!guidanceRows.length) return empty;
+
+    const snippets: string[] = [];
+    const sources: string[] = [];
+    let positiveCount = 0;
+    let negativeCount = 0;
+    let addressNormalizationBoost = false;
+    let duplicateGuardBoost = false;
+
+    for (const { row, score } of guidanceRows) {
+      const code = String(row.error_code || '');
+      const reason = String(row.reason || '').trim();
+      const userInput = String(row.user_input || '').trim();
+      const isPositive = code === 'USER_FEEDBACK_POSITIVE';
+      if (isPositive) {
+        positiveCount += 1;
+      } else {
+        negativeCount += 1;
+      }
+
+      const reasonLower = reason.toLowerCase();
+      if (/주소|지오코드|geocode|좌표/.test(reasonLower) || /주소|지오코드|geocode|좌표/.test(userInput.toLowerCase())) {
+        addressNormalizationBoost = true;
+      }
+      if (/중복|duplicate|순서|경유지/.test(reasonLower) || /중복|duplicate|순서|경유지/.test(userInput.toLowerCase())) {
+        duplicateGuardBoost = true;
+      }
+
+      const signalLabel = isPositive ? '긍정' : '개선';
+      const detail = reason || (isPositive ? '사용자가 결과에 만족함' : '사용자 불만 피드백');
+      snippets.push(`[${signalLabel}피드백] 유사 요청(score=${score.toFixed(2)}): ${detail}`);
+      sources.push(`feedback:${code || 'UNKNOWN'}`);
+    }
+
+    return {
+      snippets,
+      sources,
+      positiveCount,
+      negativeCount,
+      policyHints: {
+        addressNormalizationBoost,
+        duplicateGuardBoost,
+      },
+    };
+  } catch {
+    return empty;
   }
 }
 

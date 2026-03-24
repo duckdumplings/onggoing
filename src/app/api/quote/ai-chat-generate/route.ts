@@ -23,7 +23,7 @@ import {
   toExtractedFromSlots,
 } from '@/domains/quote/services/conversationStateManager';
 import { resolvePoiHintsFromText, saveToolCallLog } from '@/domains/quote/services/toolRouter';
-import { retrieveRagContext, retrieveSimilarQueryCandidate } from '@/domains/quote/services/ragRetriever';
+import { retrieveFeedbackGuidance, retrieveRagContext, retrieveSimilarQueryCandidate } from '@/domains/quote/services/ragRetriever';
 import { searchWebKnowledge } from '@/domains/quote/services/webKnowledgeRetriever';
 import { parseStructuredLogisticsMemo } from '@/domains/quote/services/structuredLogisticsParser';
 
@@ -585,6 +585,16 @@ function evaluateRouteReadiness(params: {
   };
 }
 
+function canProceedWithMinimalRoute(extracted: any): boolean {
+  const origin = String(extracted?.origin?.address || '').trim();
+  const destinations = Array.isArray(extracted?.destinations) ? extracted.destinations : [];
+  const validOrigin = looksResolvableAddressText(origin);
+  const validDestinations = destinations.filter((d: any) =>
+    looksResolvableAddressText(String(d?.address || ''))
+  );
+  return validOrigin && validDestinations.length > 0;
+}
+
 function looksResolvableAddressText(value: string): boolean {
   const s = value.trim();
   if (!s) return false;
@@ -1082,6 +1092,11 @@ export async function POST(request: NextRequest) {
         limit: attachmentIds.length > 0 ? 4 : 2,
       })
       : { snippets: [], sources: [] };
+    const feedbackGuidance = await retrieveFeedbackGuidance({
+      sessionId,
+      query: message,
+      limit: 5,
+    });
 
     const llmPromptText = [
       sessionSummary ? `[세션 요약]\n${sessionSummary}` : '',
@@ -1099,6 +1114,7 @@ export async function POST(request: NextRequest) {
       : { snippets: [], sources: [], fetchedAt: new Date().toISOString() };
     const finalPromptText = [
       llmPromptText,
+      ...(feedbackGuidance.snippets || []).map((snippet, idx) => `[피드백학습${idx + 1}] ${snippet}`),
       ...(web.snippets || []).map((snippet, idx) => `[웹참고${idx + 1}] ${snippet}`),
     ]
       .filter(Boolean)
@@ -1192,6 +1208,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (feedbackGuidance.policyHints.addressNormalizationBoost) {
+      extracted = normalizeExtractedQuoteInfo({
+        ...extracted,
+        origin: extracted.origin?.address
+          ? { ...extracted.origin, address: normalizeAddressForGeocode(extracted.origin.address) }
+          : extracted.origin,
+        destinations: (extracted.destinations || []).map((d: any) => ({
+          ...d,
+          address: normalizeAddressForGeocode(String(d?.address || '')),
+        })),
+      });
+    }
+
     let slotState = mergeSlotState(previousSlotState, extracted, message, {
       replaceRoute: replaceRouteFromMemo,
     });
@@ -1204,10 +1233,10 @@ export async function POST(request: NextRequest) {
 
     const isNonQuoteIntent = slotState.lastUserIntent === 'document' || slotState.lastUserIntent === 'general';
     const evidence = buildEvidencePayload({
-      ragSources: rag.sources || [],
+      ragSources: [...(rag.sources || []), ...(feedbackGuidance.sources || [])],
       webSources: web.sources || [],
       usedWeb: Boolean(web.sources?.length),
-      usedRag: Boolean(rag.sources?.length),
+      usedRag: Boolean((rag.sources?.length || 0) + (feedbackGuidance.sources?.length || 0)),
       hasSessionSummary: Boolean(sessionSummary),
     });
 
@@ -1239,9 +1268,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 핵심 필드가 부족하거나 멀티 시나리오 입력이면 계산을 생략
+    // 주소 핵심 정보가 살아있으면(출발+유효 경유지 1개 이상) 경고가 있어도 1차 계산을 진행한다.
+    // 멀티 시나리오 혹은 핵심 주소 자체가 없는 경우만 하드 블록한다.
     const blockedByValidation = Boolean(countCheck.mismatchReason || !guardrail.isValid || !readiness.isReady);
-    if (blockedByValidation) {
+    const hasCriticalMissing =
+      guardrail.missingFields.includes('origin') || guardrail.missingFields.includes('destinations');
+    const canProceedMinimal = canProceedWithMinimalRoute(extracted);
+    const shouldHardBlock = isMultiScenario || hasCriticalMissing || !canProceedMinimal;
+
+    if (blockedByValidation && shouldHardBlock) {
       await upsertSessionContext(sessionId, slotState);
       const firstIssue = countCheck.mismatchReason || guardrail.issues[0] || '경로 구성 검증에 실패했습니다.';
       const expectedStops = Number.isFinite(interpretation.expectedCounts.totalStopsCount)
@@ -1285,6 +1320,13 @@ export async function POST(request: NextRequest) {
           sources: rag.sources,
         },
       });
+    }
+
+    const softValidationWarnings: string[] = [];
+    if (blockedByValidation && !shouldHardBlock) {
+      softValidationWarnings.push(
+        '입력 경로에 일부 불확실성이 있어 자동 보정한 주소 기준으로 1차 견적을 계산했습니다.'
+      );
     }
 
     if (isMultiScenario || missingFields.includes('origin') || missingFields.includes('destinations')) {
@@ -1369,6 +1411,8 @@ export async function POST(request: NextRequest) {
       returnToOrigin: false,
       roadOption: 'time-first',
     };
+    let effectiveRoutePayload = routePayload;
+    let usedSanitizedPayload = false;
 
     let routeRes: Response = await callRouteOptimization(request, routePayload);
 
@@ -1394,6 +1438,8 @@ export async function POST(request: NextRequest) {
           const retried = await callRouteOptimization(request, retryPayload);
           if (retried.ok) {
             routeRes = retried;
+            effectiveRoutePayload = retryPayload;
+            usedSanitizedPayload = true;
           } else {
             routeRes = new Response(JSON.stringify(errBody), { status: routeRes.status });
           }
@@ -1485,6 +1531,7 @@ export async function POST(request: NextRequest) {
     });
 
     const assumptions: string[] = [];
+    assumptions.push(...softValidationWarnings);
     if (!extracted.departureTime) assumptions.push('출발시간 미기재로 현재시각 기준(실시간 교통)으로 계산했습니다.');
     if (!extracted.destinations?.some((d) => Number.isFinite(d.dwellMinutes))) assumptions.push('체류시간 미기재 목적지는 기본 10분으로 계산했습니다.');
     if (!extracted.scheduleType) assumptions.push('스케줄 타입 미기재로 비정기(ad-hoc) 기준으로 계산했습니다.');
@@ -1545,10 +1592,21 @@ export async function POST(request: NextRequest) {
         ...evidence,
         fetchedAt: web.fetchedAt,
       },
-      routeRequest: routePayload,
+      routeRequestMeta: {
+        usedSanitizedPayload,
+      },
+      routeRequest: effectiveRoutePayload,
       rag: {
         sources: rag.sources,
         attachmentIds,
+      },
+      learning: {
+        feedbackSignals: {
+          positiveCount: feedbackGuidance.positiveCount,
+          negativeCount: feedbackGuidance.negativeCount,
+          appliedAddressNormalizationBoost: feedbackGuidance.policyHints.addressNormalizationBoost,
+          appliedDuplicateGuardBoost: feedbackGuidance.policyHints.duplicateGuardBoost,
+        },
       },
       actions: {
         canApplyToPanel: true,

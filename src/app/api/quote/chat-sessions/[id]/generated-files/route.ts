@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { generateFile, GeneratedFileType, GenerationInput } from '@/domains/quote/services/chatFileGenerator';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 type Params = { params: Promise<{ id: string }> };
 
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
+
+async function ensureOwnedSession(sessionId: string, userId: string) {
+  const supabase = createServerClient();
+  const { data, error } = await supabase
+    .from('quote_chat_sessions')
+    .select('id, created_by')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (error) return { ok: false as const, status: 500 as const, message: error.message };
+  if (!data) return { ok: false as const, status: 404 as const, message: '대화방을 찾을 수 없습니다.' };
+  if (String(data.created_by || '') !== userId) {
+    return { ok: false as const, status: 403 as const, message: '대화방 접근 권한이 없습니다.' };
+  }
+  return { ok: true as const };
+}
 
 const MIME_BY_TYPE: Record<GeneratedFileType, string> = {
   pdf: 'application/pdf',
@@ -17,11 +33,21 @@ const MIME_BY_TYPE: Record<GeneratedFileType, string> = {
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
+    const userId = await resolveUserIdFromRequest(_request);
+    if (!userId) return unauthorizedResponse();
+
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
         { success: false, error: { code: 'INVALID_SESSION_ID', message: 'session id가 필요합니다.' } },
         { status: 400 }
+      );
+    }
+    const ownership = await ensureOwnedSession(id, userId);
+    if (!ownership.ok) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: ownership.message } },
+        { status: ownership.status }
       );
     }
     const supabase = createServerClient();
@@ -44,11 +70,21 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
         { success: false, error: { code: 'INVALID_SESSION_ID', message: 'session id가 필요합니다.' } },
         { status: 400 }
+      );
+    }
+    const ownership = await ensureOwnedSession(id, userId);
+    if (!ownership.ok) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: ownership.message } },
+        { status: ownership.status }
       );
     }
     const body = await request.json();
