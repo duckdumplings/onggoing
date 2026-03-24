@@ -1035,9 +1035,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const renderQuoteDetailModal = () => {
     if (!isQuoteDetailOpen || !latestResult?.quote) return null;
     const q = latestResult.quote;
-    
+
     const formatWonStr = (val: number) => `₩${Math.round(val).toLocaleString('ko-KR')}`;
-    
+
     return (
       <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
@@ -1076,7 +1076,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   <Calculator className="w-4 h-4 text-indigo-500" />
                   전체 운임 비교 테이블
                 </h4>
-                
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[500px]">
                     <thead>
@@ -1140,10 +1140,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 </div>
               </div>
             )}
-            
+
             <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
-              * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br/>
-              * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br/>
+              * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br />
+              * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br />
               * 정기 배송의 단건 운임은 별도 정기 요금표가 적용되며, 시간당 운임은 동일한 단가를 기초로 계산됩니다.
             </div>
           </div>
@@ -1180,11 +1180,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   setShowAuthForm((prev) => !prev);
                   setAuthError(null);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                  authUserEmail
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${authUserEmail
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 {authUserEmail ? '로그인됨' : '로그인'}
               </button>
@@ -1274,8 +1273,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
                   {/* Avatar */}
                   <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
-                      ? 'bg-slate-200 text-slate-600'
-                      : 'bg-indigo-100 text-indigo-600'
+                    ? 'bg-slate-200 text-slate-600'
+                    : 'bg-indigo-100 text-indigo-600'
                     }`}>
                     {msg.role === 'user' ? <span className="text-xs font-bold">나</span> : <Sparkles className="h-4 w-4" />}
                   </div>
@@ -1284,10 +1283,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                     <div
                       className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user'
-                          ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm'
-                          : msg.kind === 'system'
-                            ? 'bg-amber-50 text-amber-900 border border-amber-100 rounded-xl'
-                            : 'bg-white text-slate-800 border border-gray-100 rounded-2xl rounded-tl-sm'
+                        ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm'
+                        : msg.kind === 'system'
+                          ? 'bg-amber-50 text-amber-900 border border-amber-100 rounded-xl'
+                          : 'bg-white text-slate-800 border border-gray-100 rounded-2xl rounded-tl-sm'
                         }`}
                     >
                       {renderMessageBody(msg)}
@@ -1585,8 +1584,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   <div
                     key={session.id}
                     className={`w-full text-left px-2 py-2 rounded-lg transition-colors ${currentSessionId === session.id
-                        ? 'bg-indigo-50 text-indigo-800'
-                        : 'hover:bg-gray-50 text-gray-700'
+                      ? 'bg-indigo-50 text-indigo-800'
+                      : 'hover:bg-gray-50 text-gray-700'
                       }`}
                   >
                     <button
@@ -1723,11 +1722,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       {latestResult?.extracted?.destinations?.map((d: any, idx: number) => (
                         <div key={idx} className="flex items-center gap-2 relative">
                           <div className="absolute -top-1.5 left-2 w-px h-1.5 bg-gray-200"></div>
-                          <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            idx === (latestResult.extracted.destinations.length - 1)
+                          <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${idx === (latestResult.extracted.destinations.length - 1)
                               ? 'bg-rose-100 text-rose-700'
                               : 'bg-blue-100 text-blue-700'
-                          }`}>
+                            }`}>
                             {idx === (latestResult.extracted.destinations.length - 1) ? '도착' : `경유 ${idx + 1}`}
                           </span>
                           <span className="text-sm font-medium text-gray-900 truncate">{d.address || '-'}</span>
@@ -1767,7 +1765,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   </span>
                 </div>
                 <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200">
-                  
+
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">시간당 요금제</div>
@@ -1805,22 +1803,20 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       <button
                         type="button"
                         onClick={() => setPreviewMode('input-order')}
-                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
-                          previewMode === 'input-order'
+                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'input-order'
                             ? 'bg-white text-indigo-700 border-indigo-300'
                             : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                        }`}
+                          }`}
                       >
                         입력순 미리보기
                       </button>
                       <button
                         type="button"
                         onClick={() => setPreviewMode('optimized-order')}
-                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${
-                          previewMode === 'optimized-order'
+                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'optimized-order'
                             ? 'bg-white text-indigo-700 border-indigo-300'
                             : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                        }`}
+                          }`}
                       >
                         최적화순 미리보기
                       </button>
