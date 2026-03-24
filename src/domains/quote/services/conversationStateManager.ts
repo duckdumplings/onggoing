@@ -43,21 +43,32 @@ export function inferIntent(text: string): SlotState['lastUserIntent'] {
 export function mergeSlotState(
   prev: SlotState,
   extracted: ExtractedQuoteInfo,
-  userText: string
+  userText: string,
+  options?: { replaceRoute?: boolean }
 ): SlotState {
+  const replaceRoute = Boolean(options?.replaceRoute);
+
   const next: SlotState = {
     ...prev,
-    destinations: [...(prev.destinations || [])],
+    destinations: replaceRoute ? [] : [...(prev.destinations || [])],
     constraints: [...(prev.constraints || [])],
     preferences: { ...(prev.preferences || {}) },
     lastUserIntent: inferIntent(userText),
     lastUpdatedAt: new Date().toISOString(),
   };
 
-  if (extracted.origin?.address?.trim()) {
+  if (replaceRoute) {
+    next.origin = extracted.origin?.address?.trim() || undefined;
+  } else if (extracted.origin?.address?.trim()) {
     next.origin = extracted.origin.address.trim();
   }
-  if (Array.isArray(extracted.destinations)) {
+
+  if (replaceRoute && Array.isArray(extracted.destinations)) {
+    next.destinations = extracted.destinations
+      .map((d) => d?.address?.trim())
+      .filter((a): a is string => Boolean(a))
+      .slice(0, MAX_DESTINATIONS);
+  } else if (Array.isArray(extracted.destinations)) {
     for (const dest of extracted.destinations) {
       const addr = dest?.address?.trim();
       if (!addr) continue;

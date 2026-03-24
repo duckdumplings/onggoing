@@ -6,6 +6,12 @@ function isValidCoordinate(lat: number, lng: number): boolean {
     !isNaN(lat) && !isNaN(lng) && isFinite(lat) && isFinite(lng);
 }
 
+// 프리뷰 요청에서 들어오는 0,0은 실제 좌표가 아니라 placeholder 이므로 preset으로 사용하지 않는다.
+function isUsablePresetCoordinate(lat: number, lng: number): boolean {
+  if (!isValidCoordinate(lat, lng)) return false;
+  return !(Math.abs(lat) < 0.000001 && Math.abs(lng) < 0.000001);
+}
+
 // 거리 계산 정확성 검증 함수 추가
 function validateDistanceCalculation(
   start: { latitude: number; longitude: number },
@@ -965,13 +971,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
+    // 출발지 좌표 변환 (Tmap 우선, 실패 시 Nominatim, 주소 변형 재시도 — 시청 등 임의 좌표 사용 안 함)
     const startAddress = typeof origins[0] === 'string' ? origins[0] : (origins[0] as any).name || (origins[0] as any).address;
-    let startLocation = (origins[0] as any).latitude && (origins[0] as any).longitude
-      ? { latitude: (origins[0] as any).latitude, longitude: (origins[0] as any).longitude, address: startAddress }
-      : await geocodeWithTmap(startAddress, tmapKey).catch(() => geocodeWithNominatim(startAddress));
+    let startLocation: { latitude: number; longitude: number; address: string };
+    const originPresetLat = (origins[0] as any).latitude;
+    const originPresetLng = (origins[0] as any).longitude;
+    if (
+      originPresetLat != null &&
+      originPresetLng != null &&
+      isUsablePresetCoordinate(Number(originPresetLat), Number(originPresetLng))
+    ) {
+      startLocation = {
+        latitude: Number(originPresetLat),
+        longitude: Number(originPresetLng),
+        address: startAddress,
+      };
+    } else {
+      try {
+        const geo = await geocodeAddressReliable(startAddress, tmapKey);
+        startLocation = { latitude: geo.latitude, longitude: geo.longitude, address: geo.address };
+        console.log('[geocode] origin', { requested: startAddress, usedQuery: geo.usedQuery, source: geo.source });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '지오코딩 실패';
+        return NextResponse.json(
+          {
+            error: `출발지 주소를 찾을 수 없습니다: ${startAddress}`,
+            details: msg,
+            diagnostics: {
+              code: 'GEOCODE_ORIGIN_FAILED',
+              failedAddresses: [{ role: 'origin', address: startAddress }],
+              suggestedAddressHints: buildUserFacingAddressHints(startAddress),
+              nextBestActions: [
+                '같은 내용이라도 도로명+번지 한 줄만 따로 적어 주세요.',
+                '건물명·층수는 잠시 빼고 시도해 보세요.',
+              ],
+            },
+          },
+          { status: 400 }
+        );
+      }
+    }
 
-    // 좌표 유효성 검사
     if (!isValidCoordinate(startLocation.latitude, startLocation.longitude)) {
       return NextResponse.json(
         { error: '출발지 좌표가 유효하지 않습니다' },
@@ -981,19 +1021,57 @@ export async function POST(request: NextRequest) {
 
     console.log('출발지 좌표:', startLocation);
 
-    // 목적지 좌표 변환 (Tmap 우선, 실패 시 Nominatim)
+    // 목적지 좌표 변환 (동일 정책: 임의 좌표 금지)
     const destinationCoords = [] as Array<{ latitude: number; longitude: number; address: string }>;
     for (const destination of destinations) {
       const destAddress = typeof destination === 'string' ? destination : ((destination as any).name || (destination as any).address);
-      let preset = (destination as any).latitude && (destination as any).longitude
-        ? { latitude: (destination as any).latitude, longitude: (destination as any).longitude, address: destAddress }
-        : await geocodeWithTmap(destAddress, tmapKey).catch(() => geocodeWithNominatim(destAddress));
+      const destLat = (destination as any).latitude;
+      const destLng = (destination as any).longitude;
+      let preset: { latitude: number; longitude: number; address: string };
 
-      // 좌표 유효성 검사
+      if (destLat != null && destLng != null && isUsablePresetCoordinate(Number(destLat), Number(destLng))) {
+        preset = {
+          latitude: Number(destLat),
+          longitude: Number(destLng),
+          address: destAddress,
+        };
+      } else {
+        try {
+          const geo = await geocodeAddressReliable(destAddress, tmapKey);
+          preset = { latitude: geo.latitude, longitude: geo.longitude, address: geo.address };
+          console.log('[geocode] destination', { requested: destAddress, usedQuery: geo.usedQuery, source: geo.source });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '지오코딩 실패';
+          return NextResponse.json(
+            {
+              error: `목적지 주소를 찾을 수 없습니다: ${destAddress}`,
+              details: msg,
+              diagnostics: {
+                code: 'GEOCODE_DESTINATION_FAILED',
+                failedAddresses: [{ role: 'destination', address: destAddress }],
+                suggestedAddressHints: buildUserFacingAddressHints(destAddress),
+                nextBestActions: [
+                  '해당 구간만 도로명+번지로 한 줄 적어 주세요.',
+                  '건물명·층은 빼고 시도해 보세요.',
+                ],
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+
       if (!isValidCoordinate(preset.latitude, preset.longitude)) {
-        console.warn(`목적지 좌표가 유효하지 않음: ${destAddress}`);
-        // 기본값으로 서울 시청 좌표 사용
-        preset = { latitude: 37.566535, longitude: 126.9779692, address: destAddress };
+        return NextResponse.json(
+          {
+            error: `목적지 좌표가 유효하지 않습니다: ${destAddress}`,
+            diagnostics: {
+              code: 'GEOCODE_DESTINATION_INVALID',
+              failedAddresses: [{ role: 'destination', address: destAddress }],
+            },
+          },
+          { status: 400 }
+        );
       }
 
       destinationCoords.push(preset);
@@ -1631,40 +1709,112 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 서버사이드 Nominatim 지오코딩 (백업)
-async function geocodeWithNominatim(address: string): Promise<{ latitude: number; longitude: number; address: string }> {
-  try {
-    const url = new URL('https://nominatim.openstreetmap.org/search');
-    url.searchParams.set('q', address);
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('limit', '1');
-
-    const response = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': 'ai-onggoing/1.0 (contact: dev@ongoing.example)'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Nominatim error: ${response.status} ${response.statusText}`);
+/**
+ * 지오코딩 실패 시 임의로 서울 시청 좌표를 쓰면 경로가 완전히 틀어지므로,
+ * 여기서는 **절대** 기본 좌표를 넣지 않는다. (AI 챗/사용자 입력 주소와 무관한 경유지가 생기는 현상 방지)
+ */
+/**
+ * "위펀푸드 서초구 서초대로 350" 처럼 앞에 상호·브랜드가 붙은 경우,
+ * Tmap/Nominatim이 전체 문자열을 못 찾는 경우가 많아 **구명~도로명·번지**만 잘라 재시도한다.
+ */
+function stripLeadingBrandToDistrictRoadVariants(raw: string): string[] {
+  const t = raw.trim().replace(/\s+/g, ' ');
+  const out: string[] = [];
+  const push = (s: string) => {
+    const x = s.trim();
+    if (x && !out.includes(x)) out.push(x);
+  };
+  const m = t.match(
+    /([가-힣]{2,4}(?:구|군|시)\s+.+?(?:로|길|대로)\s*\d+(?:-\d+)?)/
+  );
+  if (m?.[1]) {
+    const core = m[1].trim();
+    push(core);
+    if (!/^(서울|경기|인천|부산|대구|광주|대전|울산|세종)/.test(core)) {
+      push(`서울특별시 ${core}`);
+      push(`서울 ${core}`);
     }
-
-    const results = await response.json();
-    if (Array.isArray(results) && results.length > 0) {
-      const item = results[0];
-      return {
-        latitude: parseFloat(item.lat),
-        longitude: parseFloat(item.lon),
-        address: item.display_name || address
-      };
-    }
-
-    // 실패 시 서울 시청 좌표 기본값
-    return { latitude: 37.566535, longitude: 126.9779692, address };
-  } catch (e) {
-    // 네트워크/기타 에러 시 기본값
-    return { latitude: 37.566535, longitude: 126.9779692, address };
   }
+  return out;
+}
+
+function buildGeocodeQueryVariants(raw: string): string[] {
+  const t = raw.trim().replace(/\s+/g, ' ');
+  if (!t) return [];
+  const out: string[] = [];
+  const push = (s: string) => {
+    const x = s.trim();
+    if (x && !out.includes(x)) out.push(x);
+  };
+  push(t);
+  for (const v of stripLeadingBrandToDistrictRoadVariants(t)) {
+    push(v);
+  }
+  // "서초동동아빌라트" → "서초동 동아빌라트" 등 동명 중복 붙여쓰기 보정
+  const normalizedDup = t.replace(/([가-힣]+동)동([가-힣])/g, '$1 $2');
+  if (normalizedDup !== t) push(normalizedDup);
+  // 광역 접두 없이 구/군으로 시작하면 서울·경기 등 접두 시도 (AI가 '서초구 …'만 줄 때)
+  if (/^(서울특별시|서울|경기도|인천|부산|대구|광주|대전|울산|세종)/.test(t) === false) {
+    if (/^(서초|강남|송파|양천|구로|마포|종로|영등포|동작|관악|서대문|은평|노원|강북|성북|동대문|중랑|광진|성동|강동|강서|금천|중구|용산|광진|성동)구/.test(t)) {
+      push(`서울특별시 ${t}`);
+      push(`서울 ${t}`);
+    }
+  }
+  return out;
+}
+
+/** 내부 재시도와 별도로, 사용자에게 보여 줄 ‘한 줄 주소’ 힌트 (건물명 제거 등) */
+function buildUserFacingAddressHints(raw: string): string[] {
+  const fromVariants = buildGeocodeQueryVariants(raw);
+  const hints = new Set<string>(fromVariants);
+  const t = raw.trim().replace(/\s+/g, ' ');
+  // 도로명+번지까지만 추출 (뒤 건물·동·층 설명 제거)
+  const roadMatch = t.match(/^(.+?(?:로|길)\s*\d+(?:-\d+)?)\b/);
+  if (roadMatch?.[1]) {
+    const core = roadMatch[1].trim();
+    if (!/^(서울|경기|인천|부산|대구|광주|대전|울산|세종)/.test(core)) {
+      hints.add(`서울특별시 ${core}`);
+      hints.add(`서울 ${core}`);
+    }
+    hints.add(core);
+  }
+  return [...hints].filter((s) => s.length >= 6).slice(0, 6);
+}
+
+// 서버사이드 Nominatim 지오코딩 (백업) — 결과 없으면 예외 (시청 좌표 폴백 금지)
+async function geocodeWithNominatim(address: string): Promise<{ latitude: number; longitude: number; address: string }> {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', address);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('countrycodes', 'kr');
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      'User-Agent': 'ai-onggoing/1.0 (contact: dev@ongoing.example)'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Nominatim error: ${response.status} ${response.statusText}`);
+  }
+
+  const results = await response.json();
+  if (Array.isArray(results) && results.length > 0) {
+    const item = results[0];
+    const lat = parseFloat(item.lat);
+    const lon = parseFloat(item.lon);
+    if (!isValidCoordinate(lat, lon)) {
+      throw new Error('Nominatim returned invalid coordinates');
+    }
+    return {
+      latitude: lat,
+      longitude: lon,
+      address: item.display_name || address
+    };
+  }
+
+  throw new Error(`Nominatim: no results for "${address}"`);
 }
 
 // 서버사이드 Tmap 지오코딩 (우선)
@@ -1688,11 +1838,40 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
   const data = await res.json();
   const poi = data?.searchPoiInfo?.pois?.poi?.[0];
   if (!poi) throw new Error('Address not found');
+  const latitude = parseFloat(poi.frontLat);
+  const longitude = parseFloat(poi.frontLon);
+  if (!isValidCoordinate(latitude, longitude)) {
+    throw new Error('Tmap returned invalid coordinates');
+  }
   return {
-    latitude: parseFloat(poi.frontLat),
-    longitude: parseFloat(poi.frontLon),
+    latitude,
+    longitude,
     address: poi.name || address,
   };
+}
+
+/** Tmap → Nominatim 순으로 여러 쿼리 변형을 시도해 실패 시 예외만 던짐 */
+async function geocodeAddressReliable(
+  address: string,
+  tmapKey: string
+): Promise<{ latitude: number; longitude: number; address: string; usedQuery: string; source: 'tmap' | 'nominatim' }> {
+  const variants = buildGeocodeQueryVariants(address);
+  let lastError: Error | null = null;
+  for (const q of variants) {
+    try {
+      const r = await geocodeWithTmap(q, tmapKey);
+      return { ...r, usedQuery: q, source: 'tmap' };
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+    }
+    try {
+      const r = await geocodeWithNominatim(q);
+      return { ...r, usedQuery: q, source: 'nominatim' };
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastError || new Error(`지오코딩 실패: "${address}"`);
 }
 
 // Tmap 자동차 경로안내 (타임머신 기능 포함)

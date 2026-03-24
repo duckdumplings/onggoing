@@ -152,6 +152,12 @@ export async function extractQuoteInfoWithLLM(
 ### 필수 필드 (견적 산출용)
 - origin: 출발지 주소 (address 필수)
 - destinations: 경유지/목적지 배열 (각각 address 필수, deliveryTime은 HH:mm, isNextDay, dwellMinutes)
+
+### 한국 물류 메모 라벨 (반드시 준수)
+- "상차지/상차/출발"에 적힌 줄 → **origin** (이전 대화의 주소와 섞지 말 것)
+- "주소" 또는 "배송지/하차지"에 적힌 줄 → **목적지 경유 순서대로 destinations**에 넣을 것 (기업 대표 주소가 배송 방문지인 경우가 많음)
+- "반납지/반납" → **destinations의 마지막**에 두는 것이 일반적 (상차 → 배송 → 반납 순)
+- 사용자가 한 번에 붙여 넣은 메모이면 **그 메모 안의 라벨만** 쓰고, 예전에 나온 "동아빌라트" 등 **추측으로 주소를 덧붙이지 말 것**
 - vehicleType: '레이' 또는 '스타렉스'
 - scheduleType: 'regular' 또는 'ad-hoc'
 - departureTime: 출발 시간 (HH:mm)

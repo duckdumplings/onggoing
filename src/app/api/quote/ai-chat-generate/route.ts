@@ -25,6 +25,7 @@ import {
 import { resolvePoiHintsFromText, saveToolCallLog } from '@/domains/quote/services/toolRouter';
 import { retrieveRagContext, retrieveSimilarQueryCandidate } from '@/domains/quote/services/ragRetriever';
 import { searchWebKnowledge } from '@/domains/quote/services/webKnowledgeRetriever';
+import { parseStructuredLogisticsMemo } from '@/domains/quote/services/structuredLogisticsParser';
 
 type ExtractedContext = {
   vehicleType?: '레이' | '스타렉스';
@@ -121,20 +122,67 @@ function buildRouteFailureConversation(errorPayload: any): {
   const details = errorPayload?.details || {};
   const errors: string[] = Array.isArray(details?.errors) ? details.errors : [];
   const suggestions: RouteErrorSuggestion[] = Array.isArray(details?.suggestions) ? details.suggestions : [];
+  const diag = errorPayload?.diagnostics;
+  const diagCode = typeof diag?.code === 'string' ? diag.code : '';
+  const diagActions: string[] = Array.isArray(diag?.nextBestActions) ? diag.nextBestActions : [];
+  const addressHints: string[] = Array.isArray(diag?.suggestedAddressHints)
+    ? diag.suggestedAddressHints.filter((s: unknown) => typeof s === 'string' && s.trim())
+    : [];
+  const failedAddr =
+    Array.isArray(diag?.failedAddresses) && diag.failedAddresses[0]?.address
+      ? String(diag.failedAddresses[0].address)
+      : '';
 
-  const firstReason = errors[0] || errorPayload?.message || '경로 계산 중 충돌이 발생했습니다.';
+  const firstReason =
+    errors[0] ||
+    errorPayload?.error ||
+    errorPayload?.message ||
+    (typeof details === 'string' ? details : '') ||
+    '경로 계산 중 충돌이 발생했습니다.';
+
+  // 지오코딩 실패: LLM이 아니라 API 템플릿이었던 문구를, 사용자 입력(raw)을 존중하는 톤으로 정리
+  if (diagCode.startsWith('GEOCODE_')) {
+    const roleLabel =
+      diagCode === 'GEOCODE_DESTINATION_FAILED' || diagCode === 'GEOCODE_DESTINATION_INVALID'
+        ? '목적지'
+        : '출발지';
+    const lines = [
+      '메모처럼 길게 적어 주셔도 괜찮아요. 지도·경로를 그리려면 **주소를 좌표로 바꾸는 단계**가 한 번 더 필요한데, 방금은 그 단계에서만 막혔어요.',
+      '',
+      `${roleLabel}를 시스템이 아직 좌표로 못 찾았어요:`,
+      failedAddr ? `「${failedAddr}」` : firstReason,
+      '',
+      '보통은 **건물명·층·괄호 설명만 잠시 빼고**, 도로명+번지 위주로 한 줄만 보내 주시면 같은 배송이라도 바로 잡혀요. 아래 줄을 그대로 복사해서 다시 말씀해 주셔도 됩니다.',
+    ];
+    const assistantMessage = lines.filter(Boolean).join('\n');
+
+    const suggestedPrompts =
+      addressHints.length > 0
+        ? addressHints.slice(0, 5)
+        : diagActions.length > 0
+          ? diagActions.slice(0, 4)
+          : [`${roleLabel}: 서울특별시 OO구 OO로 123`];
+
+    return { assistantMessage, suggestedPrompts };
+  }
+
   const assistantMessage = [
     '좋은 질문이에요. 지금 계산이 멈춘 이유를 먼저 설명드릴게요.',
     firstReason,
     errors.length > 1 ? `추가로 ${errors.length - 1}개의 충돌이 더 있어요.` : '',
-    '아래 해결안 중 하나로 바로 다시 계산해볼 수 있어요.'
+    diagActions.length ? '아래 안내대로 주소만 다듬어서 다시 시도해 보세요.' : '아래 해결안 중 하나로 바로 다시 계산해볼 수 있어요.',
   ].filter(Boolean).join('\n');
 
-  const suggestedPrompts = suggestions.map((s) => {
-    const title = s.title || '해결안 적용';
-    const desc = s.description ? `(${s.description})` : '';
-    return `${title} ${desc}`.trim();
-  }).slice(0, 4);
+  const suggestedPrompts =
+    diagActions.length > 0
+      ? diagActions.slice(0, 4)
+      : suggestions
+          .map((s) => {
+            const title = s.title || '해결안 적용';
+            const desc = s.description ? `(${s.description})` : '';
+            return `${title} ${desc}`.trim();
+          })
+          .slice(0, 4);
 
   return { assistantMessage, suggestedPrompts };
 }
@@ -472,6 +520,17 @@ export async function POST(request: NextRequest) {
     });
     extracted = mergeWithSlotExtracted(extracted, previousSlotState);
 
+    const structuredMemo = parseStructuredLogisticsMemo(message);
+    let replaceRouteFromMemo = false;
+    if (structuredMemo?.extracted?.origin?.address && structuredMemo.extracted.destinations?.length) {
+      replaceRouteFromMemo = structuredMemo.replaceRoute;
+      extracted = normalizeExtractedQuoteInfo({
+        ...extracted,
+        origin: structuredMemo.extracted.origin,
+        destinations: structuredMemo.extracted.destinations,
+      });
+    }
+
     if ((!extracted.origin?.address || !extracted.destinations?.length) && message.length <= 120) {
       const poiCandidates = await resolvePoiHintsFromText(message);
       if (poiCandidates.length) {
@@ -493,7 +552,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let slotState = mergeSlotState(previousSlotState, extracted, message);
+    let slotState = mergeSlotState(previousSlotState, extracted, message, {
+      replaceRoute: replaceRouteFromMemo,
+    });
     const isMultiScenario = detectMultiScenarioInput(message);
 
     const missingFields: string[] = getMissingSlots(slotState, false);
@@ -645,6 +706,7 @@ export async function POST(request: NextRequest) {
             code: 'ROUTE_OPTIMIZATION_FAILED',
             message: err?.message || err?.error || '경로 계산에 실패했습니다.',
             details: err?.details,
+            diagnostics: err?.diagnostics,
           },
         },
         { status: routeRes.status >= 400 && routeRes.status < 600 ? routeRes.status : 500 }
