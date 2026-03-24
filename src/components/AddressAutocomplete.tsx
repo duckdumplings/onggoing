@@ -334,30 +334,23 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   }
 
   useEffect(() => {
-    if (!pendingEnterCommit || suggestions.length === 0) return
+    if (!pendingEnterCommit) return
 
-    const first = suggestions[0]
-    const confidence = getCandidateConfidence(first, query)
-    if (confidence >= HIGH_CONFIDENCE_THRESHOLD) {
-      handleSelect(first, 'enter-pending')
+    // "새 입력 후 바로 Enter" UX 우선:
+    // 결과가 도착하면 신뢰도와 무관하게 1순위를 우선 확정한다.
+    if (suggestions.length > 0) {
+      handleSelect(suggestions[0], 'enter-pending')
       return
     }
 
-    if (confidence >= MID_CONFIDENCE_THRESHOLD) {
-      setInputState('ambiguous')
-      setArmedByEnter(true)
-      setOpen(true)
-      setHighlight(0)
-      setStatusMessage('유사 결과입니다. Enter 한 번 더 누르면 상단 결과로 확정됩니다.')
+    // 결과가 없고 검색이 끝난 경우에는 pending 상태를 해제하고 안내한다.
+    if (!loading && (searchStatus === 'no_results' || searchStatus === 'error' || searchStatus === 'rate_limited')) {
       setPendingEnterCommit(false)
-      return
+      setInputState('ready')
+      setOpen(true)
+      setStatusMessage(getStatusMessage(searchStatus) || '정확한 항목을 선택해 주세요.')
     }
-
-    setInputState('ready')
-    setStatusMessage('정확한 항목을 선택해 주세요.')
-    setPendingEnterCommit(false)
-    setOpen(true)
-  }, [pendingEnterCommit, suggestions, query])
+  }, [pendingEnterCommit, suggestions, loading, searchStatus, query])
 
   useEffect(() => {
     if (isEditing && (loading || suggestions.length > 0)) {

@@ -69,6 +69,8 @@ export interface RouteOptimizationState {
   optimizeRouteWith: (override?: Partial<{
     origins: Coordinate | null;
     destinations: Coordinate[];
+    rawOrigins: string[];
+    rawDestinations: string[];
     vehicleType: RouteOptimizationState['vehicleType'];
     options: Partial<OptimizationOptions>;
     dwellMinutes: number[];
@@ -106,18 +108,36 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setOptionsState(prev => ({ ...prev, ...o }));
   }, []);
 
-  const buildPayload = useCallback((ovr?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
+  const buildPayload = useCallback((ovr?: Partial<{
+    origins: Coordinate | null;
+    destinations: Coordinate[];
+    rawOrigins: string[];
+    rawDestinations: string[];
+    vehicleType: RouteOptimizationState['vehicleType'];
+    options: Partial<OptimizationOptions>;
+    dwellMinutes: number[];
+  }>) => {
     const o = ovr?.origins ?? origins;
     const d = ovr?.destinations ?? destinations;
+    const rawOrigins = ovr?.rawOrigins;
+    const rawDestinations = ovr?.rawDestinations;
     const v = ovr?.vehicleType ?? vehicleType;
     const opt = { ...options, ...(ovr?.options || {}) };
     const dm = ovr?.dwellMinutes ?? dwellMinutesState;
-    const originPayload = o ? [{ latitude: o.lat, longitude: o.lng, address: o.address || 'origin' }] : [];
-    const destPayload = d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: dt.address || 'dest' }));
+    const originPayload = Array.isArray(rawOrigins)
+      ? rawOrigins.map((address) => ({ address }))
+      : (o ? [{ latitude: o.lat, longitude: o.lng, address: o.address || 'origin' }] : []);
+    const destPayload = Array.isArray(rawDestinations)
+      ? rawDestinations.map((address) => ({ address }))
+      : d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: dt.address || 'dest' }));
     return {
       origins: originPayload,
       destinations: destPayload,
-      finalDestinationAddress: opt.useExplicitDestination && d.length ? d[d.length - 1]?.address || null : null,
+      finalDestinationAddress: opt.useExplicitDestination
+        ? (Array.isArray(rawDestinations) && rawDestinations.length
+          ? rawDestinations[rawDestinations.length - 1]
+          : (d.length ? d[d.length - 1]?.address || null : null))
+        : null,
       vehicleType: v,
       optimizeOrder: opt.optimizeOrder,
       useRealtimeTraffic: opt.useRealtimeTraffic,
@@ -131,7 +151,15 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     };
   }, [origins, destinations, vehicleType, options, dwellMinutesState]);
 
-  const optimizeRouteWith = useCallback(async (override?: Partial<{ origins: Coordinate | null; destinations: Coordinate[]; vehicleType: RouteOptimizationState['vehicleType']; options: Partial<OptimizationOptions>; dwellMinutes: number[] }>) => {
+  const optimizeRouteWith = useCallback(async (override?: Partial<{
+    origins: Coordinate | null;
+    destinations: Coordinate[];
+    rawOrigins: string[];
+    rawDestinations: string[];
+    vehicleType: RouteOptimizationState['vehicleType'];
+    options: Partial<OptimizationOptions>;
+    dwellMinutes: number[];
+  }>) => {
     const payload = buildPayload(override);
     console.log('[useRouteOptimization] optimizeRouteWith 호출됨, payload:', payload);
     console.log('[useRouteOptimization] 배송완료시간 상세:', {
@@ -209,9 +237,10 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
               dest.address === item.address
             );
             if (originalDest) {
-              const rawLat = Number(originalDest.latitude);
-              const rawLng = Number(originalDest.longitude);
-              if (!isInvalidCoord(rawLat, rawLng)) {
+              const hasLatLng = 'latitude' in originalDest && 'longitude' in originalDest;
+              const rawLat = hasLatLng ? Number((originalDest as any).latitude) : Number.NaN;
+              const rawLng = hasLatLng ? Number((originalDest as any).longitude) : Number.NaN;
+              if (hasLatLng && !isInvalidCoord(rawLat, rawLng)) {
                 return {
                   lat: rawLat,
                   lng: rawLng,

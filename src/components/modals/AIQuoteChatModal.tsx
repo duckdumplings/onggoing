@@ -804,14 +804,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
     try {
       const result = await optimizeRouteWith({
-        origins: requestData.origins?.[0]
-          ? { lat: 0, lng: 0, address: requestData.origins[0] }
-          : null,
-        destinations: (requestData.destinations || []).map((address: string) => ({
-          lat: 0,
-          lng: 0,
-          address,
-        })),
+        rawOrigins: requestData.origins?.[0] ? [requestData.origins[0]] : [],
+        rawDestinations: requestData.destinations || [],
         vehicleType: requestData.vehicleType,
         options: {
           optimizeOrder: requestData.optimizeOrder,
