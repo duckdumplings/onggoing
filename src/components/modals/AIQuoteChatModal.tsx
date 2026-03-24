@@ -123,7 +123,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'input-order' | 'optimized-order'>('input-order');
   const [expandedEvidenceByMessageId, setExpandedEvidenceByMessageId] = useState<Record<string, boolean>>({});
-  const [feedbackSentByMessageId, setFeedbackSentByMessageId] = useState<Record<string, boolean>>({});
+  const [feedbackSentByMessageId, setFeedbackSentByMessageId] = useState<Record<string, 'positive' | 'negative' | undefined>>({});
+  const [authEmail, setAuthEmail] = useState('info@naeyil.com');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUserEmail, setAuthUserEmail] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [showAuthForm, setShowAuthForm] = useState(false);
 
   const conversationContext = useMemo(() => {
     if (!latestResult?.extracted) return undefined;
@@ -301,18 +307,110 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     return ['출발지: 강남역, 목적지: 판교역, 차량: 레이', '내일 오전 10시 출발, 정기 배송으로 계산해줘'];
   }, [latestResult?.suggestedPrompts, messages]);
 
-  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit> => {
+  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit | null> => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
+    if (!token) return null;
     const headers = new Headers(base || {});
-    if (token) headers.set('Authorization', `Bearer ${token}`);
+    headers.set('Authorization', `Bearer ${token}`);
     return Object.fromEntries(headers.entries());
+  };
+
+  const bootstrapServerSession = async () => {
+    const list = await fetchSessions();
+    if (list.length > 0) {
+      const targetId = list[0].id;
+      setCurrentSessionId(targetId);
+      await loadSessionMessages(targetId);
+      await fetchAttachments(targetId);
+      await fetchGeneratedFiles(targetId);
+      return;
+    }
+
+    const created = await createNewSession();
+    if (!created) return;
+    setMessages([
+      {
+        id: createMessageId(),
+        role: 'assistant',
+        kind: 'system',
+        content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+        timestamp: new Date(),
+      },
+    ]);
+    await persistMessage(
+      created.id,
+      'system',
+      '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+    );
+    await fetchAttachments(created.id);
+    await fetchGeneratedFiles(created.id);
+  };
+
+  const handleSignIn = async () => {
+    const email = authEmail.trim();
+    const password = authPassword.trim();
+    if (!email || !password) {
+      setAuthError('이메일과 비밀번호를 입력해 주세요.');
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error || !data.session?.access_token) {
+        throw new Error(error?.message || '로그인에 실패했습니다.');
+      }
+      setAuthUserEmail(data.user?.email || email);
+      setSessionPersistenceEnabled(true);
+      setShowAuthForm(false);
+      setAuthPassword('');
+      if (isOpen) {
+        await bootstrapServerSession();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.';
+      setAuthError(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setAuthUserEmail(null);
+      setSessionPersistenceEnabled(false);
+      setSessions([]);
+      setCurrentSessionId(`local-${Date.now()}`);
+      setAttachments([]);
+      setGeneratedFiles([]);
+      setShowAuthForm(false);
+      pushAssistantMessage('로그아웃되었습니다. 현재는 로컬 임시 대화 모드입니다.', 'system');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '로그아웃 중 오류가 발생했습니다.';
+      setAuthError(message);
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const fetchSessions = async () => {
     try {
+      const headers = await getAuthHeaders();
+      if (!headers) {
+        setSessionPersistenceEnabled(false);
+        return [] as ChatSession[];
+      }
       const res = await fetch('/api/quote/chat-sessions?limit=50', {
-        headers: await getAuthHeaders(),
+        headers,
       });
       if (!res.ok) {
         setSessionPersistenceEnabled(false);
@@ -333,6 +431,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const createNewSession = async (title?: string) => {
     try {
       const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
+      if (!headers) throw new Error('NO_AUTH_SESSION');
       const res = await fetch('/api/quote/chat-sessions', {
         method: 'POST',
         headers,
@@ -586,6 +685,30 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     })();
   }, [isOpen]);
 
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!isMounted) return;
+      const session = data.session;
+      setAuthUserEmail(session?.user?.email || null);
+      setSessionPersistenceEnabled(Boolean(session?.access_token));
+    })();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) return;
+      setAuthUserEmail(session?.user?.email || null);
+      setSessionPersistenceEnabled(Boolean(session?.access_token));
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const handleSend = async () => {
     const message = input.trim();
     if (!message || loading) return;
@@ -811,13 +934,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   };
 
   const submitFeedback = async (msg: ChatMessage, type: 'positive' | 'negative') => {
-    if (!currentSessionId || currentSessionId.startsWith('local-')) return;
+    // UX: 버튼 클릭 즉시 시각적 반영(로그인/세션 유무와 무관)
+    setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: type }));
     try {
       const res = await fetch('/api/quote/chat-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: currentSessionId,
+          sessionId: currentSessionId && !currentSessionId.startsWith('local-') ? currentSessionId : null,
           userInput: msg.sourceUserText || 'unknown',
           assistantOutput: msg.content,
           feedbackType: type,
@@ -829,8 +953,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error?.message || `HTTP_${res.status}`);
       }
-      setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: true }));
     } catch (error) {
+      // 실패 시 버튼 상태 롤백
+      setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: undefined }));
       const message = error instanceof Error ? error.message : '알 수 없는 오류';
       pushAssistantMessage(`피드백 저장 실패: ${message}`, 'system');
     }
@@ -1050,6 +1175,30 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => {
+                  setShowAuthForm((prev) => !prev);
+                  setAuthError(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  authUserEmail
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {authUserEmail ? '로그인됨' : '로그인'}
+              </button>
+              {authUserEmail && (
+                <button
+                  type="button"
+                  onClick={() => void handleSignOut()}
+                  disabled={isAuthLoading}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                >
+                  로그아웃
+                </button>
+              )}
+              <button
                 onClick={handleReset}
                 className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden md:block"
                 title="새 대화 시작"
@@ -1066,6 +1215,53 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               </button>
             </div>
           </div>
+
+          {(showAuthForm || authError) && (
+            <div className="px-4 md:px-8 py-3 border-b border-slate-100 bg-slate-50/80">
+              {authUserEmail ? (
+                <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                    로그인 계정: {authUserEmail}
+                  </span>
+                  <span className="text-slate-500">채팅 저장, 파일 업로드/생성, 피드백 기능이 활성화됩니다.</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex flex-col gap-2 md:flex-row">
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="이메일"
+                      className="w-full md:w-[240px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleSignIn();
+                        }
+                      }}
+                      placeholder="비밀번호"
+                      className="w-full md:w-[220px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSignIn()}
+                      disabled={isAuthLoading}
+                      className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      {isAuthLoading ? '로그인 중...' : '로그인'}
+                    </button>
+                  </div>
+                  {authError && <div className="text-xs text-rose-600">{authError}</div>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Messages Scroll Area */}
           <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-6 scroll-smooth custom-scrollbar bg-slate-50/50">
