@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 
+function inferFeedbackTags(params: {
+  feedbackType: 'positive' | 'negative';
+  userInput: string;
+  assistantOutput: string;
+}): string[] {
+  const tags = new Set<string>();
+  if (params.feedbackType === 'positive') {
+    tags.add('feedback-positive');
+    return [...tags];
+  }
+  tags.add('feedback-negative');
+  const text = `${params.userInput}\n${params.assistantOutput}`;
+  if (/상차|배송|반납|출발|도착|선행상차/.test(text) && /중복|순서|불일치|오인|틀렸/.test(text)) {
+    tags.add('role-misclassification');
+  }
+  if (/주소|좌표|지오코딩|못 찾|강 위|한강/.test(text)) {
+    tags.add('address-contamination');
+  }
+  if (/경유\s*\d|숫자|표기|순서/.test(text)) {
+    tags.add('route-ordering');
+  }
+  if (/느리|응답|반응|피드백/.test(text)) {
+    tags.add('ux-response');
+  }
+  return [...tags];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -16,6 +43,12 @@ export async function POST(request: NextRequest) {
         ? rawMessageId
         : null;
     const tags = Array.isArray(body?.tags) ? body.tags.map((tag: unknown) => String(tag)) : [];
+    const inferredTags = inferFeedbackTags({
+      feedbackType,
+      userInput,
+      assistantOutput,
+    });
+    const mergedTags = Array.from(new Set([...tags, ...inferredTags]));
 
     if (!userInput) {
       return NextResponse.json(
@@ -35,7 +68,7 @@ export async function POST(request: NextRequest) {
           assistant_output: assistantOutput || null,
           error_code: feedbackType === 'positive' ? 'USER_FEEDBACK_POSITIVE' : 'USER_FEEDBACK_NEGATIVE',
           reason,
-          tags,
+          tags: mergedTags,
           metadata: {
             source: 'ui-feedback',
             feedback_type: feedbackType,

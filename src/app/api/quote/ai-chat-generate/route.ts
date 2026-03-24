@@ -209,9 +209,9 @@ function extractExpectedRouteCounts(message: string): {
   totalStopsCount?: number;
 } {
   const result: { pickupCount?: number; deliveryCount?: number; returnCount?: number; totalStopsCount?: number } = {};
-  const pickup = message.match(/상차지(?:는)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
-  const delivery = message.match(/배송지(?:는)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
-  const returns = message.match(/반납지(?:는)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
+  const pickup = message.match(/상차(?:지)?(?:는|:)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
+  const delivery = message.match(/배송(?:지)?(?:는|:)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
+  const returns = message.match(/반납(?:지)?(?:는|:)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
   const totalStops = message.match(/총\s*경유지(?:가)?\s*(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*곳/i);
   const p = parseKoreanCountToken(pickup?.[1]);
   const d = parseKoreanCountToken(delivery?.[1]);
@@ -260,8 +260,21 @@ type IntentInterpretation = {
   addressCandidates: string[];
   pickupCandidates: string[];
   intentionalRevisitAddresses: string[];
+  roleTagged: {
+    pickup: string[];
+    delivery: string[];
+    returns: string[];
+  };
   notes: string[];
 };
+
+type OperationalIntent =
+  | 'default'
+  | 'acknowledge'
+  | 'recalculate'
+  | 'cause-analysis'
+  | 'config-change'
+  | 'validation-request';
 
 type GuardrailResult = {
   isValid: boolean;
@@ -281,6 +294,102 @@ type AutoFixReport = {
   removedAsDestinationDuplicates: string[];
   insertedLeadingPickup: string[];
 };
+
+function detectOperationalIntent(message: string): OperationalIntent {
+  const s = String(message || '').trim();
+  if (!s) return 'default';
+  if (
+    /^(이제\s*)?문제없|확인했어|오케이|좋아|좋네요|완료|고마워|감사/.test(s) ||
+    /(동일한\s*실수|재발|안\s*하는거야|문제없지|괜찮은거야|보장)/.test(s)
+  ) {
+    return 'acknowledge';
+  }
+  if (/(왜|원인|이유|문제|잘못|오류|원인파악)/.test(s)) {
+    return 'cause-analysis';
+  }
+  if (/(재검토|다시 계산|재계산|재시도|다시 해)/.test(s)) {
+    return 'recalculate';
+  }
+  if (/(검증|확인|체크|맞는지|검토)/.test(s)) {
+    return 'validation-request';
+  }
+  if (/(정기|비정기|레이|스타렉스|시간우선|무료도로|스케줄|차량)/.test(s) && !hasAddressLikeToken(s)) {
+    return 'config-change';
+  }
+  return 'default';
+}
+
+function normalizeLogisticsText(message: string): string {
+  return String(message || '')
+    .replace(/\r/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(/[()]/g, ' ')
+    // "/ 주5회(월~금)" 토큰만 제거하고 뒤쪽 주소열은 보존
+    .replace(/\/\s*주\d+회(?:\s*\([^)]*\))?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function mergeExpectedCounts(
+  current: { pickupCount?: number; deliveryCount?: number; returnCount?: number; totalStopsCount?: number },
+  previous?: { pickupCount?: number; deliveryCount?: number; returnCount?: number; totalStopsCount?: number }
+): { pickupCount?: number; deliveryCount?: number; returnCount?: number; totalStopsCount?: number } {
+  const merged = {
+    pickupCount: current.pickupCount ?? previous?.pickupCount,
+    deliveryCount: current.deliveryCount ?? previous?.deliveryCount,
+    returnCount: current.returnCount ?? previous?.returnCount,
+    totalStopsCount: current.totalStopsCount ?? previous?.totalStopsCount,
+  };
+  return merged;
+}
+
+function extractRoleTaggedAddressesFromMessage(message: string): {
+  pickup: string[];
+  delivery: string[];
+  returns: string[];
+} {
+  const pickup: string[] = [];
+  const delivery: string[] = [];
+  const returns: string[] = [];
+  const lines = String(message || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const addressRegex = /(?:(?:서울(?:특별시|시)?|경기|인천|부산|대구|광주|대전|울산|세종)\s+)?(?:[가-힣0-9]+(?:시|구|군)\s+)?[가-힣0-9\s-]*(?:(?:로|길|대로)\s*\d+(?:-\d+)?|[가-힣0-9]+동\s*\d+(?:-\d+)?)/g;
+
+  const push = (bucket: string[], raw: string) => {
+    const v = normalizeAddressForGeocode(raw);
+    if (!v || !looksResolvableAddressText(v)) return;
+    if (!bucket.includes(v)) bucket.push(v);
+  };
+
+  for (const line of lines) {
+    const normalizedLine = normalizeLogisticsText(line);
+    const addresses = (normalizedLine.match(addressRegex) || []).map((a) => a.trim());
+    if (!addresses.length) continue;
+    const hasPickupLabel = /(상차지|상차|출발지|출발|픽업)/.test(normalizedLine);
+    const hasDeliveryLabel = /(배송지|배송|하차지|목적지|도착)/.test(normalizedLine);
+    const hasReturnLabel = /(\[회수\]|회수|반납지|반납|복귀|수거)/.test(normalizedLine);
+    const looksTabular = /\s{2,}/.test(line) || /\d{1,2}:\d{2}/.test(line);
+
+    if (hasReturnLabel) {
+      for (const addr of addresses) push(returns, addr);
+      continue;
+    }
+    if (hasPickupLabel) {
+      for (const addr of addresses) push(pickup, addr);
+      continue;
+    }
+    if (hasDeliveryLabel) {
+      for (const addr of addresses) push(delivery, addr);
+      continue;
+    }
+    if (looksTabular && addresses.length >= 2) {
+      push(pickup, addresses[0]);
+      for (const addr of addresses.slice(1)) push(delivery, addr);
+      continue;
+    }
+  }
+
+  return { pickup, delivery, returns };
+}
 
 function extractAddressCandidatesFromMessage(message: string): string[] {
   const regex = /(?:(?:서울(?:특별시)?|경기|인천|부산|대구|광주|대전|울산|세종)\s+)?(?:[가-힣0-9]+(?:시|구|군)\s+)?[가-힣0-9\s-]*(?:로|길|대로)\s*\d+(?:-\d+)?/g;
@@ -382,11 +491,13 @@ function buildIntentInterpretation(message: string, expectedCounts: { pickupCoun
   if (Number.isFinite(expectedCounts.pickupCount)) notes.push(`상차 ${expectedCounts.pickupCount}곳`);
   if (Number.isFinite(expectedCounts.deliveryCount)) notes.push(`배송 ${expectedCounts.deliveryCount}곳`);
   if (Number.isFinite(expectedCounts.returnCount)) notes.push(`반납 ${expectedCounts.returnCount}곳`);
+  const roleTagged = extractRoleTaggedAddressesFromMessage(message);
   return {
     expectedCounts,
     addressCandidates: extractAddressCandidatesFromMessage(message),
     pickupCandidates: extractPickupCandidatesFromMessage(message),
     intentionalRevisitAddresses,
+    roleTagged,
     notes,
   };
 }
@@ -409,6 +520,15 @@ function runGuardrailValidation(extracted: any, interpretation: IntentInterpreta
   if (invalidDestinations > 0) {
     issues.push(`유효하지 않은 경유지 ${invalidDestinations}건`);
   }
+  const destinationKeys = destinations.map((d: any) => canonicalAddressKey(String(d?.address || ''))).filter(Boolean);
+  const duplicateKeys = destinationKeys.filter((key: string, idx: number) => destinationKeys.indexOf(key) !== idx);
+  if (duplicateKeys.length > 0) {
+    issues.push(`중복 경유지 ${new Set(duplicateKeys).size}건`);
+  }
+  const originKey = canonicalAddressKey(originAddress);
+  if (originKey && destinationKeys.includes(originKey)) {
+    issues.push('출발지와 동일한 경유지가 포함됨');
+  }
 
   const expected = interpretation.expectedCounts;
   const hasExpected = Number.isFinite(expected.pickupCount) || Number.isFinite(expected.deliveryCount) || Number.isFinite(expected.returnCount);
@@ -418,8 +538,105 @@ function runGuardrailValidation(extracted: any, interpretation: IntentInterpreta
       issues.push(`요청 개수와 인식 개수 불일치(기대 ${expectedStops}, 인식 ${destinations.length})`);
     }
   }
+  if (Number.isFinite(expected.deliveryCount)) {
+    const pickupCount = expected.pickupCount ?? 1;
+    const returnCount = expected.returnCount ?? 0;
+    const inferredDeliveryCount = Math.max(0, destinations.length - (pickupCount >= 2 ? 1 : 0) - returnCount);
+    if (inferredDeliveryCount !== expected.deliveryCount) {
+      issues.push(`배송지 개수 불일치(기대 ${expected.deliveryCount}, 인식 ${inferredDeliveryCount})`);
+    }
+  }
 
   return { isValid: issues.length === 0, issues, missingFields };
+}
+
+function applyRoleTaggedHybridResolution(extracted: any, interpretation: IntentInterpretation): any {
+  const pickup = interpretation.roleTagged.pickup || [];
+  const delivery = interpretation.roleTagged.delivery || [];
+  const returns = interpretation.roleTagged.returns || [];
+  if (pickup.length === 0 && delivery.length === 0 && returns.length === 0) {
+    return extracted;
+  }
+
+  const origin = pickup[0] || extracted?.origin?.address || '';
+  const restPickups = pickup.slice(1);
+  const orderedDestinations: Array<{ address: string }> = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const address = normalizeAddressForGeocode(raw);
+    const key = canonicalAddressKey(address);
+    if (!address || !key || seen.has(key)) return;
+    seen.add(key);
+    orderedDestinations.push({ address });
+  };
+
+  for (const addr of restPickups) push(addr);
+  for (const addr of delivery) push(addr);
+  for (const addr of returns) push(addr);
+
+  // 역할 기반 재구성이 불완전하면 기존 추출값 보존
+  if (!looksResolvableAddressText(origin) || orderedDestinations.length === 0) {
+    return extracted;
+  }
+  return normalizeExtractedQuoteInfo({
+    ...extracted,
+    origin: { address: origin },
+    destinations: orderedDestinations,
+  });
+}
+
+function buildRouteDiffItems(before: any, after: any): string[] {
+  const diffs: string[] = [];
+  const beforeOrigin = String(before?.origin?.address || '').trim();
+  const afterOrigin = String(after?.origin?.address || '').trim();
+  if (beforeOrigin !== afterOrigin) {
+    diffs.push(`출발지: ${beforeOrigin || '-'} → ${afterOrigin || '-'}`);
+  }
+  const beforeDest = Array.isArray(before?.destinations) ? before.destinations.map((d: any) => String(d?.address || '').trim()).filter(Boolean) : [];
+  const afterDest = Array.isArray(after?.destinations) ? after.destinations.map((d: any) => String(d?.address || '').trim()).filter(Boolean) : [];
+  if (beforeDest.length !== afterDest.length) {
+    diffs.push(`경유지 수: ${beforeDest.length} → ${afterDest.length}`);
+  }
+  const beforeLast = beforeDest[beforeDest.length - 1] || '-';
+  const afterLast = afterDest[afterDest.length - 1] || '-';
+  if (beforeLast !== afterLast) {
+    diffs.push(`반납/최종 도착: ${beforeLast} → ${afterLast}`);
+  }
+  if (JSON.stringify(beforeDest) !== JSON.stringify(afterDest)) {
+    diffs.push(`경유 순서: ${beforeDest.join(' → ') || '-'} → ${afterDest.join(' → ') || '-'}`);
+  }
+  return diffs.slice(0, 4);
+}
+
+function formatRoleSummary(extracted: any, interpretation: IntentInterpretation): string {
+  const pickupCount = interpretation.expectedCounts.pickupCount ?? 1;
+  const returnCount = interpretation.expectedCounts.returnCount ?? 0;
+  const origin = String(extracted?.origin?.address || '-');
+  const allDest = Array.isArray(extracted?.destinations)
+    ? extracted.destinations.map((d: any) => String(d?.address || '').trim()).filter(Boolean)
+    : [];
+  const leadPickup = pickupCount >= 2 && allDest.length > 0 ? allDest[0] : null;
+  const deliveryStart = leadPickup ? 1 : 0;
+  const deliveryEnd = Math.max(deliveryStart, allDest.length - (returnCount > 0 ? 1 : 0));
+  const deliveries = allDest.slice(deliveryStart, deliveryEnd);
+  const returns = returnCount > 0 && allDest.length > 0 ? [allDest[allDest.length - 1]] : [];
+  return [
+    `- 상차: ${pickupCount}곳 (출발 ${origin}${leadPickup ? `, 선행상차 ${leadPickup}` : ''})`,
+    `- 배송: ${interpretation.expectedCounts.deliveryCount ?? deliveries.length}곳 (${deliveries.join(' → ') || '-'})`,
+    `- 반납: ${interpretation.expectedCounts.returnCount ?? returns.length}곳 (${returns.join(' → ') || '-'})`,
+  ].join('\n');
+}
+
+function formatValidationSummary(guardrail: GuardrailResult, readiness: ReadinessResult, countMismatchReason: string | null): string {
+  const lines: string[] = [];
+  lines.push(`- 개수 검증: ${countMismatchReason ? `실패 (${countMismatchReason})` : '통과'}`);
+  lines.push(`- 주소성 검증: ${guardrail.issues.some((i) => i.includes('유효')) || guardrail.missingFields.length > 0 ? '실패' : '통과'}`);
+  lines.push(`- 중복/역할 검증: ${guardrail.issues.some((i) => i.includes('중복') || i.includes('동일') || i.includes('불일치')) ? '실패' : '통과'}`);
+  lines.push(`- 준비도: ${readiness.score} (${readiness.isReady ? '통과' : '실패'})`);
+  if (guardrail.issues.length > 0) {
+    lines.push(`- 상세 이슈: ${guardrail.issues.slice(0, 3).join(', ')}`);
+  }
+  return lines.join('\n');
 }
 
 function autoFixExtractedRoute(extracted: any, interpretation: IntentInterpretation): { fixed: any; report: AutoFixReport } {
@@ -585,16 +802,6 @@ function evaluateRouteReadiness(params: {
   };
 }
 
-function canProceedWithMinimalRoute(extracted: any): boolean {
-  const origin = String(extracted?.origin?.address || '').trim();
-  const destinations = Array.isArray(extracted?.destinations) ? extracted.destinations : [];
-  const validOrigin = looksResolvableAddressText(origin);
-  const validDestinations = destinations.filter((d: any) =>
-    looksResolvableAddressText(String(d?.address || ''))
-  );
-  return validOrigin && validDestinations.length > 0;
-}
-
 function looksResolvableAddressText(value: string): boolean {
   const s = value.trim();
   if (!s) return false;
@@ -650,6 +857,8 @@ function sanitizeExtractedRouteForAutoFix(extracted: any) {
 function normalizeAddressForGeocode(address: string): string {
   const compact = String(address || '')
     .trim()
+    // 역할 라벨이 주소 본문에 섞여 들어오는 케이스 제거
+    .replace(/\b(?:출발지?|출발|선행상차|상차지?|배송지?|배송|반납지?|반납|도착)\s*[:：]?\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/(로|길|대로)(\d)/g, '$1 $2')
     .replace(/(로)\s*(\d+)\s*가길\s*(\d+)/g, '$1$2가길 $3')
@@ -813,6 +1022,113 @@ function buildDeterministicRouteDraftMessage(params: {
   return msg;
 }
 
+function buildCauseAnalysisMessage(params: {
+  interpretation: IntentInterpretation;
+  guardrail: GuardrailResult;
+  routeDiffItems: string[];
+  history: ChatHistoryItem[];
+}): string {
+  const historyText = params.history
+    .slice(-8)
+    .map((h) => String(h?.content || ''))
+    .join('\n');
+  const previousWrongSignals: string[] = [];
+  if (/요청하신 구성.*다릅니다|개수 불일치/.test(historyText)) previousWrongSignals.push('요청 개수와 인식 개수 불일치');
+  if (/출발지.*좌표로 못 찾|지오코딩/.test(historyText)) previousWrongSignals.push('주소 정규화/지오코딩 실패');
+  if (/중복|선행상차|경유/.test(historyText)) previousWrongSignals.push('역할 분류 또는 순서 중복');
+  if (previousWrongSignals.length === 0 && params.guardrail.issues.length > 0) {
+    previousWrongSignals.push(...params.guardrail.issues.slice(0, 2));
+  }
+
+  const lines: string[] = [];
+  lines.push('아래처럼 원인을 재분석했습니다.');
+  lines.push('');
+  lines.push('1) 이전 해석 오류 지점');
+  lines.push(`- ${previousWrongSignals.slice(0, 3).join(', ') || '대화 이력 기준으로 명확한 실패 신호가 부족합니다.'}`);
+  lines.push('');
+  lines.push('2) 이번에 적용한 수정 규칙');
+  lines.push('- 역할 분리 파서(상차/배송/반납) 우선 적용');
+  lines.push('- 개수/중복/주소 유효성 검증 통과 전 계산 차단');
+  lines.push('- 상차 2곳 이상일 때 선행상차를 배송 앞단으로 강제');
+  lines.push('');
+  lines.push('3) 결과 변화(전/후)');
+  const diffItems = params.routeDiffItems.slice(0, 4);
+  if (diffItems.length === 0) {
+    lines.push('- 변경 없음(동일 입력/동일 규칙)');
+  } else {
+    for (const item of diffItems) {
+      lines.push(`- ${item}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function classifyValidationFailureTags(guardrail: GuardrailResult, countMismatchReason: string | null): string[] {
+  const tags = new Set<string>(['validation']);
+  const issues = guardrail.issues.join(' ');
+  if (countMismatchReason || /개수 불일치/.test(issues)) tags.add('count-mismatch');
+  if (/중복|동일/.test(issues)) tags.add('duplicate');
+  if (/유효|주소/.test(issues) || guardrail.missingFields.includes('origin') || guardrail.missingFields.includes('destinations')) {
+    tags.add('address-quality');
+  }
+  if (/배송지 개수 불일치|역할/.test(issues)) tags.add('role-misclassification');
+  return [...tags];
+}
+
+function buildFourBlockResultMessage(params: {
+  extracted: any;
+  interpretation: IntentInterpretation;
+  guardrail: GuardrailResult;
+  readiness: ReadinessResult;
+  routeDiffItems: string[];
+  quote?: {
+    hourly?: { formatted?: string };
+    perJob?: { formatted?: string };
+    basis?: {
+      distanceKm?: number;
+      totalBillMinutes?: number;
+      driveMinutes?: number;
+      dwellTotalMinutes?: number;
+    };
+  } | null;
+  blockedReason?: string | null;
+  assumptions?: string[];
+  countMismatchReason?: string | null;
+}): string {
+  const lines: string[] = [];
+  lines.push('1) 해석 결과 요약');
+  lines.push(formatRoleSummary(params.extracted, params.interpretation));
+  lines.push('');
+  lines.push('2) 검증 결과');
+  lines.push(formatValidationSummary(params.guardrail, params.readiness, params.countMismatchReason || null));
+  lines.push('');
+  lines.push('3) 수정 내역 (전/후 diff)');
+  const diffItems = params.routeDiffItems.slice(0, 4);
+  if (diffItems.length === 0) {
+    lines.push('- 변경 없음');
+  } else {
+    for (const item of diffItems) {
+      lines.push(`- ${item}`);
+    }
+  }
+  lines.push('');
+  lines.push('4) 최종 계산 결과');
+  if (params.quote && !params.blockedReason) {
+    lines.push(`- 주행 거리: ${params.quote.basis?.distanceKm ?? '-'}km`);
+    lines.push(
+      `- 총 소요 시간: ${params.quote.basis?.totalBillMinutes ?? '-'}분 (운행 ${params.quote.basis?.driveMinutes ?? '-'}분 + 체류 ${params.quote.basis?.dwellTotalMinutes ?? '-'}분)`
+    );
+    lines.push(`- 시간당 요금제: ${params.quote.hourly?.formatted ?? '-'}`);
+    lines.push(`- 단건 요금제: ${params.quote.perJob?.formatted ?? '-'}`);
+    const oneLineAssumption = (params.assumptions || []).slice(0, 1).join(' ');
+    lines.push(`- 가정: ${oneLineAssumption || '입력된 주소/역할 기준으로 계산했습니다.'}`);
+  } else {
+    lines.push(`- 계산 보류: ${params.blockedReason || '검증을 통과하지 못해 계산을 중단했습니다.'}`);
+    lines.push('- 가정: 누락/오인 1건만 보정되면 즉시 재계산 가능합니다.');
+  }
+  return lines.join('\n');
+}
+
 function toVehicleKey(vehicleType?: '레이' | '스타렉스'): 'ray' | 'starex' {
   return vehicleType === '스타렉스' ? 'starex' : 'ray';
 }
@@ -881,6 +1197,7 @@ async function logFailureCase(params: {
   assistantOutput?: string;
   errorCode: string;
   reason?: string;
+  tags?: string[];
   metadata?: Record<string, unknown>;
 }) {
   try {
@@ -892,7 +1209,7 @@ async function logFailureCase(params: {
         assistant_output: params.assistantOutput || null,
         error_code: params.errorCode,
         reason: params.reason || null,
-        tags: ['api'],
+        tags: params.tags && params.tags.length ? params.tags : ['api'],
         metadata: params.metadata || {},
       },
     ]);
@@ -1015,6 +1332,7 @@ export async function POST(request: NextRequest) {
     const message = String(body?.message || '').trim();
     const history = (body?.history || []) as ChatHistoryItem[];
     const conversationContext = (body?.conversationContext || {}) as ExtractedContext;
+    const operationalIntent = detectOperationalIntent(message);
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
     const sessionSummary = body?.sessionSummary ? String(body.sessionSummary) : '';
     const attachmentIds = Array.isArray(body?.attachmentIds)
@@ -1047,7 +1365,7 @@ export async function POST(request: NextRequest) {
         : 'general';
     const isTimeSensitiveQuery = /오늘|내일|지금|현재|방금|이번주|다음주|오늘자|최신|업데이트|시각|시간/i.test(message);
     const similarCandidate =
-      rawIntentHint === 'general' && !isTimeSensitiveQuery
+      rawIntentHint === 'general' && !isTimeSensitiveQuery && operationalIntent === 'default'
         ? await retrieveSimilarQueryCandidate({
           sessionId,
           query: message,
@@ -1149,28 +1467,65 @@ export async function POST(request: NextRequest) {
         destinations: previousDestinations.map((addr) => ({ address: addr })),
       });
     }
-    const expectedCounts = extractExpectedRouteCounts(message);
+    const expectedCounts = mergeExpectedCounts(
+      extractExpectedRouteCounts(message),
+      previousSlotState.expectedCounts
+    );
     // 1단계: LLM 해석 결과 + 사용자 입력에서 의도/개수/주소 후보 해석
     const interpretation = buildIntentInterpretation(message, expectedCounts);
-    // 2단계: 규칙 검증 전 자동 정리
+    const beforeValidationExtracted = normalizeExtractedQuoteInfo(extracted);
+
+    // 2단계: 역할 분리(상차/배송/반납) + 가드레일 + 자동 보정
+    extracted = applyRoleTaggedHybridResolution(extracted, interpretation);
     extracted = sanitizeExtractedRouteForAutoFix(extracted);
     let guardrail = runGuardrailValidation(extracted, interpretation);
-    // 3단계: 자동 보정
-    const autoFixResult = autoFixExtractedRoute(extracted, interpretation);
+    let autoFixResult = autoFixExtractedRoute(extracted, interpretation);
     extracted = autoFixResult.fixed;
     guardrail = runGuardrailValidation(extracted, interpretation);
+
+    // 3단계: Plan-Check-Act 루프 (최대 2회)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const countProbe = applyExpectedCountHeuristics(extracted, expectedCounts);
+      const readinessProbe = evaluateRouteReadiness({
+        extracted,
+        interpretation,
+        guardrail,
+      });
+      const shouldRetry = !guardrail.isValid || Boolean(countProbe.mismatchReason) || !readinessProbe.isReady;
+      if (!shouldRetry) break;
+
+      const fromRoleTagged = applyRoleTaggedHybridResolution(extracted, interpretation);
+      const fromRoleTaggedFixed = autoFixExtractedRoute(fromRoleTagged, interpretation);
+      extracted = fromRoleTaggedFixed.fixed;
+
+      if (hasStructuredMemo && structuredMemo?.extracted?.origin?.address && structuredMemo.extracted?.destinations?.length) {
+        extracted = normalizeExtractedQuoteInfo({
+          ...extracted,
+          origin: structuredMemo.extracted.origin,
+          destinations: structuredMemo.extracted.destinations,
+        });
+      }
+      extracted = sanitizeExtractedRouteForAutoFix(extracted);
+      autoFixResult = autoFixExtractedRoute(extracted, interpretation);
+      extracted = autoFixResult.fixed;
+      guardrail = runGuardrailValidation(extracted, interpretation);
+    }
+
     const roleResolution = buildRoleResolutionTable(extracted, interpretation);
     const readiness = evaluateRouteReadiness({
       extracted,
       interpretation,
       guardrail,
     });
-    // 기존 개수 가드 유지
     let countCheck = applyExpectedCountHeuristics(extracted, expectedCounts);
     if (countCheck.mismatchReason) {
       extracted = sanitizeExtractedRouteForAutoFix(countCheck.adjusted);
+      autoFixResult = autoFixExtractedRoute(extracted, interpretation);
+      extracted = autoFixResult.fixed;
+      guardrail = runGuardrailValidation(extracted, interpretation);
       countCheck = applyExpectedCountHeuristics(extracted, expectedCounts);
     }
+    const routeDiffItems = buildRouteDiffItems(beforeValidationExtracted, extracted);
 
     if ((!extracted.origin?.address || !extracted.destinations?.length) && message.length <= 120) {
       const poiCandidates = await resolvePoiHintsFromText(message);
@@ -1224,6 +1579,10 @@ export async function POST(request: NextRequest) {
     let slotState = mergeSlotState(previousSlotState, extracted, message, {
       replaceRoute: replaceRouteFromMemo,
     });
+    slotState = {
+      ...slotState,
+      expectedCounts,
+    };
     const isMultiScenario = detectMultiScenarioInput(message);
 
     const missingFields: string[] = getMissingSlots(slotState, false);
@@ -1239,6 +1598,65 @@ export async function POST(request: NextRequest) {
       usedRag: Boolean((rag.sources?.length || 0) + (feedbackGuidance.sources?.length || 0)),
       hasSessionSummary: Boolean(sessionSummary),
     });
+
+    if (operationalIntent === 'acknowledge' && !hasAddressLikeToken(message)) {
+      await upsertSessionContext(sessionId, slotState);
+      return NextResponse.json({
+        success: true,
+        extracted,
+        missingFields,
+        followUpQuestions: [],
+        assistantMessage: '확인 감사합니다. 현재 구성으로는 문제 없이 계산 가능합니다. 필요하시면 동일 조건으로 차량/스케줄만 바꿔 비교해드릴게요.',
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
+
+    if (operationalIntent === 'cause-analysis' && !hasAddressLikeToken(message)) {
+      await upsertSessionContext(sessionId, slotState);
+      return NextResponse.json({
+        success: true,
+        extracted,
+        missingFields,
+        followUpQuestions: [],
+        assistantMessage: buildCauseAnalysisMessage({
+          interpretation,
+          guardrail,
+          routeDiffItems,
+          history,
+        }),
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        roleResolution,
+        pipeline: {
+          stage1Interpretation: interpretation,
+          stage2Guardrail: guardrail,
+          stage3AutoFixApplied: true,
+          stage3AutoFixReport: autoFixResult.report,
+          stage4RouteOptimizationCalled: false,
+          stageState: 'completed',
+          readiness,
+        },
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
 
     // 문서/일반 질의는 견적 필드 강제 없이 대화형으로 응답
     if (isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) {
@@ -1268,15 +1686,11 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 주소 핵심 정보가 살아있으면(출발+유효 경유지 1개 이상) 경고가 있어도 1차 계산을 진행한다.
-    // 멀티 시나리오 혹은 핵심 주소 자체가 없는 경우만 하드 블록한다.
+    // P0: 구조 검증 게이트 강제. 검증 실패 시 경로 계산 호출 금지.
     const blockedByValidation = Boolean(countCheck.mismatchReason || !guardrail.isValid || !readiness.isReady);
-    const hasCriticalMissing =
-      guardrail.missingFields.includes('origin') || guardrail.missingFields.includes('destinations');
-    const canProceedMinimal = canProceedWithMinimalRoute(extracted);
-    const shouldHardBlock = isMultiScenario || hasCriticalMissing || !canProceedMinimal;
+    const shouldHardBlock = isMultiScenario || blockedByValidation;
 
-    if (blockedByValidation && shouldHardBlock) {
+    if (shouldHardBlock) {
       await upsertSessionContext(sessionId, slotState);
       const firstIssue = countCheck.mismatchReason || guardrail.issues[0] || '경로 구성 검증에 실패했습니다.';
       const expectedStops = Number.isFinite(interpretation.expectedCounts.totalStopsCount)
@@ -1289,12 +1703,35 @@ export async function POST(request: NextRequest) {
         : (readiness.singleQuestion || (guardrail.missingFields.includes('origin')
           ? '출발지 1곳만 정확한 도로명+번지로 확인해 주세요.'
           : '누락된 주소 1곳만 확인해 주세요.'));
+      const blockedReason = `${firstIssue} ${minimalQuestion}`.trim();
+      await logFailureCase({
+        sessionId,
+        userInput: message,
+        assistantOutput: blockedReason,
+        errorCode: 'VALIDATION_BLOCKED',
+        reason: firstIssue,
+        tags: classifyValidationFailureTags(guardrail, countCheck.mismatchReason),
+        metadata: {
+          operationalIntent,
+          readiness,
+          countMismatchReason: countCheck.mismatchReason,
+          guardrailIssues: guardrail.issues,
+        },
+      });
       return NextResponse.json({
         success: true,
         extracted,
         missingFields,
         followUpQuestions,
-        assistantMessage: `${firstIssue}\n\n자동 보정을 먼저 시도했습니다. ${minimalQuestion}`,
+        assistantMessage: buildFourBlockResultMessage({
+          extracted,
+          interpretation,
+          guardrail,
+          readiness,
+          routeDiffItems,
+          blockedReason,
+          countMismatchReason: countCheck.mismatchReason,
+        }),
         quote: null,
         routeSummary: null,
         assumptions: [],
@@ -1321,34 +1758,35 @@ export async function POST(request: NextRequest) {
         },
       });
     }
-
     const softValidationWarnings: string[] = [];
-    if (blockedByValidation && !shouldHardBlock) {
-      softValidationWarnings.push(
-        '입력 경로에 일부 불확실성이 있어 자동 보정한 주소 기준으로 1차 견적을 계산했습니다.'
-      );
-    }
 
     if (isMultiScenario || missingFields.includes('origin') || missingFields.includes('destinations')) {
       await upsertSessionContext(sessionId, slotState);
+      const draftMessage = hasStructuredMemo
+        ? buildDeterministicRouteDraftMessage({
+          extracted,
+          interpretation,
+          missingFields,
+          pickupCandidates: interpretation.pickupCandidates,
+        })
+        : buildConversationalAssistantMessage({
+          assistantResponse: extracted.assistantResponse,
+          missingFields,
+          extracted,
+          isMultiScenario,
+        });
+      const routedMessage =
+        operationalIntent === 'validation-request'
+          ? `${draftMessage}\n\n검증 요청으로 인식했어요. 개수/중복/주소 유효성만 먼저 맞춘 뒤 계산을 진행하겠습니다.`
+          : operationalIntent === 'recalculate'
+            ? `${draftMessage}\n\n재계산 요청으로 인식했어요. 누락된 핵심 주소 확인 후 즉시 다시 계산합니다.`
+            : draftMessage;
       return NextResponse.json({
         success: true,
         extracted,
         missingFields,
         followUpQuestions,
-        assistantMessage: hasStructuredMemo
-          ? buildDeterministicRouteDraftMessage({
-            extracted,
-            interpretation,
-            missingFields,
-            pickupCandidates: interpretation.pickupCandidates,
-          })
-          : buildConversationalAssistantMessage({
-            assistantResponse: extracted.assistantResponse,
-            missingFields,
-            extracted,
-            isMultiScenario,
-          }),
+        assistantMessage: routedMessage,
         quote: null,
         routeSummary: null,
         assumptions: [],
@@ -1547,20 +1985,23 @@ export async function POST(request: NextRequest) {
       },
       missingFields,
       followUpQuestions,
-      assistantMessage: buildConversationalAssistantMessage({
-        assistantResponse: extracted.assistantResponse,
-        missingFields,
+      assistantMessage: buildFourBlockResultMessage({
         extracted: {
           ...extracted,
           vehicleType,
           scheduleType,
         },
-        isMultiScenario,
+        interpretation,
+        guardrail,
+        readiness,
+        routeDiffItems,
         quote: {
           basis: quote.basis,
           hourly: quote.hourly,
           perJob: quote.perJob,
-        }
+        },
+        assumptions,
+        countMismatchReason: countCheck.mismatchReason,
       }),
       roleResolution,
       routeSummary: {

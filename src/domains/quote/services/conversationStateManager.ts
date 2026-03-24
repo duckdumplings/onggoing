@@ -3,6 +3,12 @@ import { ExtractedQuoteInfo } from '@/domains/quote/types/quoteExtraction';
 export type SlotState = {
   origin?: string;
   destinations: string[];
+  expectedCounts?: {
+    pickupCount?: number;
+    deliveryCount?: number;
+    returnCount?: number;
+    totalStopsCount?: number;
+  };
   vehicleType?: '레이' | '스타렉스';
   scheduleType?: 'regular' | 'ad-hoc';
   departureTime?: string;
@@ -28,6 +34,7 @@ const MAX_DESTINATIONS = 20;
 export function createInitialSlotState(): SlotState {
   return {
     destinations: [],
+    expectedCounts: {},
     constraints: [],
     preferences: {},
   };
@@ -126,6 +133,11 @@ export function getMissingSlots(slotState: SlotState, requireDepartureTime = fal
 
 export function buildConversationSummary(slotState: SlotState): string {
   const lines: string[] = [];
+  if (slotState.expectedCounts?.pickupCount || slotState.expectedCounts?.deliveryCount || slotState.expectedCounts?.returnCount) {
+    lines.push(
+      `구성: 상차 ${slotState.expectedCounts?.pickupCount ?? '?'} / 배송 ${slotState.expectedCounts?.deliveryCount ?? '?'} / 반납 ${slotState.expectedCounts?.returnCount ?? '?'}`
+    );
+  }
   if (slotState.origin) lines.push(`출발지: ${slotState.origin}`);
   if (slotState.destinations.length) lines.push(`목적지: ${slotState.destinations.join(', ')}`);
   if (slotState.vehicleType) lines.push(`차량: ${slotState.vehicleType}`);

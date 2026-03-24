@@ -324,5 +324,44 @@ export const CHAT_EVAL_CASES: ChatEvalCase[] = [
       shouldContainAddresses: ['독서당로 71'],
     },
   },
+  {
+    id: 'hybrid-role-counts-with-time-hints',
+    input:
+      '상차지 두 곳, 배송지 네 곳, 반납지 한 곳\n상차: 나이스 샐러드 서울시 서초구 반포대로 21길 17 10:10\n상차: 하루반상 서울특별시 성동구 성수일로10 1충 101호 10:30\n배송: 서울시 용산구 독서당로 71 11:30\n배송: 서울 용산구 회나무로13가길 64 11:40\n배송: 서울특별시 용산구 이태원로 27다길 50 11:50\n배송: 서울특별시 용산구 한남동 740-10 12:00\n반납: 서울특별시 금천구 가마산로 96',
+    expected: {
+      shouldInferIntent: 'quote',
+      shouldHaveOrigin: true,
+      shouldHaveDestination: true,
+      minDestinationCount: 5,
+      shouldUseStructuredMemo: true,
+      shouldContainAddresses: ['반포대로 21길 17', '가마산로 96'],
+    },
+  },
+  {
+    id: 'mixed-tabular-and-note-format',
+    input:
+      '금일 실제 스케줄\n나이스 샐러드 서울시 서초구 반포대로 21길 17 10:10 주식회사 그래픽 서울 용산구 회나무로13가길 64 11:30\n하루반상 서울특별시 성동구 성수일로10 1충 101호 10:30 용산 가정집 용산구 이태원로 27다길 50 11:50\n[회수]주식회사 그래픽 서울 용산구 회나무로13가길 64\n가산 반납지 금천구 가마산로 96',
+    expected: {
+      shouldInferIntent: 'quote',
+      shouldHaveOrigin: true,
+      shouldHaveDestination: true,
+      minDestinationCount: 3,
+      shouldUseStructuredMemo: true,
+      shouldContainAddresses: ['회나무로13가길 64', '가마산로 96'],
+    },
+  },
+  {
+    id: 'validation-first-user-request',
+    input:
+      '경로 설정 맞는지 먼저 검증해줘. 상차 2곳(반포대로 21길 17, 성수일로10), 배송 4곳(독서당로 71, 회나무로13가길 64, 이태원로 27다길 50, 한남동 740-10), 반납 1곳(가마산로 96)',
+    expected: {
+      shouldInferIntent: 'quote',
+      shouldHaveOrigin: true,
+      shouldHaveDestination: true,
+      minDestinationCount: 5,
+      shouldUseStructuredMemo: true,
+      shouldContainAddresses: ['반포대로 21길 17', '가마산로 96'],
+    },
+  },
 ];
 
