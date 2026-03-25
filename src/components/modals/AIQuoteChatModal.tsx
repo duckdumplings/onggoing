@@ -468,7 +468,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     setIsSessionLoading(true);
     try {
       const res = await fetch(`/api/quote/chat-sessions/${sessionId}/messages`, {
-        headers: await getAuthHeaders(),
+        headers: (await getAuthHeaders()) ?? undefined,
       });
       const json = await res.json();
       if (!json?.success) return;
@@ -525,7 +525,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       return;
     }
     const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
-      headers: await getAuthHeaders(),
+      headers: (await getAuthHeaders()) ?? undefined,
     });
     const json = await res.json();
     if (!json?.success) return;
@@ -538,7 +538,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       return;
     }
     const res = await fetch(`/api/quote/chat-sessions/${sessionId}/generated-files`, {
-      headers: await getAuthHeaders(),
+      headers: (await getAuthHeaders()) ?? undefined,
     });
     const json = await res.json();
     if (!json?.success) return;
@@ -565,7 +565,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         formData.append('file', file);
         const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
           method: 'POST',
-          headers: await getAuthHeaders(),
+          headers: (await getAuthHeaders()) ?? undefined,
           body: formData,
         });
         const json = await res.json();
@@ -897,7 +897,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
     const res = await fetch(`/api/quote/chat-sessions/${sessionId}`, {
       method: 'DELETE',
-      headers: await getAuthHeaders(),
+      headers: (await getAuthHeaders()) ?? undefined,
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json?.success) {
