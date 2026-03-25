@@ -358,6 +358,18 @@ function isGeneralKnowledgeRequest(message: string): boolean {
   return !hasStrongQuoteSignal(s);
 }
 
+function isKnowledgeFollowUpQuestion(message: string): boolean {
+  const s = String(message || '').trim();
+  if (!s) return false;
+  return /(어떤\s*내용|무엇을\s*확인|뭘\s*확인|어떻게\s*확인|왜\s*못\s*찾|다시\s*찾아|검색해봐)/.test(s);
+}
+
+function extractKnowledgeTopicHint(message: string): string | undefined {
+  const m = String(message || '').match(/([가-힣A-Za-z0-9]+)\s*(기업|회사|서비스|브랜드|풀필먼트)/);
+  if (!m) return undefined;
+  return `${m[1]} ${m[2]}`.trim();
+}
+
 function isValidationResponseLoop(history: ChatHistoryItem[]): boolean {
   const recentAssistants = history
     .filter((h) => h.role === 'assistant')
@@ -369,6 +381,35 @@ function isValidationResponseLoop(history: ChatHistoryItem[]): boolean {
     /경유지 누락|계산 보류|핵심 정보만 한 번 더|필수 정보/.test(text)
   );
   return repeatedValidation.length >= 2;
+}
+
+function updateKnowledgeModeState(params: {
+  prev: SlotState;
+  message: string;
+  hardGeneralOverride: boolean;
+}): Pick<SlotState, 'responseMode' | 'responseModeLockTurns' | 'knowledgeTopic'> {
+  const prevMode = params.prev.responseMode || 'quote';
+  const prevLock = Number(params.prev.responseModeLockTurns || 0);
+  const topicHint = extractKnowledgeTopicHint(params.message);
+  if (params.hardGeneralOverride) {
+    return {
+      responseMode: 'knowledge',
+      responseModeLockTurns: 3,
+      knowledgeTopic: topicHint || params.prev.knowledgeTopic,
+    };
+  }
+  if (prevMode === 'knowledge' && prevLock > 0 && !hasStrongQuoteSignal(params.message)) {
+    return {
+      responseMode: 'knowledge',
+      responseModeLockTurns: Math.max(0, prevLock - 1),
+      knowledgeTopic: params.prev.knowledgeTopic,
+    };
+  }
+  return {
+    responseMode: 'quote',
+    responseModeLockTurns: 0,
+    knowledgeTopic: params.prev.knowledgeTopic,
+  };
 }
 
 function shouldUseStructuredMode(params: {
@@ -1174,10 +1215,11 @@ function buildGeneralKnowledgeReply(params: {
   ragHint?: string;
   requestedWeb: boolean;
   webSourceCount: number;
+  knowledgeTopic?: string;
 }): string {
   // 웹검색을 명시 요청했는데 근거가 0개면, 추측/학습기반 단정 답변을 금지한다.
   if (params.requestedWeb && params.webSourceCount === 0) {
-    return '웹 검색을 시도했지만 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다. 검색어를 더 구체화(예: 회사명+서비스명, 공식 사이트)해주시면 다시 찾아볼게요.';
+    return `웹 검색을 시도했지만 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다.${params.knowledgeTopic ? `\n\n확인 정확도를 높이려면 '${params.knowledgeTopic}'의 공식 사이트/법인명/서비스명(예: 조식24, 런치24) 중 한 가지를 함께 알려주세요.` : '\n\n검색어를 더 구체화(회사명+서비스명, 공식 사이트)해주시면 다시 찾아볼게요.'}`;
   }
   const sanitized = sanitizeAssistantWebClaim({
     assistantMessage: params.assistantResponse,
@@ -1218,6 +1260,28 @@ function buildWebSearchGroundedReply(params: {
     '',
     '원하시면 위 출처 기준으로 사실관계(회사 소개/서비스 범위/운영 여부)만 다시 간단히 정리해드릴게요.',
   ].join('\n');
+}
+
+function pickExtractionModel(params: {
+  message: string;
+  interpretation: IntentInterpretation;
+  operationalIntent: OperationalIntent;
+  validationLoopDetected: boolean;
+}): string | undefined {
+  const complexBySize = params.message.length > 260 || /\n/.test(params.message) || /\t/.test(params.message);
+  const complexByCounts =
+    Number(params.interpretation.expectedCounts.pickupCount || 0) >= 2 ||
+    Number(params.interpretation.expectedCounts.deliveryCount || 0) >= 3 ||
+    Number(params.interpretation.expectedCounts.returnCount || 0) >= 1;
+  const taggedStopCount =
+    params.interpretation.roleTagged.pickup.length +
+    params.interpretation.roleTagged.delivery.length +
+    params.interpretation.roleTagged.returns.length;
+  const complexByStops = taggedStopCount >= 5;
+  const complexByIntent = params.operationalIntent === 'recalculate' || params.operationalIntent === 'cause-analysis';
+  const shouldUpgrade = complexBySize || complexByCounts || complexByStops || complexByIntent || params.validationLoopDetected;
+  if (!shouldUpgrade) return undefined;
+  return process.env.OPENAI_QUOTE_MODEL_COMPLEX || 'gpt-4.1';
 }
 
 function buildCauseAnalysisMessage(params: {
@@ -1530,17 +1594,30 @@ export async function POST(request: NextRequest) {
     const message = String(body?.message || '').trim();
     const history = (body?.history || []) as ChatHistoryItem[];
     const conversationContext = (body?.conversationContext || {}) as ExtractedContext;
-    const operationalIntent = detectOperationalIntent(message);
-    const validationLoopDetected = isValidationResponseLoop(history);
-    let hardGeneralOverride = isGeneralKnowledgeRequest(message);
-    if (validationLoopDetected && !hasStrongQuoteSignal(message) && operationalIntent === 'default') {
-      hardGeneralOverride = true;
-    }
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
     const sessionSummary = body?.sessionSummary ? String(body.sessionSummary) : '';
     const attachmentIds = Array.isArray(body?.attachmentIds)
       ? body.attachmentIds.map((id: unknown) => String(id))
       : [];
+    const operationalIntent = detectOperationalIntent(message);
+    const validationLoopDetected = isValidationResponseLoop(history);
+    let hardGeneralOverride = isGeneralKnowledgeRequest(message);
+    const previousSlotState = await loadSessionContext(sessionId);
+    const knowledgeLockActive =
+      previousSlotState.responseMode === 'knowledge' &&
+      Number(previousSlotState.responseModeLockTurns || 0) > 0 &&
+      (!hasStrongQuoteSignal(message) || isKnowledgeFollowUpQuestion(message));
+    if (knowledgeLockActive) {
+      hardGeneralOverride = true;
+    }
+    if (validationLoopDetected && !hasStrongQuoteSignal(message) && operationalIntent === 'default') {
+      hardGeneralOverride = true;
+    }
+    const modeState = updateKnowledgeModeState({
+      prev: previousSlotState,
+      message,
+      hardGeneralOverride,
+    });
 
     if (!message) {
       return NextResponse.json(
@@ -1602,7 +1679,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const previousSlotState = await loadSessionContext(sessionId);
     const preferenceInstruction = buildPreferenceInstruction(previousSlotState);
 
     const shouldUseRag = rawIntentHint === 'business' || attachmentIds.length > 0 || message.length > 120;
@@ -1642,7 +1718,10 @@ export async function POST(request: NextRequest) {
         usedRag: Boolean(rag.sources?.length),
         hasSessionSummary: Boolean(sessionSummary),
       });
-      await upsertSessionContext(sessionId, previousSlotState);
+      await upsertSessionContext(sessionId, {
+        ...previousSlotState,
+        ...modeState,
+      });
       return NextResponse.json({
         success: true,
         extracted: {},
@@ -1660,6 +1739,7 @@ export async function POST(request: NextRequest) {
               ragHint: rag.snippets.slice(0, 2).join('\n'),
               requestedWeb,
               webSourceCount: 0,
+              knowledgeTopic: modeState.knowledgeTopic,
             }),
         quote: null,
         routeSummary: null,
@@ -1674,6 +1754,18 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+    const expectedCountsForModel = mergeExpectedCounts(
+      extractExpectedRouteCounts(message),
+      previousSlotState.expectedCounts
+    );
+    const interpretationForModel = buildIntentInterpretation(message, expectedCountsForModel);
+    const extractionModel = pickExtractionModel({
+      message,
+      interpretation: interpretationForModel,
+      operationalIntent,
+      validationLoopDetected,
+    });
+
     const finalPromptText = [
       llmPromptText,
       '[도구 정책] 이 시스템은 웹 검색 도구를 사용할 수 있습니다. 웹 근거가 없으면 없다고 명시하되, "웹 검색 기능이 없다"라고 답변하지 마세요.',
@@ -1682,7 +1774,9 @@ export async function POST(request: NextRequest) {
     ]
       .filter(Boolean)
       .join('\n\n');
-    const extraction = await extractQuoteInfo(finalPromptText, true, history);
+    const extraction = await extractQuoteInfo(finalPromptText, true, history, {
+      model: extractionModel,
+    });
     let extracted = normalizeExtractedQuoteInfo({
       ...extraction.extractedData,
       vehicleType: extraction.extractedData.vehicleType || conversationContext.vehicleType,
@@ -1715,10 +1809,7 @@ export async function POST(request: NextRequest) {
         destinations: previousDestinations.map((addr) => ({ address: addr })),
       });
     }
-    const expectedCounts = mergeExpectedCounts(
-      extractExpectedRouteCounts(message),
-      previousSlotState.expectedCounts
-    );
+    const expectedCounts = expectedCountsForModel;
     // 1단계: LLM 해석 결과 + 사용자 입력에서 의도/개수/주소 후보 해석
     const interpretation = buildIntentInterpretation(message, expectedCounts);
     const beforeValidationExtracted = normalizeExtractedQuoteInfo(extracted);
@@ -1830,6 +1921,7 @@ export async function POST(request: NextRequest) {
     slotState = {
       ...slotState,
       expectedCounts,
+      ...modeState,
     };
     const isMultiScenario = detectMultiScenarioInput(message);
 
@@ -1894,6 +1986,7 @@ export async function POST(request: NextRequest) {
           stage4RouteOptimizationCalled: false,
           stageState: 'completed',
           readiness,
+          llmModel: extractionModel || process.env.OPENAI_QUOTE_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         },
         evidence: {
           ...evidence,
@@ -1930,6 +2023,7 @@ export async function POST(request: NextRequest) {
           stage4RouteOptimizationCalled: false,
           stageState: 'need-input',
           readiness,
+          llmModel: extractionModel || process.env.OPENAI_QUOTE_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         },
         evidence: {
           ...evidence,
@@ -1957,6 +2051,7 @@ export async function POST(request: NextRequest) {
             ragHint,
             requestedWeb,
             webSourceCount: web.sources.length,
+            knowledgeTopic: slotState.knowledgeTopic,
           }),
         evidence: {
           ...evidence,
@@ -2047,6 +2142,7 @@ export async function POST(request: NextRequest) {
           stage4RouteOptimizationCalled: false,
           stageState: 'blocked',
           readiness,
+          llmModel: extractionModel || process.env.OPENAI_QUOTE_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         },
         evidence: {
           ...evidence,
@@ -2348,6 +2444,7 @@ export async function POST(request: NextRequest) {
         stage4RouteOptimizationCalled: true,
         stageState: 'completed',
         readiness,
+        llmModel: extractionModel || process.env.OPENAI_QUOTE_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini',
       },
       evidence: {
         ...evidence,

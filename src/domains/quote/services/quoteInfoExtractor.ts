@@ -14,7 +14,8 @@ export interface FollowUpQuestion {
 
 const DEFAULT_QUOTE_LLM_MODEL = 'gpt-4.1-mini';
 
-function getQuoteLlmModel(): string {
+function getQuoteLlmModel(overrideModel?: string): string {
+  if (overrideModel?.trim()) return overrideModel.trim();
   return (
     process.env.OPENAI_QUOTE_MODEL ||
     process.env.OPENAI_MODEL ||
@@ -135,13 +136,16 @@ export function buildFollowUpQuestions(
  */
 export async function extractQuoteInfoWithLLM(
   text: string,
-  history: ChatHistoryItem[] = []
+  history: ChatHistoryItem[] = [],
+  options?: {
+    model?: string;
+  }
 ): Promise<{
   extractedData: ExtractedQuoteInfo;
   confidenceScore: number;
 }> {
   const openaiKey = process.env.OPENAI_API_KEY;
-  const model = getQuoteLlmModel();
+  const model = getQuoteLlmModel(options?.model);
 
   if (!openaiKey) {
     throw new Error('OpenAI API 키가 설정되지 않았습니다');
@@ -330,7 +334,10 @@ export function extractQuoteInfoWithHeuristic(text: string): {
 export async function extractQuoteInfo(
   text: string,
   preferLLM: boolean = true,
-  history: ChatHistoryItem[] = []
+  history: ChatHistoryItem[] = [],
+  options?: {
+    model?: string;
+  }
 ): Promise<{
   extractedData: ExtractedQuoteInfo;
   confidenceScore: number;
@@ -338,7 +345,7 @@ export async function extractQuoteInfo(
 }> {
   if (preferLLM) {
     try {
-      const result = await extractQuoteInfoWithLLM(text, history);
+      const result = await extractQuoteInfoWithLLM(text, history, options);
       return {
         ...result,
         extractedData: normalizeExtractedQuoteInfo(result.extractedData),

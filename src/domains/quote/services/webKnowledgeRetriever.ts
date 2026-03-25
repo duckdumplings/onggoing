@@ -2,7 +2,7 @@ type WebSource = {
   title: string;
   url: string;
   snippet: string;
-  source: 'duckduckgo' | 'wikipedia';
+  source: 'duckduckgo';
 };
 
 type WebKnowledgeResult = {
@@ -12,6 +12,24 @@ type WebKnowledgeResult = {
 };
 
 const MAX_QUERY_LENGTH = 200;
+const GENERIC_QUERY_TOKENS = new Set([
+  '대한민국',
+  '한국',
+  '기업',
+  '회사',
+  '서비스',
+  '알려줘',
+  '설명',
+  '정보',
+  '검색',
+  '최신',
+  '관련',
+  '대해',
+  '무엇',
+  '뭐',
+  '운영',
+  '해줘',
+]);
 
 function sanitizeQuery(input: string): string {
   const compact = String(input || '').replace(/\s+/g, ' ').trim();
@@ -25,6 +43,36 @@ function stripHtml(value: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function tokenizeQuery(query: string): string[] {
+  const raw = String(query || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣\s]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  return raw.filter((token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token));
+}
+
+function scoreSourceRelevance(queryTokens: string[], source: WebSource): number {
+  if (queryTokens.length === 0) return 0;
+  const haystack = `${source.title} ${source.snippet} ${source.url}`.toLowerCase();
+  let score = 0;
+  for (const token of queryTokens) {
+    if (haystack.includes(token)) score += 1;
+  }
+  return score;
+}
+
+function filterRelevantSources(query: string, sources: WebSource[]): WebSource[] {
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) return sources;
+  const scored = sources
+    .map((source) => ({ source, score: scoreSourceRelevance(tokens, source) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.map((row) => row.source);
 }
 
 async function fetchDuckDuckGoSources(
@@ -78,45 +126,6 @@ async function fetchDuckDuckGoSources(
   return collected;
 }
 
-async function fetchWikipediaSources(
-  query: string,
-  maxResults: number,
-  signal: AbortSignal
-): Promise<WebSource[]> {
-  const url = new URL('https://ko.wikipedia.org/w/api.php');
-  url.searchParams.set('action', 'query');
-  url.searchParams.set('list', 'search');
-  url.searchParams.set('srsearch', query);
-  url.searchParams.set('format', 'json');
-  url.searchParams.set('utf8', '1');
-  url.searchParams.set('srlimit', String(maxResults));
-
-  const res = await fetch(url.toString(), {
-    signal,
-    headers: {
-      'User-Agent': 'ongoing-ai-assistant/1.0 (+https://ongoing.ai)',
-      Accept: 'application/json',
-    },
-  });
-  if (!res.ok) return [];
-  const json = await res.json();
-  const rows = Array.isArray(json?.query?.search) ? json.query.search : [];
-  const collected: WebSource[] = [];
-  for (const row of rows) {
-    const title = String(row?.title || '').trim();
-    const snippet = stripHtml(String(row?.snippet || '')).slice(0, 500);
-    if (!title || !snippet) continue;
-    collected.push({
-      title,
-      url: `https://ko.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`,
-      snippet,
-      source: 'wikipedia',
-    });
-    if (collected.length >= maxResults) break;
-  }
-  return collected;
-}
-
 export async function searchWebKnowledge(params: {
   query: string;
   maxResults?: number;
@@ -143,19 +152,10 @@ export async function searchWebKnowledge(params: {
       if (collected.length >= maxResults) break;
     }
 
-    if (collected.length < maxResults) {
-      const wiki = await fetchWikipediaSources(query, maxResults - collected.length, controller.signal).catch(() => []);
-      for (const item of wiki) {
-        if (seen.has(item.url)) continue;
-        seen.add(item.url);
-        collected.push(item);
-        if (collected.length >= maxResults) break;
-      }
-    }
-
+    const relevant = filterRelevantSources(query, collected);
     return {
-      snippets: collected.map((row) => row.snippet),
-      sources: collected,
+      snippets: relevant.map((row) => row.snippet),
+      sources: relevant,
       fetchedAt: new Date().toISOString(),
     };
   } catch {

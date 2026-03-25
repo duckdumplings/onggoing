@@ -9,6 +9,9 @@ export type SlotState = {
     returnCount?: number;
     totalStopsCount?: number;
   };
+  responseMode?: 'quote' | 'knowledge';
+  responseModeLockTurns?: number;
+  knowledgeTopic?: string;
   vehicleType?: '레이' | '스타렉스';
   scheduleType?: 'regular' | 'ad-hoc';
   departureTime?: string;
@@ -35,6 +38,8 @@ export function createInitialSlotState(): SlotState {
   return {
     destinations: [],
     expectedCounts: {},
+    responseMode: 'quote',
+    responseModeLockTurns: 0,
     constraints: [],
     preferences: {},
   };
@@ -133,6 +138,9 @@ export function getMissingSlots(slotState: SlotState, requireDepartureTime = fal
 
 export function buildConversationSummary(slotState: SlotState): string {
   const lines: string[] = [];
+  if (slotState.responseMode) {
+    lines.push(`응답모드: ${slotState.responseMode}${slotState.responseModeLockTurns ? `(${slotState.responseModeLockTurns})` : ''}`);
+  }
   if (slotState.expectedCounts?.pickupCount || slotState.expectedCounts?.deliveryCount || slotState.expectedCounts?.returnCount) {
     lines.push(
       `구성: 상차 ${slotState.expectedCounts?.pickupCount ?? '?'} / 배송 ${slotState.expectedCounts?.deliveryCount ?? '?'} / 반납 ${slotState.expectedCounts?.returnCount ?? '?'}`
