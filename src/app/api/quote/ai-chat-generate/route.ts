@@ -353,7 +353,8 @@ function isGeneralKnowledgeRequest(message: string): boolean {
   const s = String(message || '').trim();
   if (!s) return false;
   const hasGeneralCue =
-    /(알려줘|설명해|뭐야|무엇|소개|비교|특징|장단점|서비스|회사|브랜드|풀필먼트|위펀)/i.test(s);
+    /(알려줘|설명해|뭐야|무엇|소개|비교|특징|장단점|서비스|회사|브랜드|풀필먼트|위펀|기업|서비스|운영)/i.test(s) ||
+    /(어떤\s*내용|무엇을\s*확인|내용이\s*없|무슨\s*정보|어떤\s*점|정리해줘)/i.test(s);
   if (!hasGeneralCue) return false;
   return !hasStrongQuoteSignal(s);
 }
@@ -1262,6 +1263,29 @@ function buildWebSearchGroundedReply(params: {
   ].join('\n');
 }
 
+function buildGroundedGeneralKnowledgeReply(params: {
+  web: { sources: Array<{ title: string; url: string }> };
+  ragHint?: string;
+  requestedWeb: boolean;
+  knowledgeTopic?: string;
+}): string {
+  if (params.web.sources.length > 0) {
+    return buildWebSearchGroundedReply({
+      web: { snippets: [], sources: params.web.sources },
+      requestedWeb: params.requestedWeb,
+      ragHint: params.ragHint,
+    });
+  }
+  if (params.ragHint) {
+    return `요청하신 내용을 확인했어요. 지금은 공개 웹 근거 대신 내부 참고 자료 기준으로 정리하면 아래와 같습니다.\n${params.ragHint}`;
+  }
+  const topic = params.knowledgeTopic ? `\n\n정확도를 높이려면 '${params.knowledgeTopic}'의 공식 사이트(또는 사업자명/대표 키워드) 중 하나를 알려주세요.` : '';
+  if (params.requestedWeb) {
+    return `웹 검색을 시도했지만 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다.${topic}`;
+  }
+  return `지금은 신뢰할 만한 공개 근거를 충분히 확인하지 못했어요.${topic}\n원하시면 공식 사이트/관련 링크를 주시면 그 기준으로 다시 정리해드릴게요.`;
+}
+
 function pickExtractionModel(params: {
   message: string;
   interpretation: IntentInterpretation;
@@ -1734,11 +1758,10 @@ export async function POST(request: NextRequest) {
               requestedWeb,
               ragHint: rag.snippets.slice(0, 2).join('\n'),
             })
-            : buildGeneralKnowledgeReply({
-              assistantResponse: '',
+            : buildGroundedGeneralKnowledgeReply({
+              web: { sources: [] },
               ragHint: rag.snippets.slice(0, 2).join('\n'),
               requestedWeb,
-              webSourceCount: 0,
               knowledgeTopic: modeState.knowledgeTopic,
             }),
         quote: null,
@@ -2046,11 +2069,10 @@ export async function POST(request: NextRequest) {
         missingFields,
         followUpQuestions: [],
         assistantMessage:
-          buildGeneralKnowledgeReply({
-            assistantResponse: extracted.assistantResponse,
+          buildGroundedGeneralKnowledgeReply({
+            web: { sources: web.sources },
             ragHint,
             requestedWeb,
-            webSourceCount: web.sources.length,
             knowledgeTopic: slotState.knowledgeTopic,
           }),
         evidence: {

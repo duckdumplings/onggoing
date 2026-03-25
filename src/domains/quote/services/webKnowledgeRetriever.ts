@@ -68,11 +68,28 @@ function scoreSourceRelevance(queryTokens: string[], source: WebSource): number 
 function filterRelevantSources(query: string, sources: WebSource[]): WebSource[] {
   const tokens = tokenizeQuery(query);
   if (tokens.length === 0) return sources;
-  const scored = sources
-    .map((source) => ({ source, score: scoreSourceRelevance(tokens, source) }))
-    .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return scored.map((row) => row.source);
+
+  const filtered = sources
+    .map((source) => {
+      const titleUrlHaystack = `${source.title} ${source.url}`.toLowerCase();
+      let titleScore = 0;
+      for (const token of tokens) {
+        if (titleUrlHaystack.includes(token)) titleScore += 1;
+      }
+      const totalScore = scoreSourceRelevance(tokens, source);
+      return { source, titleScore, totalScore };
+    })
+    .filter((row) => {
+      if (tokens.length === 1) {
+        // 단일 키워드는 제목/URL에 직접 매칭되는 것만 통과
+        return row.titleScore >= 1;
+      }
+      // 복수 키워드는 최소 1개가 제목/URL에 있어야 하고, 총점도 충분해야 함
+      return row.titleScore >= 1 && row.totalScore >= Math.min(2, tokens.length);
+    })
+    .sort((a, b) => b.totalScore - a.totalScore || b.titleScore - a.titleScore);
+
+  return filtered.map((row) => row.source);
 }
 
 async function fetchDuckDuckGoSources(
