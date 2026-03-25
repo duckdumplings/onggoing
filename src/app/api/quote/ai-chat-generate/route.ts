@@ -325,6 +325,33 @@ function detectOperationalIntent(message: string): OperationalIntent {
   return 'default';
 }
 
+function hasStrongQuoteSignal(message: string): boolean {
+  const s = String(message || '').trim();
+  return /(견적|요금|금액|비용|배송|경유|동선|경로|차량|정기|비정기|출발|도착|주소|ETA|계산)/i.test(s) || hasAddressLikeToken(s);
+}
+
+function isGeneralKnowledgeRequest(message: string): boolean {
+  const s = String(message || '').trim();
+  if (!s) return false;
+  const hasGeneralCue =
+    /(알려줘|설명해|뭐야|무엇|소개|비교|특징|장단점|서비스|회사|브랜드|풀필먼트|위펀)/i.test(s);
+  if (!hasGeneralCue) return false;
+  return !hasStrongQuoteSignal(s);
+}
+
+function isValidationResponseLoop(history: ChatHistoryItem[]): boolean {
+  const recentAssistants = history
+    .filter((h) => h.role === 'assistant')
+    .map((h) => String(h.content || '').trim())
+    .filter(Boolean)
+    .slice(-3);
+  if (recentAssistants.length < 2) return false;
+  const repeatedValidation = recentAssistants.filter((text) =>
+    /경유지 누락|계산 보류|핵심 정보만 한 번 더|필수 정보/.test(text)
+  );
+  return repeatedValidation.length >= 2;
+}
+
 function shouldUseStructuredMode(params: {
   message: string;
   operationalIntent: OperationalIntent;
@@ -1434,6 +1461,11 @@ export async function POST(request: NextRequest) {
     const history = (body?.history || []) as ChatHistoryItem[];
     const conversationContext = (body?.conversationContext || {}) as ExtractedContext;
     const operationalIntent = detectOperationalIntent(message);
+    const validationLoopDetected = isValidationResponseLoop(history);
+    let hardGeneralOverride = isGeneralKnowledgeRequest(message);
+    if (validationLoopDetected && !hasStrongQuoteSignal(message) && operationalIntent === 'default') {
+      hardGeneralOverride = true;
+    }
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
     const sessionSummary = body?.sessionSummary ? String(body.sessionSummary) : '';
     const attachmentIds = Array.isArray(body?.attachmentIds)
@@ -1544,7 +1576,10 @@ export async function POST(request: NextRequest) {
       vehicleType: extraction.extractedData.vehicleType || conversationContext.vehicleType,
       scheduleType: extraction.extractedData.scheduleType || conversationContext.scheduleType,
     });
-    extracted = mergeWithSlotExtracted(extracted, previousSlotState);
+    // 일반 지식 질의에서는 이전 견적 슬롯의 경로를 주입하지 않는다(컨텍스트 감쇠)
+    if (!hardGeneralOverride) {
+      extracted = mergeWithSlotExtracted(extracted, previousSlotState);
+    }
 
     const structuredMemo = parseStructuredLogisticsMemo(message);
     const hasStructuredMemo = Boolean(structuredMemo?.extracted?.origin?.address && structuredMemo?.extracted?.destinations?.length);
@@ -1795,16 +1830,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 문서/일반 질의는 견적 필드 강제 없이 대화형으로 응답
-    if (isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) {
+    // 일반/문서/지식 질의는 견적 루프를 강제로 우회한다.
+    if ((isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) || hardGeneralOverride) {
       const ragHint = rag.snippets.slice(0, 2).join('\n');
       await upsertSessionContext(sessionId, slotState);
+      const generalTail = hardGeneralOverride
+        ? '\n\n원하시면 이어서 이 대화 맥락으로 견적 계산도 바로 진행해드릴게요.'
+        : '';
       return NextResponse.json({
         success: true,
         extracted,
         missingFields,
         followUpQuestions: [],
-        assistantMessage: extracted.assistantResponse || `요청하신 내용을 확인했어요. 참고 가능한 내부 문서를 기반으로 정리하면 아래와 같습니다.\n${ragHint || '현재 세션에서 참고할 문서가 부족해요. 파일을 업로드하면 더 정확히 도와드릴 수 있어요.'}`,
+        assistantMessage:
+          (extracted.assistantResponse ||
+            `요청하신 내용을 확인했어요. 참고 가능한 내부 문서를 기반으로 정리하면 아래와 같습니다.\n${ragHint || '현재 세션에서 참고할 문서가 부족해요. 파일을 업로드하면 더 정확히 도와드릴 수 있어요.'}`) +
+          generalTail,
         evidence: {
           ...evidence,
           fetchedAt: web.fetchedAt,
