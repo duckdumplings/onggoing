@@ -274,7 +274,10 @@ type OperationalIntent =
   | 'recalculate'
   | 'cause-analysis'
   | 'config-change'
-  | 'validation-request';
+  | 'validation-request'
+  | 'info-request';
+
+type ResponseMode = 'conversational' | 'structured';
 
 type GuardrailResult = {
   isValid: boolean;
@@ -313,10 +316,31 @@ function detectOperationalIntent(message: string): OperationalIntent {
   if (/(검증|확인|체크|맞는지|검토)/.test(s)) {
     return 'validation-request';
   }
+  if (/(무슨\s*정보|어떤\s*정보|추가로\s*필요|필요한\s*정보|뭐가\s*더\s*필요)/.test(s)) {
+    return 'info-request';
+  }
   if (/(정기|비정기|레이|스타렉스|시간우선|무료도로|스케줄|차량)/.test(s) && !hasAddressLikeToken(s)) {
     return 'config-change';
   }
   return 'default';
+}
+
+function shouldUseStructuredMode(params: {
+  message: string;
+  operationalIntent: OperationalIntent;
+  blockedByValidation: boolean;
+}): ResponseMode {
+  const s = String(params.message || '').trim();
+  if (params.operationalIntent === 'cause-analysis' || params.operationalIntent === 'validation-request') {
+    return 'structured';
+  }
+  if (/(근거|분석|검증|리포트|상세|블록|diff|원인|왜)/i.test(s)) {
+    return 'structured';
+  }
+  if (params.blockedByValidation && /(왜|원인|문제|실패|검토)/.test(s)) {
+    return 'structured';
+  }
+  return 'conversational';
 }
 
 function normalizeLogisticsText(message: string): string {
@@ -1022,6 +1046,83 @@ function buildDeterministicRouteDraftMessage(params: {
   return msg;
 }
 
+function buildInfoRequestConversationMessage(params: {
+  interpretation: IntentInterpretation;
+  extracted: any;
+  missingFields: string[];
+}): string {
+  const required: string[] = [];
+  const optional: string[] = [];
+  const expected = params.interpretation.expectedCounts;
+  const tagged = params.interpretation.roleTagged;
+
+  if ((expected.pickupCount ?? 0) >= 2 && tagged.pickup.length < (expected.pickupCount || 0)) {
+    required.push(`상차지 ${expected.pickupCount}곳의 정확한 주소`);
+  }
+  if ((expected.deliveryCount ?? 0) > 0 && tagged.delivery.length < (expected.deliveryCount || 0)) {
+    required.push(`배송지 ${expected.deliveryCount}곳의 정확한 주소`);
+  }
+  if ((expected.returnCount ?? 0) > 0 && tagged.returns.length < (expected.returnCount || 0)) {
+    required.push(`반납지 ${expected.returnCount}곳의 정확한 주소`);
+  }
+
+  if (params.missingFields.includes('origin')) required.push('출발지 주소');
+  if (params.missingFields.includes('destinations')) required.push('경유/도착지 주소');
+  if (!params.extracted?.vehicleType) optional.push('차량 타입(기본값: 레이)');
+  if (!params.extracted?.scheduleType) optional.push('스케줄(기본값: 비정기)');
+  if (!params.extracted?.departureTime) optional.push('출발시간(없으면 현재시각 기준)');
+
+  const uniqRequired = Array.from(new Set(required)).slice(0, 4);
+  const uniqOptional = Array.from(new Set(optional)).slice(0, 3);
+
+  const lines: string[] = [];
+  lines.push('좋아요. 현재 정보 기준으로 보면 아래만 추가되면 바로 정확한 계산이 가능합니다.');
+  if (uniqRequired.length > 0) {
+    lines.push('');
+    lines.push('필수 정보');
+    for (const item of uniqRequired) lines.push(`- ${item}`);
+  }
+  if (uniqOptional.length > 0) {
+    lines.push('');
+    lines.push('선택 정보');
+    for (const item of uniqOptional) lines.push(`- ${item}`);
+  }
+  if (uniqRequired.length === 0) {
+    lines.push('');
+    lines.push('필수 누락은 없고, 원하시면 지금 상태로 바로 1차 견적 계산을 진행할 수 있어요.');
+  }
+  return lines.join('\n');
+}
+
+function buildValidationBlockedConversationMessage(params: {
+  interpretation: IntentInterpretation;
+  extracted: any;
+  missingFields: string[];
+  blockedReason: string;
+}): string {
+  const origin = String(params.extracted?.origin?.address || '').trim();
+  const destinations = Array.isArray(params.extracted?.destinations)
+    ? params.extracted.destinations.map((d: any) => String(d?.address || '').trim()).filter(Boolean)
+    : [];
+  const lines: string[] = [];
+  lines.push('좋아요. 지금 바로 계산하려면 핵심 정보만 한 번 더 맞추면 됩니다.');
+  if (origin || destinations.length > 0) {
+    lines.push('');
+    lines.push(`현재 인식: 출발 ${origin || '-'} / 경유·도착 ${destinations.length}곳`);
+  }
+  lines.push('');
+  lines.push(`검증 결과: ${params.blockedReason}`);
+  lines.push('');
+  lines.push(
+    buildInfoRequestConversationMessage({
+      interpretation: params.interpretation,
+      extracted: params.extracted,
+      missingFields: params.missingFields,
+    })
+  );
+  return lines.join('\n');
+}
+
 function buildCauseAnalysisMessage(params: {
   interpretation: IntentInterpretation;
   guardrail: GuardrailResult;
@@ -1658,6 +1759,42 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    if (operationalIntent === 'info-request') {
+      await upsertSessionContext(sessionId, slotState);
+      return NextResponse.json({
+        success: true,
+        extracted,
+        missingFields,
+        followUpQuestions,
+        assistantMessage: buildInfoRequestConversationMessage({
+          interpretation,
+          extracted,
+          missingFields,
+        }),
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        roleResolution,
+        pipeline: {
+          stage1Interpretation: interpretation,
+          stage2Guardrail: guardrail,
+          stage3AutoFixApplied: true,
+          stage3AutoFixReport: autoFixResult.report,
+          stage4RouteOptimizationCalled: false,
+          stageState: 'need-input',
+          readiness,
+        },
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
+
     // 문서/일반 질의는 견적 필드 강제 없이 대화형으로 응답
     if (isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) {
       const ragHint = rag.snippets.slice(0, 2).join('\n');
@@ -1688,6 +1825,11 @@ export async function POST(request: NextRequest) {
 
     // P0: 구조 검증 게이트 강제. 검증 실패 시 경로 계산 호출 금지.
     const blockedByValidation = Boolean(countCheck.mismatchReason || !guardrail.isValid || !readiness.isReady);
+    const responseMode = shouldUseStructuredMode({
+      message,
+      operationalIntent,
+      blockedByValidation,
+    });
     const shouldHardBlock = isMultiScenario || blockedByValidation;
 
     if (shouldHardBlock) {
@@ -1723,15 +1865,23 @@ export async function POST(request: NextRequest) {
         extracted,
         missingFields,
         followUpQuestions,
-        assistantMessage: buildFourBlockResultMessage({
-          extracted,
-          interpretation,
-          guardrail,
-          readiness,
-          routeDiffItems,
-          blockedReason,
-          countMismatchReason: countCheck.mismatchReason,
-        }),
+        assistantMessage:
+          responseMode === 'structured'
+            ? buildFourBlockResultMessage({
+              extracted,
+              interpretation,
+              guardrail,
+              readiness,
+              routeDiffItems,
+              blockedReason,
+              countMismatchReason: countCheck.mismatchReason,
+            })
+            : buildValidationBlockedConversationMessage({
+              interpretation,
+              extracted,
+              missingFields,
+              blockedReason,
+            }),
         quote: null,
         routeSummary: null,
         assumptions: [],
@@ -1985,24 +2135,41 @@ export async function POST(request: NextRequest) {
       },
       missingFields,
       followUpQuestions,
-      assistantMessage: buildFourBlockResultMessage({
-        extracted: {
-          ...extracted,
-          vehicleType,
-          scheduleType,
-        },
-        interpretation,
-        guardrail,
-        readiness,
-        routeDiffItems,
-        quote: {
-          basis: quote.basis,
-          hourly: quote.hourly,
-          perJob: quote.perJob,
-        },
-        assumptions,
-        countMismatchReason: countCheck.mismatchReason,
-      }),
+      assistantMessage:
+        responseMode === 'structured'
+          ? buildFourBlockResultMessage({
+            extracted: {
+              ...extracted,
+              vehicleType,
+              scheduleType,
+            },
+            interpretation,
+            guardrail,
+            readiness,
+            routeDiffItems,
+            quote: {
+              basis: quote.basis,
+              hourly: quote.hourly,
+              perJob: quote.perJob,
+            },
+            assumptions,
+            countMismatchReason: countCheck.mismatchReason,
+          })
+          : buildConversationalAssistantMessage({
+            assistantResponse: extracted.assistantResponse,
+            missingFields,
+            extracted: {
+              ...extracted,
+              vehicleType,
+              scheduleType,
+            },
+            isMultiScenario,
+            quote: {
+              basis: quote.basis,
+              hourly: quote.hourly,
+              perJob: quote.perJob,
+            },
+          }),
       roleResolution,
       routeSummary: {
         totalDistance: routeSummary.totalDistance,
