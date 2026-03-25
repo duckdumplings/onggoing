@@ -1175,6 +1175,10 @@ function buildGeneralKnowledgeReply(params: {
   requestedWeb: boolean;
   webSourceCount: number;
 }): string {
+  // 웹검색을 명시 요청했는데 근거가 0개면, 추측/학습기반 단정 답변을 금지한다.
+  if (params.requestedWeb && params.webSourceCount === 0) {
+    return '웹 검색을 시도했지만 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다. 검색어를 더 구체화(예: 회사명+서비스명, 공식 사이트)해주시면 다시 찾아볼게요.';
+  }
   const sanitized = sanitizeAssistantWebClaim({
     assistantMessage: params.assistantResponse,
     requestedWeb: params.requestedWeb,
@@ -1188,6 +1192,32 @@ function buildGeneralKnowledgeReply(params: {
     return '웹 검색을 시도했지만 현재 질의로는 신뢰 가능한 공개 결과가 부족합니다. 검색어를 더 구체화해주시면 다시 찾아볼게요.';
   }
   return '요청하신 내용을 확인했어요. 지금은 참고 가능한 내부/외부 근거가 제한적이라 핵심만 간단히 안내드렸습니다.';
+}
+
+function buildWebSearchGroundedReply(params: {
+  web: { snippets: string[]; sources: Array<{ title: string; url: string }> };
+  requestedWeb: boolean;
+  ragHint?: string;
+}): string {
+  if (params.web.sources.length === 0) {
+    return buildGeneralKnowledgeReply({
+      requestedWeb: params.requestedWeb,
+      webSourceCount: 0,
+      ragHint: params.ragHint,
+      assistantResponse: '',
+    });
+  }
+  const bullets = params.web.sources
+    .slice(0, 3)
+    .map((s, idx) => `- ${idx + 1}. ${s.title} (${s.url})`);
+  return [
+    '웹 검색 기반으로 확인한 공개 정보만 요약해드릴게요.',
+    '',
+    '확인된 출처',
+    ...bullets,
+    '',
+    '원하시면 위 출처 기준으로 사실관계(회사 소개/서비스 범위/운영 여부)만 다시 간단히 정리해드릴게요.',
+  ].join('\n');
 }
 
 function buildCauseAnalysisMessage(params: {
@@ -1538,7 +1568,7 @@ export async function POST(request: NextRequest) {
         : 'general';
     const isTimeSensitiveQuery = /오늘|내일|지금|현재|방금|이번주|다음주|오늘자|최신|업데이트|시각|시간/i.test(message);
     const similarCandidate =
-      rawIntentHint === 'general' && !isTimeSensitiveQuery && operationalIntent === 'default'
+      rawIntentHint === 'general' && !isTimeSensitiveQuery && operationalIntent === 'default' && !hardGeneralOverride
         ? await retrieveSimilarQueryCandidate({
           sessionId,
           query: message,
@@ -1604,6 +1634,46 @@ export async function POST(request: NextRequest) {
       ? await searchWebKnowledge({ query: message, maxResults: 3, timeoutMs: 3500 })
       : { snippets: [], sources: [], fetchedAt: new Date().toISOString() };
     const requestedWeb = /웹\s*검색|검색해서|찾아본\s*후|실시간\s*검색/.test(message);
+    if (hardGeneralOverride) {
+      const evidence = buildEvidencePayload({
+        ragSources: rag.sources || [],
+        webSources: web.sources || [],
+        usedWeb: Boolean(web.sources?.length),
+        usedRag: Boolean(rag.sources?.length),
+        hasSessionSummary: Boolean(sessionSummary),
+      });
+      await upsertSessionContext(sessionId, previousSlotState);
+      return NextResponse.json({
+        success: true,
+        extracted: {},
+        missingFields: [],
+        followUpQuestions: [],
+        assistantMessage:
+          web.sources.length > 0
+            ? buildWebSearchGroundedReply({
+              web,
+              requestedWeb,
+              ragHint: rag.snippets.slice(0, 2).join('\n'),
+            })
+            : buildGeneralKnowledgeReply({
+              assistantResponse: '',
+              ragHint: rag.snippets.slice(0, 2).join('\n'),
+              requestedWeb,
+              webSourceCount: 0,
+            }),
+        quote: null,
+        routeSummary: null,
+        assumptions: [],
+        evidence: {
+          ...evidence,
+          fetchedAt: web.fetchedAt,
+        },
+        actions: {
+          canApplyToPanel: false,
+          canPreviewMap: false,
+        },
+      });
+    }
     const finalPromptText = [
       llmPromptText,
       '[도구 정책] 이 시스템은 웹 검색 도구를 사용할 수 있습니다. 웹 근거가 없으면 없다고 명시하되, "웹 검색 기능이 없다"라고 답변하지 마세요.',
@@ -1876,9 +1946,6 @@ export async function POST(request: NextRequest) {
     if ((isNonQuoteIntent && missingFields.includes('origin') && missingFields.includes('destinations')) || hardGeneralOverride) {
       const ragHint = rag.snippets.slice(0, 2).join('\n');
       await upsertSessionContext(sessionId, slotState);
-      const generalTail = hardGeneralOverride
-        ? '\n\n원하시면 이어서 이 대화 맥락으로 견적 계산도 바로 진행해드릴게요.'
-        : '';
       return NextResponse.json({
         success: true,
         extracted,
@@ -1890,7 +1957,7 @@ export async function POST(request: NextRequest) {
             ragHint,
             requestedWeb,
             webSourceCount: web.sources.length,
-          }) + generalTail,
+          }),
         evidence: {
           ...evidence,
           fetchedAt: web.fetchedAt,
