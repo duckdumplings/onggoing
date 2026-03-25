@@ -24,7 +24,7 @@ import {
 } from '@/domains/quote/services/conversationStateManager';
 import { resolvePoiHintsFromText, saveToolCallLog } from '@/domains/quote/services/toolRouter';
 import { retrieveFeedbackGuidance, retrieveRagContext, retrieveSimilarQueryCandidate } from '@/domains/quote/services/ragRetriever';
-import { searchWebKnowledge } from '@/domains/quote/services/webKnowledgeRetriever';
+import { buildExpandedSearchQuery, searchWebKnowledge } from '@/domains/quote/services/webKnowledgeRetriever';
 import { parseStructuredLogisticsMemo } from '@/domains/quote/services/structuredLogisticsParser';
 
 type ExtractedContext = {
@@ -75,7 +75,9 @@ function buildEvidencePayload(params: {
 
   if (params.usedRag) basis.push('내부 지식/세션 컨텍스트를 우선 반영했습니다.');
   if (params.hasSessionSummary) basis.push('세션 요약 메모리를 반영해 맥락을 유지했습니다.');
-  if (params.usedWeb) basis.push('부족한 일반 지식은 웹 검색 결과를 보강해 반영했습니다.');
+  if (params.usedWeb && (params.webSources?.length || 0) > 0) {
+    basis.push('일반 질의에 대해 웹 검색으로 확인된 출처를 근거로 반영했습니다.');
+  }
 
   const uniqueRag = Array.from(new Set(params.ragSources));
   for (const src of uniqueRag) {
@@ -94,6 +96,82 @@ function buildEvidencePayload(params: {
     basis: basis.length ? basis : ['사용자 입력과 세션 컨텍스트를 기반으로 응답했습니다.'],
     sources: sources.slice(0, 8),
   };
+}
+
+function normalizeQueryForRepeat(s: string): string {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[?!.,]/g, '')
+    .trim()
+    .slice(0, 220);
+}
+
+function isRepeatedUserQuestion(message: string, history: ChatHistoryItem[]): boolean {
+  const n = normalizeQueryForRepeat(message);
+  if (n.length < 10) return false;
+  const users = history.filter((h) => h.role === 'user').map((h) => normalizeQueryForRepeat(String(h.content || '')));
+  if (users.length < 1) return false;
+  const lastPrev = users[users.length - 1];
+  return lastPrev === n;
+}
+
+async function synthesizeGeneralKnowledgeAnswer(params: {
+  message: string;
+  webSnippets: string[];
+  webSources: Array<{ title: string; url: string }>;
+  ragSnippets: string[];
+  requestedWeb: boolean;
+  knowledgeTopic?: string;
+}): Promise<string | null> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  const model = process.env.OPENAI_QUOTE_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.35,
+        max_tokens: 500,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You are a concise Korean assistant for Ongoing logistics product chat.',
+              'Rules:',
+              '- Answer directly. If web snippets are empty or not trustworthy, say you could not verify from public web results and suggest what to search next (official site, business registration, brand + service name).',
+              '- Do NOT invent company facts.',
+              '- Do NOT push delivery quotes, addresses, or vehicles unless the user explicitly asks for a quote.',
+              '- Never say you cannot use web search.',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              `사용자 질문:\n${params.message}`,
+              '',
+              `[웹 검색 스니펫]\n${params.webSnippets.join('\n---\n') || '(없음)'}`,
+              '',
+              `[내부 참고]\n${params.ragSnippets.join('\n') || '(없음)'}`,
+              '',
+              '한국어로 2~6문장으로 답변. 웹 근거가 없으면 없다고 명확히 말하고, 정확도를 위해 사용자에게 무엇을 추가로 알려달라고 할지 제안.',
+            ].join('\n'),
+          },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const text = String(json?.choices?.[0]?.message?.content || '').trim();
+    return text || null;
+  } catch {
+    return null;
+  }
 }
 
 function sanitizeAssistantWebClaim(params: {
@@ -129,6 +207,11 @@ function buildPreferenceInstruction(slotState: SlotState): string {
   if (slotState.preferences?.preferredScheduleType) {
     lines.push(
       `스케줄 정보가 누락되면 ${slotState.preferences.preferredScheduleType === 'regular' ? '정기' : '비정기'}를 우선 제안하세요.`
+    );
+  }
+  if (slotState.responseMode === 'knowledge' && Number(slotState.responseModeLockTurns || 0) > 0) {
+    lines.push(
+      '현재 턴은 일반 질의·지식 응답 모드입니다. 배송 견적·주소·차량 요청으로 유도하지 마세요.'
     );
   }
   return lines.join('\n');
@@ -346,15 +429,17 @@ function detectOperationalIntent(message: string): OperationalIntent {
 
 function hasStrongQuoteSignal(message: string): boolean {
   const s = String(message || '').trim();
-  return /(견적|요금|금액|비용|배송|경유|동선|경로|차량|정기|비정기|출발|도착|주소|ETA|계산)/i.test(s) || hasAddressLikeToken(s);
+  return (
+    /(견적|요금|금액|비용|배송|경유|동선|경로|차량|정기|비정기|출발|도착|주소|ETA|계산|고객사|타임라인|상차지|반납|메모)/i.test(s) ||
+    hasAddressLikeToken(s)
+  );
 }
 
 function isGeneralKnowledgeRequest(message: string): boolean {
   const s = String(message || '').trim();
   if (!s) return false;
   const hasGeneralCue =
-    /(알려줘|설명해|뭐야|무엇|소개|비교|특징|장단점|서비스|회사|브랜드|풀필먼트|위펀|기업|서비스|운영)/i.test(s) ||
-    /(어떤\s*내용|무엇을\s*확인|내용이\s*없|무슨\s*정보|어떤\s*점|정리해줘)/i.test(s);
+    /(알려줘|설명해|뭐야|무엇|소개|비교|특징|장단점|서비스|회사|브랜드|풀필먼트|위펀)/i.test(s);
   if (!hasGeneralCue) return false;
   return !hasStrongQuoteSignal(s);
 }
@@ -362,7 +447,11 @@ function isGeneralKnowledgeRequest(message: string): boolean {
 function isKnowledgeFollowUpQuestion(message: string): boolean {
   const s = String(message || '').trim();
   if (!s) return false;
-  return /(어떤\s*내용|무엇을\s*확인|뭘\s*확인|어떻게\s*확인|왜\s*못\s*찾|다시\s*찾아|검색해봐)/.test(s);
+  return (
+    /(어떤\s*내용|무엇을\s*확인|뭘\s*확인|어떻게\s*확인|왜\s*못\s*찾|다시\s*찾아|검색해봐)/.test(s) ||
+    /(내용이\s*없|내용\s*없|없는데\s*\?|아무\s*것도\s*없|뭐가\s*없|근거\s*없|출처\s*없|허탈|애매)/.test(s) ||
+    /(그게\s*무슨|뭔\s*소리|무슨\s*말|멍청|답답)/.test(s)
+  );
 }
 
 function extractKnowledgeTopicHint(message: string): string | undefined {
@@ -395,7 +484,7 @@ function updateKnowledgeModeState(params: {
   if (params.hardGeneralOverride) {
     return {
       responseMode: 'knowledge',
-      responseModeLockTurns: 3,
+      responseModeLockTurns: 5,
       knowledgeTopic: topicHint || params.prev.knowledgeTopic,
     };
   }
@@ -857,6 +946,7 @@ function evaluateRouteReadiness(params: {
   extracted: any;
   interpretation: IntentInterpretation;
   guardrail: GuardrailResult;
+  timelinePlaceholders?: string[];
 }): ReadinessResult {
   const { extracted, interpretation, guardrail } = params;
   let score = 1.0;
@@ -901,6 +991,9 @@ function evaluateRouteReadiness(params: {
   if (!isReady) {
     if (!origin || !looksResolvableAddressText(origin)) {
       singleQuestion = '출발지 1곳만 도로명+번지로 확인해 주세요.';
+    } else if (params.timelinePlaceholders && params.timelinePlaceholders.length > 0) {
+      const list = params.timelinePlaceholders.slice(0, 5).map((n) => `「${n}」`);
+      singleQuestion = `타임라인에 나온 장소 ${list.join(', ')}에 대해 도로명+번지 주소가 아직 없습니다. 각 장소별 주소를 알려주시면 경로에 반영할 수 있어요.`;
     } else {
       singleQuestion = '누락/중복이 의심되는 경유지 1곳만 확인해 주세요.';
     }
@@ -922,6 +1015,37 @@ function looksResolvableAddressText(value: string): boolean {
   const hasLot = /[가-힣0-9]+동\s*\d+(?:-\d+)?/.test(s);
   const hasRegion = /(?:서울|경기|인천|부산|대구|광주|대전|울산|세종|[가-힣]{2,4}(?:시|구|군))/.test(s);
   return (hasRoad || hasLot) && hasRegion;
+}
+
+/** 타임라인(> 구분)에만 등장하고 도로명 주소로 보이지 않는 장소명 → 보충 주소 요청용 */
+function extractTimelinePlaceholdersWithoutAddress(message: string): string[] {
+  const normalized = normalizeLogisticsText(message);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const v = raw.replace(/\s+/g, ' ').replace(/\([^)]*\)/g, ' ').trim();
+    if (!v || v.length < 2) return;
+    if (looksResolvableAddressText(v)) return;
+    if (/^(월|화|수|목|금|토|일)([,\s~]|$)/.test(v)) return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    out.push(v);
+  };
+  if (!/>/.test(normalized)) return [];
+  const segments = normalized.split(/\s*>\s*/);
+  for (const seg of segments) {
+    const noTime = seg.replace(/^\d{1,2}:\d{2}(?:~\d{1,2}:\d{2})?\s*/, '').trim();
+    const core = noTime
+      .replace(/\s*배송(?:\([^)]*\))?\s*$/g, '')
+      .replace(/\s*상차\s*$/g, '')
+      .replace(/\s*맞수거\s*$/g, '')
+      .replace(/\s*수거\s*$/g, '')
+      .trim();
+    if (core && !looksResolvableAddressText(core) && /[가-힣]/.test(core)) {
+      push(core);
+    }
+  }
+  return out.slice(0, 12);
 }
 
 function canonicalAddressKey(raw?: string): string {
@@ -1229,16 +1353,16 @@ function buildGeneralKnowledgeReply(params: {
   });
   if (sanitized) return sanitized;
   if (params.ragHint) {
-    return `요청하신 내용을 확인했어요. 현재 참고 가능한 정보 기준으로 정리하면 아래와 같습니다.\n${params.ragHint}`;
+    return `내부 참고 자료만으로는 질문에 충분히 답하기 어렵습니다. 아래는 시스템에 있는 참고 문맥입니다.\n\n${params.ragHint}\n\n공개 웹에서 확인되지 않은 내용은 단정하지 않겠습니다. 법인명·서비스명·공식 사이트 중 하나를 알려주시면 다시 찾아볼게요.`;
   }
   if (params.requestedWeb) {
-    return '웹 검색을 시도했지만 현재 질의로는 신뢰 가능한 공개 결과가 부족합니다. 검색어를 더 구체화해주시면 다시 찾아볼게요.';
+    return '웹 검색을 시도했지만, 질의와 직접 연결되는 신뢰할 만한 공개 결과를 충분히 찾지 못했습니다. 회사명·브랜드·서비스명(예: 조식24)이나 공식 사이트 주소를 함께 알려주시면 검색을 좁혀 다시 시도할 수 있어요.';
   }
-  return '요청하신 내용을 확인했어요. 지금은 참고 가능한 내부/외부 근거가 제한적이라 핵심만 간단히 안내드렸습니다.';
+  return '지금 질문에 대해 공개 웹·내부 참고 모두에서 확실한 근거를 찾지 못했습니다. 구체적인 회사명·서비스명·공식 채널을 알려주시면 그에 맞춰 다시 정리해 드릴게요.';
 }
 
 function buildWebSearchGroundedReply(params: {
-  web: { snippets: string[]; sources: Array<{ title: string; url: string }> };
+  web: { snippets: string[]; sources: Array<{ title: string; url: string; snippet?: string }> };
   requestedWeb: boolean;
   ragHint?: string;
 }): string {
@@ -1250,40 +1374,19 @@ function buildWebSearchGroundedReply(params: {
       assistantResponse: '',
     });
   }
-  const bullets = params.web.sources
-    .slice(0, 3)
-    .map((s, idx) => `- ${idx + 1}. ${s.title} (${s.url})`);
-  return [
-    '웹 검색 기반으로 확인한 공개 정보만 요약해드릴게요.',
+  const blocks: string[] = [
+    '아래는 웹 검색으로 확인된 공개 출처와 요약 스니펫입니다. 비즈니스 판단은 반드시 공식 채널을 함께 확인해 주세요.',
     '',
-    '확인된 출처',
-    ...bullets,
-    '',
-    '원하시면 위 출처 기준으로 사실관계(회사 소개/서비스 범위/운영 여부)만 다시 간단히 정리해드릴게요.',
-  ].join('\n');
-}
-
-function buildGroundedGeneralKnowledgeReply(params: {
-  web: { sources: Array<{ title: string; url: string }> };
-  ragHint?: string;
-  requestedWeb: boolean;
-  knowledgeTopic?: string;
-}): string {
-  if (params.web.sources.length > 0) {
-    return buildWebSearchGroundedReply({
-      web: { snippets: [], sources: params.web.sources },
-      requestedWeb: params.requestedWeb,
-      ragHint: params.ragHint,
-    });
-  }
-  if (params.ragHint) {
-    return `요청하신 내용을 확인했어요. 지금은 공개 웹 근거 대신 내부 참고 자료 기준으로 정리하면 아래와 같습니다.\n${params.ragHint}`;
-  }
-  const topic = params.knowledgeTopic ? `\n\n정확도를 높이려면 '${params.knowledgeTopic}'의 공식 사이트(또는 사업자명/대표 키워드) 중 하나를 알려주세요.` : '';
-  if (params.requestedWeb) {
-    return `웹 검색을 시도했지만 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다.${topic}`;
-  }
-  return `지금은 신뢰할 만한 공개 근거를 충분히 확인하지 못했어요.${topic}\n원하시면 공식 사이트/관련 링크를 주시면 그 기준으로 다시 정리해드릴게요.`;
+  ];
+  params.web.sources.slice(0, 3).forEach((s, idx) => {
+    const sn = (s as { snippet?: string }).snippet || params.web.snippets[idx] || '';
+    blocks.push(`[${idx + 1}] ${s.title}`);
+    if (sn) blocks.push(sn.slice(0, 420));
+    blocks.push(`→ ${s.url}`);
+    blocks.push('');
+  });
+  blocks.push('추가로 특정 서비스명·법인명·공식 사이트가 있으면 알려주시면 검색 정확도를 더 올릴 수 있어요.');
+  return blocks.join('\n');
 }
 
 function pickExtractionModel(params: {
@@ -1703,7 +1806,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const preferenceInstruction = buildPreferenceInstruction(previousSlotState);
+    const preferenceInstruction = buildPreferenceInstruction({
+      ...previousSlotState,
+      ...modeState,
+    });
 
     const shouldUseRag = rawIntentHint === 'business' || attachmentIds.length > 0 || message.length > 120;
     const rag = shouldUseRag
@@ -1730,11 +1836,54 @@ export async function POST(request: NextRequest) {
     const shouldUseWebSearch =
       rawIntentHint === 'general' ||
       /회사|주식회사|브랜드|뉴스|최신|요약|정의|뜻|누구|무엇|비교|설명/i.test(message);
-    const web = shouldUseWebSearch
-      ? await searchWebKnowledge({ query: message, maxResults: 3, timeoutMs: 3500 })
-      : { snippets: [], sources: [], fetchedAt: new Date().toISOString() };
+    let web: Awaited<ReturnType<typeof searchWebKnowledge>> = {
+      snippets: [],
+      sources: [],
+      fetchedAt: new Date().toISOString(),
+    };
+    if (shouldUseWebSearch) {
+      web = await searchWebKnowledge({ query: message, maxResults: 3, timeoutMs: 3500 });
+      if (web.sources.length === 0 && isRepeatedUserQuestion(message, history)) {
+        const expanded = buildExpandedSearchQuery(message);
+        if (expanded.trim() !== message.trim()) {
+          const second = await searchWebKnowledge({ query: expanded, maxResults: 3, timeoutMs: 3500 });
+          if (second.sources.length > 0) web = second;
+        }
+      }
+    }
     const requestedWeb = /웹\s*검색|검색해서|찾아본\s*후|실시간\s*검색/.test(message);
     if (hardGeneralOverride) {
+      const ragSnip = rag.snippets.slice(0, 2);
+      const synthesized = await synthesizeGeneralKnowledgeAnswer({
+        message,
+        webSnippets: web.snippets,
+        webSources: web.sources,
+        ragSnippets: ragSnip,
+        requestedWeb,
+        knowledgeTopic: modeState.knowledgeTopic,
+      });
+      const citeBlock =
+        web.sources.length > 0
+          ? `\n\n——\n출처:\n${web.sources
+            .slice(0, 3)
+            .map((s, i) => `${i + 1}. ${s.title}\n   ${s.url}`)
+            .join('\n')}`
+          : '';
+      const assistantMessage = synthesized
+        ? `${synthesized}${citeBlock}`
+        : web.sources.length > 0
+          ? buildWebSearchGroundedReply({
+            web,
+            requestedWeb,
+            ragHint: ragSnip.join('\n'),
+          })
+          : buildGeneralKnowledgeReply({
+            assistantResponse: '',
+            ragHint: ragSnip.join('\n'),
+            requestedWeb,
+            webSourceCount: 0,
+            knowledgeTopic: modeState.knowledgeTopic,
+          });
       const evidence = buildEvidencePayload({
         ragSources: rag.sources || [],
         webSources: web.sources || [],
@@ -1751,19 +1900,7 @@ export async function POST(request: NextRequest) {
         extracted: {},
         missingFields: [],
         followUpQuestions: [],
-        assistantMessage:
-          web.sources.length > 0
-            ? buildWebSearchGroundedReply({
-              web,
-              requestedWeb,
-              ragHint: rag.snippets.slice(0, 2).join('\n'),
-            })
-            : buildGroundedGeneralKnowledgeReply({
-              web: { sources: [] },
-              ragHint: rag.snippets.slice(0, 2).join('\n'),
-              requestedWeb,
-              knowledgeTopic: modeState.knowledgeTopic,
-            }),
+        assistantMessage,
         quote: null,
         routeSummary: null,
         assumptions: [],
@@ -1835,6 +1972,7 @@ export async function POST(request: NextRequest) {
     const expectedCounts = expectedCountsForModel;
     // 1단계: LLM 해석 결과 + 사용자 입력에서 의도/개수/주소 후보 해석
     const interpretation = buildIntentInterpretation(message, expectedCounts);
+    const timelinePlaceholders = extractTimelinePlaceholdersWithoutAddress(message);
     const beforeValidationExtracted = normalizeExtractedQuoteInfo(extracted);
 
     // 2단계: 역할 분리(상차/배송/반납) + 가드레일 + 자동 보정
@@ -1852,6 +1990,7 @@ export async function POST(request: NextRequest) {
         extracted,
         interpretation,
         guardrail,
+        timelinePlaceholders,
       });
       const shouldRetry = !guardrail.isValid || Boolean(countProbe.mismatchReason) || !readinessProbe.isReady;
       if (!shouldRetry) break;
@@ -1878,6 +2017,7 @@ export async function POST(request: NextRequest) {
       extracted,
       interpretation,
       guardrail,
+      timelinePlaceholders,
     });
     let countCheck = applyExpectedCountHeuristics(extracted, expectedCounts);
     if (countCheck.mismatchReason) {
@@ -2069,10 +2209,11 @@ export async function POST(request: NextRequest) {
         missingFields,
         followUpQuestions: [],
         assistantMessage:
-          buildGroundedGeneralKnowledgeReply({
-            web: { sources: web.sources },
+          buildGeneralKnowledgeReply({
+            assistantResponse: extracted.assistantResponse,
             ragHint,
             requestedWeb,
+            webSourceCount: web.sources.length,
             knowledgeTopic: slotState.knowledgeTopic,
           }),
         evidence: {

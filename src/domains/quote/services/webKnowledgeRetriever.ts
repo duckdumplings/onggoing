@@ -55,6 +55,26 @@ function tokenizeQuery(query: string): string[] {
   return raw.filter((token) => token.length >= 2 && !GENERIC_QUERY_TOKENS.has(token));
 }
 
+/** 질의에서 브랜드·고유명사 후보(한글 2~10자, 영문 3자+) */
+function extractCoreEntityTokens(query: string): string[] {
+  const s = String(query || '').trim();
+  const fromTokenize = tokenizeQuery(query);
+  const korean = s.match(/[가-힣]{2,10}/g) || [];
+  const latin = s.match(/\b[a-z]{3,}\b/gi) || [];
+  const merged = [...fromTokenize, ...korean.map((x) => x.toLowerCase()), ...latin.map((x) => x.toLowerCase())];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of merged) {
+    const t = raw.trim();
+    if (!t || t.length < 2) continue;
+    if (GENERIC_QUERY_TOKENS.has(t)) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out.slice(0, 12);
+}
+
 function scoreSourceRelevance(queryTokens: string[], source: WebSource): number {
   if (queryTokens.length === 0) return 0;
   const haystack = `${source.title} ${source.snippet} ${source.url}`.toLowerCase();
@@ -67,29 +87,40 @@ function scoreSourceRelevance(queryTokens: string[], source: WebSource): number 
 
 function filterRelevantSources(query: string, sources: WebSource[]): WebSource[] {
   const tokens = tokenizeQuery(query);
-  if (tokens.length === 0) return sources;
+  const coreEntities = extractCoreEntityTokens(query);
+  if (sources.length === 0) return [];
+  if (tokens.length === 0 && coreEntities.length === 0) {
+    return sources.slice(0, 5);
+  }
 
-  const filtered = sources
+  const scored = sources
     .map((source) => {
-      const titleUrlHaystack = `${source.title} ${source.url}`.toLowerCase();
-      let titleScore = 0;
-      for (const token of tokens) {
-        if (titleUrlHaystack.includes(token)) titleScore += 1;
+      const haystack = `${source.title} ${source.snippet} ${source.url}`.toLowerCase();
+      const base = tokens.length > 0 ? scoreSourceRelevance(tokens, source) : 0;
+      let coreHits = 0;
+      for (const c of coreEntities) {
+        if (haystack.includes(c.toLowerCase())) coreHits += 1;
       }
-      const totalScore = scoreSourceRelevance(tokens, source);
-      return { source, titleScore, totalScore };
+      const coreOk = coreEntities.length === 0 ? true : coreHits > 0;
+      const score = base + coreHits * 3;
+      return { source, score, coreOk };
     })
     .filter((row) => {
-      if (tokens.length === 1) {
-        // 단일 키워드는 제목/URL에 직접 매칭되는 것만 통과
-        return row.titleScore >= 1;
-      }
-      // 복수 키워드는 최소 1개가 제목/URL에 있어야 하고, 총점도 충분해야 함
-      return row.titleScore >= 1 && row.totalScore >= Math.min(2, tokens.length);
+      if (coreEntities.length > 0 && !row.coreOk) return false;
+      if (tokens.length === 0 && coreEntities.length === 0) return row.score > 0;
+      return row.score > 0;
     })
-    .sort((a, b) => b.totalScore - a.totalScore || b.titleScore - a.titleScore);
+    .sort((a, b) => b.score - a.score);
 
-  return filtered.map((row) => row.source);
+  return scored.map((row) => row.source);
+}
+
+/** 동일 질의 재시도 시 검색어 확장 */
+export function buildExpandedSearchQuery(original: string): string {
+  const compact = String(original || '').trim().replace(/\s+/g, ' ');
+  if (!compact) return compact;
+  if (/공식|사이트|법인|주식회사|기업\s*소개/i.test(compact)) return compact;
+  return `${compact} 공식 사이트`;
 }
 
 async function fetchDuckDuckGoSources(
