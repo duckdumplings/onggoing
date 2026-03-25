@@ -307,10 +307,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     return ['출발지: 강남역, 목적지: 판교역, 차량: 레이', '내일 오전 10시 출발, 정기 배송으로 계산해줘'];
   }, [latestResult?.suggestedPrompts, messages]);
 
-  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit | null> => {
+  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit | undefined> => {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
-    if (!token) return null;
+    if (!token) return undefined;
     const headers = new Headers(base || {});
     headers.set('Authorization', `Bearer ${token}`);
     return Object.fromEntries(headers.entries());

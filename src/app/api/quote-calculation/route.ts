@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
     const perMin = Number(process.env.QUOTE_PER_MIN ?? 50) // 분당(주행)
     const weightRay = Number(process.env.VEHICLE_WEIGHT_RAY ?? 1.0)
     const weightStarex = Number(process.env.VEHICLE_WEIGHT_STAREX ?? 1.2)
-    const fuelPricePerL = Number(process.env.FUEL_PRICE_PER_L ?? 1650) // KRW/L
-    const fuelEfficiencyKmPerL = Number(process.env.FUEL_EFFICIENCY_KM_PER_L ?? 10) // km/L
+    const fuelPricePerL = Number(process.env.FUEL_PRICE_PER_L ?? 1800) // KRW/L
+    const fuelEfficiencyKmPerL = Number(process.env.FUEL_EFFICIENCY_KM_PER_L ?? 8) // km/L
 
     const vehicleWeight = vehicleType === '스타렉스' ? weightStarex : weightRay
     const dwellTotalMin = dwellMinutes.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0)
