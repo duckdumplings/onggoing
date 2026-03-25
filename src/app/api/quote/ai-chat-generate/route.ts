@@ -96,6 +96,25 @@ function buildEvidencePayload(params: {
   };
 }
 
+function sanitizeAssistantWebClaim(params: {
+  assistantMessage?: string;
+  requestedWeb: boolean;
+  webSourceCount: number;
+}): string | undefined {
+  const raw = String(params.assistantMessage || '').trim();
+  if (!raw) return undefined;
+  const deniesWeb =
+    /실시간\s*웹\s*검색\s*기능이\s*없|웹\s*검색\s*기능이\s*없|직접\s*찾아드리기\s*어려워|웹검색\s*불가/i.test(raw);
+  if (!deniesWeb) return raw;
+  if (!params.requestedWeb) {
+    return raw.replace(/실시간\s*웹\s*검색\s*기능이\s*없[^.!\n]*[.!\n]?/gi, '').trim();
+  }
+  if (params.webSourceCount > 0) {
+    return '웹 검색 결과를 바탕으로 확인 가능한 공개 정보를 정리해드릴게요.';
+  }
+  return '웹 검색을 시도했지만, 현재 질의에 대해 신뢰 가능한 공개 결과를 충분히 찾지 못했습니다. 원하시면 공식 사이트/보도자료 중심으로 다시 좁혀서 찾아볼게요.';
+}
+
 function buildPreferenceInstruction(slotState: SlotState): string {
   const lines: string[] = [];
   const responseStyle = slotState.preferences?.responseStyle;
@@ -1150,6 +1169,27 @@ function buildValidationBlockedConversationMessage(params: {
   return lines.join('\n');
 }
 
+function buildGeneralKnowledgeReply(params: {
+  assistantResponse?: string;
+  ragHint?: string;
+  requestedWeb: boolean;
+  webSourceCount: number;
+}): string {
+  const sanitized = sanitizeAssistantWebClaim({
+    assistantMessage: params.assistantResponse,
+    requestedWeb: params.requestedWeb,
+    webSourceCount: params.webSourceCount,
+  });
+  if (sanitized) return sanitized;
+  if (params.ragHint) {
+    return `요청하신 내용을 확인했어요. 현재 참고 가능한 정보 기준으로 정리하면 아래와 같습니다.\n${params.ragHint}`;
+  }
+  if (params.requestedWeb) {
+    return '웹 검색을 시도했지만 현재 질의로는 신뢰 가능한 공개 결과가 부족합니다. 검색어를 더 구체화해주시면 다시 찾아볼게요.';
+  }
+  return '요청하신 내용을 확인했어요. 지금은 참고 가능한 내부/외부 근거가 제한적이라 핵심만 간단히 안내드렸습니다.';
+}
+
 function buildCauseAnalysisMessage(params: {
   interpretation: IntentInterpretation;
   guardrail: GuardrailResult;
@@ -1563,8 +1603,10 @@ export async function POST(request: NextRequest) {
     const web = shouldUseWebSearch
       ? await searchWebKnowledge({ query: message, maxResults: 3, timeoutMs: 3500 })
       : { snippets: [], sources: [], fetchedAt: new Date().toISOString() };
+    const requestedWeb = /웹\s*검색|검색해서|찾아본\s*후|실시간\s*검색/.test(message);
     const finalPromptText = [
       llmPromptText,
+      '[도구 정책] 이 시스템은 웹 검색 도구를 사용할 수 있습니다. 웹 근거가 없으면 없다고 명시하되, "웹 검색 기능이 없다"라고 답변하지 마세요.',
       ...(feedbackGuidance.snippets || []).map((snippet, idx) => `[피드백학습${idx + 1}] ${snippet}`),
       ...(web.snippets || []).map((snippet, idx) => `[웹참고${idx + 1}] ${snippet}`),
     ]
@@ -1843,9 +1885,12 @@ export async function POST(request: NextRequest) {
         missingFields,
         followUpQuestions: [],
         assistantMessage:
-          (extracted.assistantResponse ||
-            `요청하신 내용을 확인했어요. 참고 가능한 내부 문서를 기반으로 정리하면 아래와 같습니다.\n${ragHint || '현재 세션에서 참고할 문서가 부족해요. 파일을 업로드하면 더 정확히 도와드릴 수 있어요.'}`) +
-          generalTail,
+          buildGeneralKnowledgeReply({
+            assistantResponse: extracted.assistantResponse,
+            ragHint,
+            requestedWeb,
+            webSourceCount: web.sources.length,
+          }) + generalTail,
         evidence: {
           ...evidence,
           fetchedAt: web.fetchedAt,
