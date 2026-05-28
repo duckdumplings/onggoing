@@ -722,13 +722,14 @@ export default function RouteOptimizerPanel() {
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">도로 옵션</span>
                 <div className="flex bg-white rounded-lg border border-slate-200 p-1">
                   {[
-                    { id: 'time-first', label: '⏱️ 시간우선' },
-                    { id: 'toll-saving', label: '💰 요금절약' },
-                    { id: 'free-road-first', label: '🛣️ 무료우선' }
+                    { id: 'time-first', label: '⏱️ 시간우선', desc: '유료도로 포함, 최단 소요시간' },
+                    { id: 'toll-saving', label: '💰 요금절약', desc: '시간 일부 양보, 통행료 최소화' },
+                    { id: 'free-road-first', label: '🛣️ 무료우선', desc: '유료도로 회피, 시간 무관' }
                   ].map((opt) => (
                     <button
                       key={opt.id}
                       onClick={() => setRoadOption(opt.id as any)}
+                      title={opt.desc}
                       className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${roadOption === opt.id
                           ? 'bg-indigo-50 text-indigo-700 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
@@ -738,6 +739,11 @@ export default function RouteOptimizerPanel() {
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-slate-500 leading-snug px-1">
+                  {roadOption === 'time-first' && '유료도로를 포함해 가장 빠른 경로. 통행료가 발생할 수 있습니다.'}
+                  {roadOption === 'toll-saving' && '시간을 조금 양보하는 대신 통행료를 줄이는 절충안.'}
+                  {roadOption === 'free-road-first' && '유료도로를 회피합니다. 시간은 더 걸릴 수 있습니다.'}
+                </p>
               </div>
 
               {/* 기타 옵션 (스위치) */}

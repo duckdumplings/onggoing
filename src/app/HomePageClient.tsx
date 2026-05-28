@@ -4,11 +4,16 @@ import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import AIQuoteLauncher from '@/components/panels/AIQuoteLauncher';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { installGlobalErrorReporting } from '@/libs/errorReporting';
 
 export default function HomePageClient() {
   const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
+
+  useEffect(() => {
+    installGlobalErrorReporting();
+  }, []);
 
   return (
     <div className="h-screen bg-slate-50 flex overflow-hidden font-sans">

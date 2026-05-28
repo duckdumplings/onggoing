@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { usePoiCache } from '@/hooks/usePoiCache'
+import { reportActionFailure } from '@/libs/errorReporting'
 
 export type AddressSelection = {
   name: string
@@ -17,7 +18,7 @@ interface Props {
   onSelect: (v: AddressSelection | null) => void
 }
 
-type InputState = 'idle' | 'searching' | 'ready' | 'ambiguous' | 'committed'
+type InputState = 'idle' | 'searching' | 'ready' | 'committed'
 
 type SuggestionMatchType = 'name_prefix' | 'address_prefix' | 'name_contains' | 'address_contains' | 'fuzzy' | 'unknown'
 
@@ -33,9 +34,6 @@ type SearchSuggestion = AddressSelection & {
 }
 
 const MIN_QUERY_LENGTH = 2
-const HIGH_CONFIDENCE_THRESHOLD = 0.88
-const MID_CONFIDENCE_THRESHOLD = 0.7
-const MAX_QUICK_PICK_COUNT = 3
 const DEV_MODE = process.env.NODE_ENV === 'development'
 
 export default function AddressAutocomplete({ label, placeholder, value, onSelect }: Props) {
@@ -46,7 +44,6 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   const [inputState, setInputState] = useState<InputState>('idle')
   const [searchStatus, setSearchStatus] = useState<SearchStatus>('ok')
   const [statusMessage, setStatusMessage] = useState<string>('')
-  const [armedByEnter, setArmedByEnter] = useState(false)
   const [pendingEnterCommit, setPendingEnterCommit] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
   const inFlightQueryRef = useRef<string | null>(null)
@@ -64,10 +61,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
 
   const debouncedQuery = useAdaptiveDebounce(query)
   const selectedLabel = value ? (value.name || value.address) : ''
-  const visibleSuggestions = useMemo(
-    () => (inputState === 'ambiguous' ? suggestions.slice(0, MAX_QUICK_PICK_COUNT) : suggestions),
-    [inputState, suggestions]
-  )
+  const visibleSuggestions = suggestions
 
   const setFirstSuggestionMetric = () => {
     if (firstSuggestionMsRef.current !== null || queryStartAtRef.current === null) {
@@ -97,28 +91,6 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     }
   }
 
-  const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, '').trim()
-
-  const estimateConfidence = (candidate: SearchSuggestion, rawQuery: string): number => {
-    const normalizedQuery = normalize(rawQuery)
-    const normalizedName = normalize(candidate.name || '')
-    const normalizedAddress = normalize(candidate.address || '')
-    if (!normalizedQuery) return 0
-
-    if (normalizedName.startsWith(normalizedQuery)) return 0.93
-    if (normalizedAddress.startsWith(normalizedQuery)) return 0.9
-    if (normalizedName.includes(normalizedQuery)) return 0.82
-    if (normalizedAddress.includes(normalizedQuery)) return 0.74
-    return 0.58
-  }
-
-  const getCandidateConfidence = (candidate: SearchSuggestion, rawQuery: string): number => {
-    if (typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)) {
-      return Math.max(0, Math.min(1, candidate.confidence))
-    }
-    return estimateConfidence(candidate, rawQuery)
-  }
-
   useEffect(() => {
     const q = debouncedQuery.trim()
     if (q.length < MIN_QUERY_LENGTH) {
@@ -128,7 +100,6 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       setSearchStatus('ok')
       setStatusMessage('')
       setInputState(value ? 'committed' : 'idle')
-      setArmedByEnter(false)
       return
     }
 
@@ -194,6 +165,14 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
           )
           setSuggestions([])
           setInputState('idle')
+          if (status === 'error') {
+            reportActionFailure({
+              source: 'poi_search',
+              action: 'poi_search_http_error',
+              error: new Error(`POI search HTTP ${r.status}`),
+              context: { query: q, status: r.status, body },
+            })
+          }
           return null
         }
         return body
@@ -225,6 +204,12 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         setSearchStatus('error')
         setStatusMessage('검색 중 문제가 발생했습니다.')
         setInputState('idle')
+        reportActionFailure({
+          source: 'poi_search',
+          action: 'poi_search_network_error',
+          error: err,
+          context: { query: q },
+        })
       })
       .finally(() => {
         if (currentToken === requestTokenRef.current) {
@@ -252,7 +237,6 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
     setHighlight(0)
     setIsEditing(false)
     setInputState('committed')
-    setArmedByEnter(false)
     setPendingEnterCommit(false)
     setStatusMessage('')
 
@@ -279,56 +263,32 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       if (visibleSuggestions.length === 0) return
       e.preventDefault()
       setOpen(true)
-      setArmedByEnter(false)
       setHighlight((h) => Math.min(h + 1, visibleSuggestions.length - 1))
     } else if (e.key === 'ArrowUp') {
       if (visibleSuggestions.length === 0) return
       e.preventDefault()
       setOpen(true)
-      setArmedByEnter(false)
       setHighlight((h) => Math.max(h - 1, 0))
     } else if (e.key === 'Enter') {
       if (query.trim().length < MIN_QUERY_LENGTH) return
       e.preventDefault()
       enterCountRef.current += 1
 
+      // 검색 중이거나 결과 미도착 상태에서 Enter → pending 상태로 두고, 결과 오면 자동 1순위 확정
       if (visibleSuggestions.length === 0) {
-        setOpen(true)
-        setPendingEnterCommit(true)
-        setStatusMessage('검색 중입니다. 결과가 도착하면 자동 확정합니다.')
+        if (loading || inputState === 'searching') {
+          setPendingEnterCommit(true)
+          return
+        }
+        // 검색이 끝났는데 결과 0건이면 무시(아무 동작도 하지 않음). 안내 메시지는 드롭다운/접근성 라벨에서 처리.
         return
       }
 
+      // 일반 지도앱처럼 항상 highlight된(기본 1순위) 항목을 즉시 확정한다.
       const safeIndex = Math.max(0, Math.min(highlight, visibleSuggestions.length - 1))
-      const selectedCandidate = visibleSuggestions[safeIndex]
-      const confidence = getCandidateConfidence(selectedCandidate, query)
-
-      if (armedByEnter || inputState === 'ambiguous') {
-        handleSelect(selectedCandidate, 'enter-confirm')
-        return
-      }
-
-      if (confidence >= HIGH_CONFIDENCE_THRESHOLD) {
-        handleSelect(selectedCandidate, 'enter-auto')
-        return
-      }
-
-      if (confidence >= MID_CONFIDENCE_THRESHOLD) {
-        setInputState('ambiguous')
-        setArmedByEnter(true)
-        setOpen(true)
-        setHighlight(0)
-        setStatusMessage('유사 결과입니다. Enter 한 번 더 누르면 상단 결과로 확정됩니다.')
-        return
-      }
-
-      setOpen(true)
-      setInputState('ready')
-      setPendingEnterCommit(false)
-      setStatusMessage('정확한 항목을 선택해 주세요.')
+      handleSelect(visibleSuggestions[safeIndex], 'enter-confirm')
     } else if (e.key === 'Escape') {
       setOpen(false)
-      setArmedByEnter(false)
       setPendingEnterCommit(false)
     }
   }
@@ -336,19 +296,16 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
   useEffect(() => {
     if (!pendingEnterCommit) return
 
-    // "새 입력 후 바로 Enter" UX 우선:
-    // 결과가 도착하면 신뢰도와 무관하게 1순위를 우선 확정한다.
+    // "검색 중 Enter" UX: 결과가 도착하면 사용자가 추가 액션 없이 1순위를 자동 확정.
     if (suggestions.length > 0) {
       handleSelect(suggestions[0], 'enter-pending')
       return
     }
 
-    // 결과가 없고 검색이 끝난 경우에는 pending 상태를 해제하고 안내한다.
+    // 검색이 끝났는데도 결과가 없으면 pending 상태만 해제. 메시지는 드롭다운의 "검색 결과 없음"에서 처리.
     if (!loading && (searchStatus === 'no_results' || searchStatus === 'error' || searchStatus === 'rate_limited')) {
       setPendingEnterCommit(false)
       setInputState('ready')
-      setOpen(true)
-      setStatusMessage(getStatusMessage(searchStatus) || '정확한 항목을 선택해 주세요.')
     }
   }, [pendingEnterCommit, suggestions, loading, searchStatus, query])
 
@@ -395,7 +352,6 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         onChange={(e) => {
           const newValue = e.target.value
           setQuery(newValue)
-          setArmedByEnter(false)
           setPendingEnterCommit(false)
           setStatusMessage('')
           setSearchStatus('ok')

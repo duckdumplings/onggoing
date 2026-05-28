@@ -703,60 +703,108 @@ export default function TmapMainMap() {
                 </div>
               )}
 
-              {detailTab === 'kpi' && Array.isArray((routeData.summary as any)?.roadComparisons) && (
-                <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 space-y-2">
-                  <div className="flex items-center justify-between px-1">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">통행료 시뮬레이션 (A/B/C)</div>
-                    <div className="flex items-center gap-1.5">
-                      {((routeData.summary as any).roadComparisons as Array<any>).some((row: any) => row?.tollSource === 'estimated') && (
-                        <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5">
-                          추정치 포함
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setShowTollDetailDialog(true)}
-                        className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 hover:bg-indigo-100 transition-colors"
-                      >
-                        상세
-                      </button>
+              {detailTab === 'kpi' && Array.isArray((routeData.summary as any)?.roadComparisons) && (() => {
+                const comparisons = (routeData.summary as any).roadComparisons as Array<any>;
+                const current = comparisons.find((row) => row?.isSelected) || comparisons[0];
+                const formatTimeDelta = (deltaSec: number) => {
+                  const min = Math.round(deltaSec / 60);
+                  if (min === 0) return '동일';
+                  return `${min > 0 ? '+' : ''}${min}분`;
+                };
+                const formatTollDelta = (deltaWon: number) => {
+                  if (deltaWon === 0) return '동일';
+                  const abs = Math.abs(deltaWon).toLocaleString();
+                  return `${deltaWon > 0 ? '+' : '-'}${abs}원`;
+                };
+                return (
+                  <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">옵션별 비교 (현재 적용 옵션 대비)</div>
+                      <div className="flex items-center gap-1.5">
+                        {comparisons.some((row: any) => row?.tollSource === 'estimated') && (
+                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5" title="일부 옵션의 통행료는 Tmap에서 제공되지 않아 거리 기반 추정값입니다.">
+                            추정 포함
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowTollDetailDialog(true)}
+                          className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full px-2 py-0.5 hover:bg-indigo-100 transition-colors"
+                        >
+                          상세
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3">
+                      <span className="col-span-3">옵션</span>
+                      <span className="col-span-2 text-right">거리</span>
+                      <span className="col-span-3 text-right">시간 (Δ)</span>
+                      <span className="col-span-4 text-right">통행료 (Δ)</span>
+                    </div>
+                    {comparisons.map((item, idx) => {
+                      const isCurrent = Boolean(item.isSelected);
+                      const timeDeltaSec = item.estimatedTime - (current?.estimatedTime ?? item.estimatedTime);
+                      const tollDeltaWon = item.estimatedToll - (current?.estimatedToll ?? item.estimatedToll);
+                      const isFreeRoadEstimated = item.option === 'free-road-first' && item.tollSource === 'estimated';
+                      return (
+                        <button
+                          type="button"
+                          key={`${item.option}-${idx}`}
+                          onClick={() => openRoadOptionDialog(item.option)}
+                          disabled={isLoading || isApplyingRoadOption || isCurrent}
+                          title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
+                          className={`group relative grid grid-cols-12 gap-2 items-center text-xs rounded-lg px-3 py-2 border transition-all duration-300 overflow-hidden ${item.isSelected
+                            ? 'bg-white border-indigo-300 shadow-md ring-2 ring-indigo-500/20 z-10'
+                            : 'bg-slate-50/80 border-slate-200/60 text-slate-400 hover:bg-white hover:border-indigo-200 hover:shadow-sm'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
+                        >
+                          {!isCurrent && (
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/5 to-indigo-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
+                          )}
+                          <span className={`col-span-3 font-bold text-left transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-slate-500 group-hover:text-indigo-600'}`}>
+                            {item.label}
+                            {isCurrent && <span className="ml-1 text-[9px] font-bold text-indigo-500">●</span>}
+                          </span>
+                          <span className={`col-span-2 text-right transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                            {(item.estimatedDistance / 1000).toFixed(1)}km
+                          </span>
+                          <span className={`col-span-3 text-right transition-colors ${item.isSelected ? 'text-slate-900 font-medium' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                            <span>{Math.ceil(item.estimatedTime / 60)}분</span>
+                            {!isCurrent && (
+                              <span className={`ml-1 text-[10px] font-semibold ${timeDeltaSec > 0 ? 'text-rose-500' : timeDeltaSec < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                ({formatTimeDelta(timeDeltaSec)})
+                              </span>
+                            )}
+                          </span>
+                          <span className={`col-span-4 text-right font-medium transition-colors ${item.isSelected ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-800'}`}>
+                            {isFreeRoadEstimated ? (
+                              <span className="text-slate-400 italic">확인 불가</span>
+                            ) : (
+                              <>
+                                <span>{item.estimatedToll.toLocaleString()}원</span>
+                                {!isCurrent && (
+                                  <span className={`ml-1 text-[10px] font-semibold ${tollDeltaWon > 0 ? 'text-rose-500' : tollDeltaWon < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    ({formatTollDelta(tollDeltaWon)})
+                                  </span>
+                                )}
+                                <span
+                                  className={`ml-1 text-[9px] font-semibold px-1 py-px rounded ${item.tollSource === 'api' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}
+                                  title={item.tollSource === 'api' ? 'Tmap에서 제공한 공식 통행료입니다.' : 'Tmap에서 통행료가 제공되지 않아 거리(km×120원)로 추정한 값입니다.'}
+                                >
+                                  {item.tollSource === 'api' ? 'Tmap' : '추정'}
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <div className="text-[10px] text-slate-500 px-1 leading-snug">
+                      Δ는 현재 적용 옵션 대비 변화량 · <span className="text-rose-500">붉은색</span>은 늘어남, <span className="text-emerald-600">초록색</span>은 줄어듦.
+                      <span className="text-emerald-700 font-semibold ml-1">Tmap</span> 뱃지는 공식 통행료, <span className="text-amber-700 font-semibold">추정</span>은 거리 기반 추정값입니다.
                     </div>
                   </div>
-                  {((routeData.summary as any).roadComparisons as Array<any>).map((item, idx) => {
-                    const isFreeRoadEstimated = item.option === 'free-road-first' && item.tollSource === 'estimated';
-                    const isCurrent = Boolean(item.isSelected);
-                    return (
-                      <button
-                        type="button"
-                        key={`${item.option}-${idx}`}
-                        onClick={() => openRoadOptionDialog(item.option)}
-                        disabled={isLoading || isApplyingRoadOption || isCurrent}
-                        title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
-                        className={`group relative grid grid-cols-4 gap-2 text-xs rounded-lg px-3 py-2 border transition-all duration-300 overflow-hidden ${item.isSelected
-                          ? 'bg-white border-indigo-300 shadow-md ring-2 ring-indigo-500/20 z-10 scale-[1.02]'
-                          : 'bg-slate-50/80 border-slate-200/60 text-slate-400 hover:bg-white hover:border-indigo-200 hover:shadow-sm hover:z-10 hover:scale-[1.01]'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
-                      >
-                        {/* Hover Glow Effect */}
-                        {!isCurrent && (
-                          <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/5 to-indigo-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
-                        )}
-                        <span className={`font-bold transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-slate-500 group-hover:text-indigo-600'}`}>{item.label}</span>
-                        <span className={`transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>{(item.estimatedDistance / 1000).toFixed(1)}km</span>
-                        <span className={`transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>{Math.ceil(item.estimatedTime / 60)}분</span>
-                        <span className={`font-medium text-right transition-colors ${item.isSelected ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-800'}`}>
-                          {isFreeRoadEstimated ? '확인 불가' : `${item.estimatedToll.toLocaleString()}원`}
-                          {item.tollSource === 'estimated' && !isFreeRoadEstimated && (
-                            <span className="ml-1 text-[10px] text-amber-600 font-semibold">(추정)</span>
-                          )}
-                        </span>
-                      </button>
-                    )
-                  })}
-                  <div className="text-[10px] text-slate-500 px-1">
-                    * 통행료는 API 제공값을 우선 사용하며, 미제공 구간은 거리 기반 추정값으로 표시됩니다.
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {detailTab === 'eta' && !!(routeData as any)?.waypoints?.length && (
                 <div className="bg-slate-50/50 rounded-xl p-1 border border-slate-100 max-h-48 overflow-y-auto custom-scrollbar">

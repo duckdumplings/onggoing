@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { reportActionFailure } from '@/libs/errorReporting';
 
 export interface Coordinate { lat: number; lng: number; address?: string }
 
@@ -47,6 +48,84 @@ export interface OptimizationOptions {
   returnToOrigin?: boolean;
   deliveryTimes?: string[]; // 배송완료시간 배열 (24시간 형식: "14:30")
   isNextDayFlags?: boolean[]; // 다음날 배송 여부 배열
+}
+
+export interface RouteOptimizationPayload {
+  origins: Array<{ latitude?: number; longitude?: number; address: string }>;
+  destinations: Array<{ latitude?: number; longitude?: number; address: string }>;
+  finalDestinationAddress: string | null;
+  vehicleType: string;
+  optimizeOrder: boolean;
+  useRealtimeTraffic: boolean;
+  departureAt: string | null | undefined;
+  useExplicitDestination: boolean;
+  roadOption: 'time-first' | 'toll-saving' | 'free-road-first';
+  returnToOrigin: boolean;
+  dwellMinutes: number[];
+  deliveryTimes: string[];
+  isNextDayFlags: boolean[];
+}
+
+export interface RouteOptimizationBaseState {
+  origins: Coordinate | null;
+  destinations: Coordinate[];
+  vehicleType: string;
+  options: OptimizationOptions;
+  dwellMinutes: number[];
+}
+
+export interface RouteOptimizationOverride {
+  origins?: Coordinate | null;
+  destinations?: Coordinate[];
+  rawOrigins?: string[];
+  rawDestinations?: string[];
+  vehicleType?: string;
+  options?: Partial<OptimizationOptions>;
+  dwellMinutes?: number[];
+}
+
+/**
+ * 경로 최적화 API 요청 payload를 생성하는 순수 함수.
+ * 훅 외부에서도 회귀 검증을 위해 직접 호출할 수 있도록 분리한다.
+ */
+export function buildRouteOptimizationPayload(
+  state: RouteOptimizationBaseState,
+  override?: RouteOptimizationOverride
+): RouteOptimizationPayload {
+  const o = override?.origins ?? state.origins;
+  const d = override?.destinations ?? state.destinations;
+  const rawOrigins = override?.rawOrigins;
+  const rawDestinations = override?.rawDestinations;
+  const v = override?.vehicleType ?? state.vehicleType;
+  const opt: OptimizationOptions = { ...state.options, ...(override?.options || {}) };
+  const dm = override?.dwellMinutes ?? state.dwellMinutes;
+
+  const originPayload = Array.isArray(rawOrigins)
+    ? rawOrigins.map((address) => ({ address }))
+    : (o ? [{ latitude: o.lat, longitude: o.lng, address: o.address || 'origin' }] : []);
+  const destPayload = Array.isArray(rawDestinations)
+    ? rawDestinations.map((address) => ({ address }))
+    : d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: dt.address || 'dest' }));
+
+  return {
+    origins: originPayload,
+    destinations: destPayload,
+    finalDestinationAddress: opt.useExplicitDestination
+      ? (Array.isArray(rawDestinations) && rawDestinations.length
+        ? rawDestinations[rawDestinations.length - 1]
+        : (d.length ? d[d.length - 1]?.address || null : null))
+      : null,
+    vehicleType: v,
+    optimizeOrder: opt.optimizeOrder,
+    useRealtimeTraffic: opt.useRealtimeTraffic,
+    departureAt: opt.departureAt,
+    useExplicitDestination: Boolean(opt.useExplicitDestination),
+    roadOption: opt.roadOption || 'time-first',
+    returnToOrigin: opt.returnToOrigin ?? true,
+    dwellMinutes: dm,
+    deliveryTimes: opt.deliveryTimes || [],
+    isNextDayFlags: opt.isNextDayFlags || [],
+  };
 }
 
 function pickFirstRouteCoordinate(routeData: any): { lat: number; lng: number } | null {
@@ -128,47 +207,17 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setOptionsState(prev => ({ ...prev, ...o }));
   }, []);
 
-  const buildPayload = useCallback((ovr?: Partial<{
-    origins: Coordinate | null;
-    destinations: Coordinate[];
-    rawOrigins: string[];
-    rawDestinations: string[];
-    vehicleType: RouteOptimizationState['vehicleType'];
-    options: Partial<OptimizationOptions>;
-    dwellMinutes: number[];
-  }>) => {
-    const o = ovr?.origins ?? origins;
-    const d = ovr?.destinations ?? destinations;
-    const rawOrigins = ovr?.rawOrigins;
-    const rawDestinations = ovr?.rawDestinations;
-    const v = ovr?.vehicleType ?? vehicleType;
-    const opt = { ...options, ...(ovr?.options || {}) };
-    const dm = ovr?.dwellMinutes ?? dwellMinutesState;
-    const originPayload = Array.isArray(rawOrigins)
-      ? rawOrigins.map((address) => ({ address }))
-      : (o ? [{ latitude: o.lat, longitude: o.lng, address: o.address || 'origin' }] : []);
-    const destPayload = Array.isArray(rawDestinations)
-      ? rawDestinations.map((address) => ({ address }))
-      : d.map(dt => ({ latitude: dt.lat, longitude: dt.lng, address: dt.address || 'dest' }));
-    return {
-      origins: originPayload,
-      destinations: destPayload,
-      finalDestinationAddress: opt.useExplicitDestination
-        ? (Array.isArray(rawDestinations) && rawDestinations.length
-          ? rawDestinations[rawDestinations.length - 1]
-          : (d.length ? d[d.length - 1]?.address || null : null))
-        : null,
-      vehicleType: v,
-      optimizeOrder: opt.optimizeOrder,
-      useRealtimeTraffic: opt.useRealtimeTraffic,
-      departureAt: opt.departureAt,
-      useExplicitDestination: Boolean(opt.useExplicitDestination),
-      roadOption: opt.roadOption || 'time-first',
-      returnToOrigin: opt.returnToOrigin ?? true,
-      dwellMinutes: dm,
-      deliveryTimes: opt.deliveryTimes || [],
-      isNextDayFlags: opt.isNextDayFlags || [],
-    };
+  const buildPayload = useCallback((ovr?: RouteOptimizationOverride) => {
+    return buildRouteOptimizationPayload(
+      {
+        origins,
+        destinations,
+        vehicleType,
+        options,
+        dwellMinutes: dwellMinutesState,
+      },
+      ovr
+    );
   }, [origins, destinations, vehicleType, options, dwellMinutesState]);
 
   const optimizeRouteWith = useCallback(async (override?: Partial<{
@@ -219,6 +268,19 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
         setError(err?.message || err?.error || `HTTP_${res.status}`);
         // UI에서 배너와 인라인 가이드를 띄우기 위해 throw 대신 상태로 전달하고 조용히 종료
         try { (window as any).lastOptimizationError = err; } catch { }
+        reportActionFailure({
+          source: 'route_optimization',
+          action: 'optimize_route',
+          error: new Error(err?.message || err?.error || `HTTP_${res.status}`),
+          context: {
+            httpStatus: res.status,
+            roadOption: payload.roadOption,
+            useRealtimeTraffic: payload.useRealtimeTraffic,
+            departureAt: payload.departureAt,
+            destinationCount: payload.destinations.length,
+            errorDetails: err?.details ?? null,
+          },
+        });
         return {
           success: false,
           error: err?.message || err?.error || `HTTP_${res.status}`,
@@ -311,6 +373,17 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       console.error('[useRouteOptimization] API 호출 오류:', e);
       if (!lastError) setError(e?.message || '경로 최적화 실패');
       try { if (lastError) (window as any).lastOptimizationError = lastError; } catch { }
+      reportActionFailure({
+        source: 'route_optimization',
+        action: 'optimize_route_exception',
+        error: e,
+        context: {
+          roadOption: payload.roadOption,
+          useRealtimeTraffic: payload.useRealtimeTraffic,
+          departureAt: payload.departureAt,
+          destinationCount: payload.destinations.length,
+        },
+      });
       return {
         success: false,
         error: e?.message || '경로 최적화 실패',
