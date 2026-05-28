@@ -1,13 +1,15 @@
 # 디자인 가이드 및 IA (Information Architecture)
 ## Ongoing Smart Logistics Platform
 
-> **버전**: 1.0  
-> **최종 수정일**: 2025-01-27  
+> **버전**: 1.0
+> **최종 수정일**: 2025-01-27
 > **적용 범위**: Next.js 15, React, TypeScript, Supabase, Tailwind CSS
+
+> **구문서 안내**: 본 문서의 디자인 시스템·정체성 표준은 [`docs/design-system/north-star.md`](./design-system/north-star.md)와 [`.cursor/rules/30-anti-slop-design.mdc`](../.cursor/rules/30-anti-slop-design.mdc)이 상위이다. 본 문서의 코드 예시 내 OK/금지 메타 마크는 v2 문서화 패스에서 `[OK]`/`[금지]` 텍스트로 통일 예정.
 
 ---
 
-## 📋 목차
+## 목차
 
 1. [프로젝트 개요](#프로젝트-개요)
 2. [정보 구조(IA) 설계](#정보-구조ia-설계)
@@ -20,7 +22,7 @@
 
 ---
 
-## 🎯 프로젝트 개요
+## 프로젝트 개요
 
 ### MVP 개발 방향
 - **웹앱 우선**: MVP는 웹앱 형태로 개발하여 빠른 출시와 사용자 피드백 수집
@@ -44,7 +46,7 @@
 
 ---
 
-## 🏗️ 정보 구조(IA) 설계
+## 정보 구조(IA) 설계
 
 ### 사이트 IA(지도 중심 SaaS)
 
@@ -296,7 +298,7 @@ interface BadProps {
 
 ---
 
-## 🎨 UI/UX 디자인 가이드라인
+## UI/UX 디자인 가이드라인
 
 ### Tailwind CSS 사용 규칙
 
@@ -473,7 +475,7 @@ const KeyboardFriendlyComponent = () => {
 
 ---
 
-## 🔄 데이터 흐름 및 상태 관리
+## 데이터 흐름 및 상태 관리
 
 ### 상태 관리 우선순위
 
@@ -598,7 +600,7 @@ const RouteForm = () => {
 
 ---
 
-## ⚡ 개발 시 준수사항
+## 개발 시 준수사항
 
 ### 오류 처리 패턴
 
@@ -773,7 +775,7 @@ const getSupabaseConfig = () => {
 
 ---
 
-## ✅ 품질 보증 체크리스트
+## 품질 보증 체크리스트
 
 ### 컴포넌트 개발 체크리스트
 
@@ -968,7 +970,7 @@ feat(dispatch): 실시간 차량 추적 기능 추가
 
 ---
 
-## 🚀 Cursor 개발 워크플로우
+## Cursor 개발 워크플로우
 
 ### 1. 새로운 기능 개발 시작
 
@@ -1027,7 +1029,7 @@ npm run analyze
 
 ---
 
-## 🔧 문제 해결 가이드
+## 문제 해결 가이드
 
 ### 자주 발생하는 이슈와 해결방법
 
@@ -1145,7 +1147,7 @@ const VirtualizedList = ({ items }) => (
 
 ---
 
-## 📋 일일 개발 체크리스트
+## 일일 개발 체크리스트
 
 ### 시작 전 (Daily Setup)
 - [ ] 최신 main 브랜치와 동기화
@@ -1170,7 +1172,7 @@ const VirtualizedList = ({ items }) => (
 
 ---
 
-## 🎯 마무리
+## 마무리
 
 이 디자인 가이드는 **Ongoing Smart Logistics Platform** 개발 시 일관성 있고 품질 높은 코드를 작성하기 위한 핵심 원칙들을 담고 있습니다. 
 

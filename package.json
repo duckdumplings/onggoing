@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "lint:design": "npx --yes tsx scripts/check-design-slop.ts",
+    "lint:design:strict": "npx --yes tsx scripts/check-design-slop.ts --strict",
     "verify:pricing": "npx --yes tsx scripts/verify-pricing.ts",
+    "verify:route-payload": "npx --yes tsx scripts/verify-route-payload.ts",
     "import:rate-table": "npx --yes tsx scripts/import-rate-table.ts"
   },
   "dependencies": {

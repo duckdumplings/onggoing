@@ -70,7 +70,6 @@ src/
 │   │   ├── EmptyState.tsx
 │   │   ├── SummaryCard.tsx   # KPI (tabular-nums)
 │   │   └── ...
-│   ├── layout/               # Layout, Header, Sidebar, Navigation
 │   ├── map/                  # TmapMainMap, TmapMap
 │   ├── modals/               # AIQuoteChatModal 등
 │   └── panels/               # 도메인 종속 패널 (향후 domains/로 이동)
@@ -124,9 +123,9 @@ supabase/
 토스/채널톡/카카오모빌리티 어드민 톤. 친절체("~요"), 도메인 명사 명시, 다음 행동 제시.
 
 ```
-✗ 확인하시겠습니까?       → ✓ 경로를 최적화할까요?
-✗ 오류가 발생했습니다.    → ✓ Tmap 호출에 실패했어요.
-✗ 데이터가 없습니다.      → ✓ 최근 배차 이력이 없어요.
+[금지] 확인하시겠습니까?       [권장] 경로를 최적화할까요?
+[금지] 오류가 발생했습니다.    [권장] Tmap 호출에 실패했어요.
+[금지] 데이터가 없습니다.      [권장] 최근 배차 이력이 없어요.
 ```
 
 ### 금지 패턴

@@ -1,9 +1,11 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { reportClientError } from '@/libs/errorReporting';
 
 interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  source?: string;
 }
 
 interface State {
@@ -23,6 +25,16 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    void reportClientError({
+      type: 'react_error_boundary',
+      source: this.props.source ?? 'error_boundary',
+      message: error.message,
+      stack: error.stack,
+      context: {
+        componentStack: errorInfo?.componentStack ?? null,
+      },
+    });
 
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -52,11 +64,11 @@ class ErrorBoundary extends Component<Props, State> {
               />
             </svg>
             <h3 className="text-lg font-medium text-error-800">
-              오류가 발생했습니다
+              화면을 표시하지 못했어요
             </h3>
           </div>
           <p className="mt-2 text-sm text-error-700">
-            페이지를 새로고침하거나 잠시 후 다시 시도해주세요.
+            페이지를 새로고침하거나 잠시 후 다시 시도해 주세요.
           </p>
           <button
             onClick={() => window.location.reload()}

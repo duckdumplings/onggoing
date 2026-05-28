@@ -52,7 +52,7 @@ export default function QuoteReviewHistoryPanel() {
       setReviews(data.data.reviews || []);
     } catch (err) {
       console.error('검토 이력 조회 오류:', err);
-      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다');
+      setError(err instanceof Error ? err.message : '이력을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setLoading(false);
     }

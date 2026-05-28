@@ -65,7 +65,7 @@ export default function QuoteFromCustomerDataPanel() {
       setQuoteResult(data.data);
     } catch (err) {
       console.error('견적 생성 오류:', err);
-      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다');
+      setError(err instanceof Error ? err.message : '견적 생성이 중단됐어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setIsLoading(false);
     }

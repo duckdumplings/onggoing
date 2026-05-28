@@ -205,7 +205,7 @@ export async function GET(req: NextRequest) {
       status: 'error',
       suggestions: [],
       normalizedQuery,
-      message: '검색 처리 중 오류가 발생했습니다.',
+      message: '주소 검색이 중단됐어요. 잠시 후 다시 시도해 주세요.',
     })
   }
 }

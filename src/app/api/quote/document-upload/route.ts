@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
         success: false,
         error: { 
           code: 'INTERNAL_ERROR', 
-          message: error instanceof Error ? error.message : '서버 오류가 발생했습니다' 
+          message: error instanceof Error ? error.message : '파일 업로드가 중단됐어요. 잠시 후 다시 시도해 주세요.' 
         } 
       },
       { status: 500 }

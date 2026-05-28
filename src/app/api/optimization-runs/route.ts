@@ -90,14 +90,14 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         id: data.id,
-        message: '최적화 실행 결과가 저장되었습니다'
+        message: '최적화 결과를 저장했어요.'
       }
     });
 
   } catch (error) {
     console.error('최적화 실행 결과 저장 API 오류:', error);
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
+      { error: '최적화 결과를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.' },
       { status: 500 }
     );
   }
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('최적화 실행 결과 조회 실패:', error);
       return NextResponse.json(
-        { error: '데이터 조회에 실패했습니다' },
+        { error: '최적화 이력을 불러오지 못했어요.' },
         { status: 500 }
       );
     }
@@ -177,8 +177,8 @@ export async function GET(request: NextRequest) {
     console.error('최적화 실행 결과 조회 API 오류:', error);
     return NextResponse.json(
       {
-        error: '서버 오류가 발생했습니다',
-        details: error instanceof Error ? error.message : '알 수 없는 오류'
+        error: '최적화 이력을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.',
+        details: error instanceof Error ? error.message : 'unknown'
       },
       { status: 500 }
     );

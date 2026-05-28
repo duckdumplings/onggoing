@@ -11,6 +11,7 @@ import {
   pickHourlyRate,
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
+import { reportActionFailure } from '@/libs/errorReporting';
 
 // 배송원별 색상 정의
 const DRIVER_COLORS = [
@@ -72,14 +73,30 @@ export default function TmapMainMap() {
       });
       const latestError = (window as any)?.lastOptimizationError;
       if (latestError) {
-        setRoadOptionApplyError(latestError?.details || latestError?.message || latestError?.error || '재계산에 실패했습니다.');
+        const message = latestError?.details || latestError?.message || latestError?.error || '재계산에 실패했습니다.';
+        setRoadOptionApplyError(typeof message === 'string' ? message : '재계산에 실패했습니다.');
+        reportActionFailure({
+          source: 'route_optimization',
+          action: 'recalculate_road_option',
+          error: new Error(typeof message === 'string' ? message : 'road option recalculation failed'),
+          context: {
+            pendingRoadOption,
+            latestError,
+          },
+        });
         return;
       }
       setOptions({ roadOption: pendingRoadOption });
       setShowRecalculateDialog(false);
       setPendingRoadOption(null);
     } catch (error) {
-      setRoadOptionApplyError(error instanceof Error ? error.message : '재계산 중 오류가 발생했습니다.');
+      setRoadOptionApplyError(error instanceof Error ? error.message : '경로 재계산이 중단됐어요. 잠시 후 다시 시도해 주세요.');
+      reportActionFailure({
+        source: 'route_optimization',
+        action: 'recalculate_road_option_exception',
+        error,
+        context: { pendingRoadOption },
+      });
     } finally {
       setIsApplyingRoadOption(false);
     }
@@ -1090,7 +1107,7 @@ export default function TmapMainMap() {
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
                   <div className="font-semibold text-slate-700 mb-1">도로 옵션 비교</div>
                   {routeQuoteDetail.roadComparisons.length === 0 && (
-                    <div>비교 데이터가 없습니다.</div>
+                    <div>비교할 경로 데이터가 비어 있어요.</div>
                   )}
                   {routeQuoteDetail.roadComparisons.map((row: any, idx: number) => (
                     <div key={`${row.option}-${idx}`}>

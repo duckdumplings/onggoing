@@ -1,0 +1,12 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-globals": [
+      "warn",
+      {
+        "name": "alert",
+        "message": "alert() 대신 Toast/Modal 컴포넌트를 사용하세요. UX 일관성과 접근성을 위해."
+      }
+    ]
+  }
+}

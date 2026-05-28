@@ -162,7 +162,11 @@ export async function retrieveSimilarQueryCandidate(params: {
       const isFailure = Boolean(
         assistant?.metadata?.error ||
         assistant?.metadata?.isFailure ||
-        assistantText.includes('오류가 발생')
+        assistantText.includes('오류가 발생') ||
+        assistantText.includes('중단됐어요') ||
+        assistantText.includes('실패했어요') ||
+        assistantText.includes('연결이 끊어졌어요') ||
+        assistantText.includes('처리되지 않았어요')
       );
       if (isFailure) continue;
 

@@ -60,7 +60,7 @@ export async function GET(
   } catch (error) {
     console.error('최적화 실행 결과 조회 API 오류:', error);
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
+      { error: '최적화 이력을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.' },
       { status: 500 }
     );
   }
@@ -77,7 +77,7 @@ export async function DELETE(
 
     if (!id) {
       return NextResponse.json(
-        { error: '최적화 실행 ID가 필요합니다' },
+        { error: '최적화 실행 ID가 비어 있어요.' },
         { status: 400 }
       );
     }
@@ -90,20 +90,20 @@ export async function DELETE(
     if (error) {
       console.error('최적화 실행 결과 삭제 실패:', error);
       return NextResponse.json(
-        { error: '데이터 삭제에 실패했습니다' },
+        { error: '최적화 이력을 삭제하지 못했어요.' },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: '최적화 실행 결과가 삭제되었습니다'
+      message: '최적화 이력을 삭제했어요.'
     });
 
   } catch (error) {
     console.error('최적화 실행 결과 삭제 API 오류:', error);
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다' },
+      { error: '최적화 이력을 삭제하지 못했어요. 잠시 후 다시 시도해 주세요.' },
       { status: 500 }
     );
   }

@@ -1703,7 +1703,7 @@ export async function POST(request: NextRequest) {
     console.error('경로 최적화 API 오류:', error);
     return NextResponse.json(
       {
-        error: '경로 최적화 중 오류가 발생했습니다',
+        error: '경로 최적화가 중단됐어요. 잠시 후 다시 시도해 주세요.',
         details: error instanceof Error ? error.message : '알 수 없는 오류'
       },
       { status: (error instanceof Error && error.message.startsWith('TMAP_UNAVAILABLE')) ? 502 : 500 }

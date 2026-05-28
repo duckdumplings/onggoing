@@ -373,7 +373,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         await bootstrapServerSession();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '로그인 중 오류가 발생했습니다.';
+      const message = error instanceof Error ? error.message : '로그인이 처리되지 않았어요. 잠시 후 다시 시도해 주세요.';
       setAuthError(message);
     } finally {
       setIsAuthLoading(false);
@@ -395,7 +395,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       setShowAuthForm(false);
       pushAssistantMessage('로그아웃되었습니다. 현재는 로컬 임시 대화 모드입니다.', 'system');
     } catch (error) {
-      const message = error instanceof Error ? error.message : '로그아웃 중 오류가 발생했습니다.';
+      const message = error instanceof Error ? error.message : '로그아웃이 처리되지 않았어요. 잠시 후 다시 시도해 주세요.';
       setAuthError(message);
     } finally {
       setIsAuthLoading(false);
@@ -774,7 +774,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             });
           }
         } else {
-          const fallbackError = `오류가 발생했습니다: ${json.error?.message || '알 수 없는 오류'}`;
+          const fallbackError = `견적 처리에 실패했어요: ${json.error?.message || '잠시 후 다시 시도해 주세요'}`;
           pushAssistantMessage(fallbackError, 'normal', { evidence: json.evidence, sourceUserText: message });
           if (sessionId) {
             await persistMessage(sessionId, 'assistant', fallbackError, {
@@ -848,7 +848,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       }
 
     } catch (error) {
-      pushAssistantMessage('죄송합니다. 서버 통신 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setLoading(false);
     }

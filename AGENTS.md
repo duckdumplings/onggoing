@@ -37,7 +37,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## 도메인 폴더 (`src/domains/`)
 
-> ⚠️ **현 상태 (2026-05)**: `dispatch/auth/tracking/admin`은 `index.ts`만 있고 비어 있다.
+> **현 상태 (2026-05)**: `dispatch/auth/tracking/admin`은 `index.ts`만 있고 비어 있다.
 > `quote/`만 실제 구현. 신규 도메인 코드는 `src/domains/<domain>/` 에 채워 넣는다
 > (가이드라인의 Domain-Driven Organization 원칙).
 

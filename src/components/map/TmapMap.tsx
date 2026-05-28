@@ -324,7 +324,7 @@ export default function TmapMap({
         <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
           <div className="text-center">
             <div className="text-gray-700 font-semibold">지도 로딩 중</div>
-            <div className="text-gray-500 text-sm">잠시만 기다려 주세요</div>
+            <div className="text-gray-500 text-sm">지도를 불러오는 중…</div>
           </div>
         </div>
       )}

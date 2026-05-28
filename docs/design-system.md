@@ -1,4 +1,7 @@
 # 디자인 시스템
+
+> **구문서 안내**: 본 문서는 v1.0(2025-01)로, 토큰·정체성의 상위 정의는 [`docs/design-system/north-star.md`](./design-system/north-star.md)와 [`.cursor/rules/30-anti-slop-design.mdc`](../.cursor/rules/30-anti-slop-design.mdc)에 있다. 본 문서는 Phase 2 컴포넌트 카탈로그가 정착될 때까지 참고용으로 유지한다.
+
 ## iOS Glass 디자인 가이드(신규)
 
 본 프로젝트는 지도 중심 SaaS 전환과 함께 iOS 글래스(유리질감) 스타일을 기본 테마로 채택한다. 글래스 UI는 반투명 배경, 블러, 미세한 보더/하이라이트, 소프트 섀도우, 고채도 포인트 컬러를 특징으로 한다.
@@ -81,7 +84,7 @@ theme: {
 
 ---
 
-## 📋 목차
+## 목차
 
 1. [디자인 원칙](#디자인-원칙)
 2. [색상 시스템](#색상-시스템)
@@ -94,7 +97,7 @@ theme: {
 
 ---
 
-## 🎯 디자인 원칙
+## 디자인 원칙
 
 ### 핵심 가치
 1. **명확성 (Clarity)** - 복잡한 물류 정보를 직관적으로 전달
@@ -111,7 +114,7 @@ theme: {
 
 ---
 
-## 🎨 색상 시스템
+## 색상 시스템
 
 ### 브랜드 색상
 ```css
@@ -188,7 +191,7 @@ theme: {
 
 ---
 
-## 📝 타이포그래피
+## 타이포그래피
 
 ### 폰트 스택
 ```css
@@ -471,7 +474,7 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 
 ---
 
-## 🎨 아이콘 시스템
+## 아이콘 시스템
 
 ### 아이콘 라이브러리
 - **Heroicons**: 기본 UI 아이콘
@@ -510,7 +513,7 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 
 ---
 
-## 📐 레이아웃 및 그리드
+## 레이아웃 및 그리드
 
 ### 그리드 시스템
 ```css
@@ -626,7 +629,7 @@ font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 
 ---
 
-## 📱 반응형 디자인
+## 반응형 디자인
 
 ### 브레이크포인트
 ```css
@@ -695,7 +698,7 @@ xl: 1280px  /* 대형 데스크톱 */
 
 ---
 
-## 🚛 물류 특화 컴포넌트
+## 물류 특화 컴포넌트
 
 ### ETA 카드 (Estimated Time of Arrival)
 ```tsx
@@ -1048,7 +1051,7 @@ const VehicleStatusCard = ({
 
 ---
 
-## 📋 사용 가이드라인
+## 사용 가이드라인
 
 ### 컴포넌트 사용 원칙
 1. **일관성**: 동일한 기능은 동일한 컴포넌트 사용

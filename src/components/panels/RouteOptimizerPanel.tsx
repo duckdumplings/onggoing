@@ -6,6 +6,7 @@ import AddressAutocomplete, { type AddressSelection } from '@/components/Address
 import WaypointList, { type Waypoint } from './WaypointList';
 import MultiDriverResultsPanel from './MultiDriverResultsPanel';
 import { ChevronDown, ChevronUp, Settings, X } from 'lucide-react';
+import { reportActionFailure } from '@/libs/errorReporting';
 
 type OptimizationMode = 'single' | 'multi';
 type SavedOptimizationRun = {
@@ -934,6 +935,10 @@ export default function RouteOptimizerPanel() {
               isNextDayFlags: isNextDayFlags
             };
 
+            // 우측 패널의 도로 옵션 재계산 등 후속 호출에서 좌측 패널의 시간/배송완료/다음날 플래그가
+            // 누락되지 않도록, 계산 직전에 hook state로 스냅샷을 함께 반영한다.
+            setOptions(optionsWithDeliveryTimes);
+
             if (optimizationMode === 'multi') {
               // 다중 배송원 최적화
               console.log('🚛 [RouteOptimizerPanel] 다중 배송원 최적화 시작');
@@ -1024,7 +1029,19 @@ export default function RouteOptimizerPanel() {
                 }
               } catch (error) {
                 console.error('❌ [RouteOptimizerPanel] 다중 배송원 최적화 오류:', error);
-                setLocalError('다중 배송원 최적화 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+                setLocalError('다중 배송원 최적화가 중단됐어요: ' + (error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요'));
+                reportActionFailure({
+                  source: 'route_optimization',
+                  action: 'multi_driver_optimization',
+                  error,
+                  context: {
+                    driverCount,
+                    vehicleType,
+                    destinationCount: finalDest.length,
+                    roadOption,
+                    useRealtimeTraffic: finalUseRealtimeTraffic,
+                  },
+                });
               } finally {
                 setIsMultiDriverLoading(false);
               }
@@ -1088,7 +1105,18 @@ export default function RouteOptimizerPanel() {
                 }, 1000);
               } catch (error) {
                 console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
-                setLocalError('경로 최적화 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : '알 수 없는 오류'));
+                setLocalError('경로 최적화가 중단됐어요: ' + (error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요'));
+                reportActionFailure({
+                  source: 'route_optimization',
+                  action: 'optimize_single_panel_exception',
+                  error,
+                  context: {
+                    vehicleType,
+                    destinationCount: finalDest.length,
+                    roadOption,
+                    useRealtimeTraffic: finalUseRealtimeTraffic,
+                  },
+                });
                 const le: any = (window as any).lastOptimizationError || null;
                 const byIndex: Record<number, string> = {};
                 if (le?.details?.errors && Array.isArray(le.details.errors)) {

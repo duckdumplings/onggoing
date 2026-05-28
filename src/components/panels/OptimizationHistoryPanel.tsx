@@ -60,7 +60,7 @@ export function OptimizationHistoryPanel() {
         setError(result.error || '데이터 조회에 실패했습니다');
       }
     } catch (err) {
-      setError('네트워크 오류가 발생했습니다');
+      setError('네트워크 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setLoading(false);
     }
