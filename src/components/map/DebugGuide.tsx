@@ -23,7 +23,7 @@ export default function DebugGuide() {
               <li>지도가 나타나는가? (회색 영역이 아닌 실제 지도)</li>
               <li>로딩 스피너가 나타나는가?</li>
               <li>에러 메시지가 나타나는가?</li>
-              <li>"디버그 정보" 클릭하여 상세 로그 확인</li>
+              <li>&quot;디버그 정보&quot; 클릭하여 상세 로그 확인</li>
             </ul>
           </div>
 
@@ -40,14 +40,14 @@ export default function DebugGuide() {
             <h4 className="font-semibold text-blue-700 mb-2">3️⃣ 콘솔에서 확인할 로그</h4>
             <div className="bg-gray-100 p-3 rounded font-mono text-xs">
               <p className="text-green-600">✅ 정상 로그:</p>
-              <p className="text-gray-600">• "Tmap 스크립트 로드 완료"</p>
-              <p className="text-gray-600">• "지도 컨테이너 준비됨"</p>
-              <p className="text-gray-600">• "Tmap 지도 초기화 완료"</p>
+              <p className="text-gray-600">• &quot;Tmap 스크립트 로드 완료&quot;</p>
+              <p className="text-gray-600">• &quot;지도 컨테이너 준비됨&quot;</p>
+              <p className="text-gray-600">• &quot;Tmap 지도 초기화 완료&quot;</p>
               <br />
               <p className="text-red-600">❌ 문제 로그:</p>
-              <p className="text-gray-600">• "Tmap 스크립트 로드 실패"</p>
-              <p className="text-gray-600">• "지도 초기화 실패"</p>
-              <p className="text-gray-600">• "API 키가 설정되지 않았습니다"</p>
+              <p className="text-gray-600">• &quot;Tmap 스크립트 로드 실패&quot;</p>
+              <p className="text-gray-600">• &quot;지도 초기화 실패&quot;</p>
+              <p className="text-gray-600">• &quot;API 키가 설정되지 않았습니다&quot;</p>
             </div>
           </div>
 
@@ -56,7 +56,7 @@ export default function DebugGuide() {
             <ul className="list-disc list-inside space-y-1 text-blue-600">
               <li>개발자 도구 → Network 탭 클릭</li>
               <li>페이지 새로고침</li>
-              <li>"jsv2" 검색하여 Tmap 스크립트 로드 확인</li>
+              <li>&quot;jsv2&quot; 검색하여 Tmap 스크립트 로드 확인</li>
               <li>상태 코드가 200인지 확인</li>
             </ul>
           </div>

@@ -247,10 +247,3 @@ export const useAllDriverLocations = () => {
 
   return driverLocations;
 };
-
-// 컴포넌트 언마운트 시 자동 정리
-React.useEffect(() => {
-  return () => {
-    realtimeManager.unsubscribeAll();
-  };
-}, []); 

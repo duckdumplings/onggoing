@@ -24,7 +24,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" className={inter.variable}>
-      <head />
+      <head>
+        <link rel="preconnect" href="https://apis.openapi.sk.com" />
+        <link rel="preconnect" href="https://topopentile3.tmap.co.kr" />
+      </head>
       <body className="font-sans">
         <RouteOptimizationProvider>
           {children}
