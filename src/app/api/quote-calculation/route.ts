@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { perJobBasePrice, perJobRegularPrice, STOP_FEE, fuelSurchargeHourly, pickHourlyRate } from '@/domains/quote/pricing'
+import { perJobBasePrice, perJobRegularPrice, STOP_FEE, fuelSurchargeHourly, suggestCheaperNextTier } from '@/domains/quote/pricing'
+import { pickHourlyRateFromPayload, resolveHourlyRateTable } from '@/domains/quote/services/rateTableService'
 
 type QuoteInput = {
   distance: number // meters
@@ -65,8 +66,10 @@ export async function POST(req: NextRequest) {
 
     // 추가: 요금제별 계산
     // 1) 시간당(30분 올림, 최소 120분, 유류비 할증표만 적용, 벌크 미적용)
+    // DB rate_tables 우선 lookup, 실패 시 코드 정적 fallback 자동 적용.
     const billMinutes = Math.max(120, Math.ceil(totalMinutes / 30) * 30)
-    const ratePerHour = pickHourlyRate(vehicleKey, billMinutes)
+    const hourlyRateTable = await resolveHourlyRateTable(vehicleKey, new Date())
+    const ratePerHour = pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
     const hourlyBase = ratePerHour * (billMinutes / 60)
     // 포함거리 = 10km * 과금시간(시간)
     const includedKm = 10 * (billMinutes / 60)
@@ -149,13 +152,41 @@ export async function POST(req: NextRequest) {
         dwellMinutes
       },
       plans: {
-        hourly: {
-          total: hourlyTotal,
-          formatted: `₩${hourlyTotal.toLocaleString('ko-KR')}`,
-          billMinutes,
-          ratePerHour,
-          fuelSurcharge: hourlyFuelSurcharge,
-        },
+        hourly: (() => {
+          const dailyFromTable = Math.round(ratePerHour * (billMinutes / 60))
+          const monthly20dFromTable = dailyFromTable * 20
+          const tierAdvice = suggestCheaperNextTier(vehicleKey, billMinutes)
+          return {
+            total: hourlyTotal,
+            formatted: `₩${hourlyTotal.toLocaleString('ko-KR')}`,
+            billMinutes,
+            ratePerHour,
+            fuelSurcharge: hourlyFuelSurcharge,
+            tiers: {
+              perTrip: {
+                value: hourlyTotal,
+                formatted: `₩${hourlyTotal.toLocaleString('ko-KR')}`,
+                note: '유류할증 포함 1회 견적',
+              },
+              perDay: {
+                value: dailyFromTable,
+                formatted: `₩${dailyFromTable.toLocaleString('ko-KR')}`,
+                note: '운임표 일일 운임 (시간당 × 시간, 유류할증 제외)',
+              },
+              perMonth20d: {
+                value: monthly20dFromTable,
+                formatted: `₩${monthly20dFromTable.toLocaleString('ko-KR')}`,
+                note: '운임표 20일 기준 (일일 × 20, 유류할증 제외)',
+              },
+            },
+            advisor: tierAdvice,
+            rateTable: {
+              source: hourlyRateTable.source,
+              effectiveFrom: hourlyRateTable.effectiveFrom,
+              sourceDoc: hourlyRateTable.sourceDoc,
+            },
+          }
+        })(),
         perJob: {
           total: perJobTotal,
           formatted: `₩${perJobTotal.toLocaleString('ko-KR')}`,

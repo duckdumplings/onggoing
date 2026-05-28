@@ -1766,14 +1766,25 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 </div>
                 <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200">
 
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-start justify-between mb-4">
                     <div>
-                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">시간당 요금제</div>
+                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">시간당 1회</div>
                       <div className="text-xl font-black tracking-tight">
                         {latestResult.quote.hourly?.formatted}
                       </div>
+                      {latestResult.quote.hourly?.tiers && (
+                        <div className="mt-1.5 space-y-0.5 text-[10px] text-indigo-100/90 leading-tight">
+                          <div>
+                            일일 <span className="font-semibold text-white">{latestResult.quote.hourly.tiers.perDay?.formatted}</span>
+                          </div>
+                          <div>
+                            20일 <span className="font-semibold text-white">{latestResult.quote.hourly.tiers.perMonth20d?.formatted}</span>
+                          </div>
+                          <div className="text-indigo-200/70 text-[9px]">유류할증 제외 · 운임표 기준</div>
+                        </div>
+                      )}
                     </div>
-                    <div className="w-px h-8 bg-indigo-400/30"></div>
+                    <div className="w-px self-stretch bg-indigo-400/30 mx-3"></div>
                     <div className="text-right">
                       <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">단건 요금제</div>
                       <div className="text-xl font-black tracking-tight">
@@ -1797,6 +1808,15 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       </div>
                     </div>
                   </div>
+
+                  {latestResult.quote.hourly?.advisor?.message && (
+                    <div className="mb-4 rounded-lg bg-amber-50/95 border border-amber-200 px-3 py-2 text-[11px] leading-snug text-amber-900 shadow-sm">
+                      <span className="font-semibold">단가 인하 구간 안내</span>
+                      <span className="block mt-0.5 text-amber-800">
+                        {latestResult.quote.hourly.advisor.message.replace(/^💡\s*/, '')}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <div className="grid grid-cols-2 gap-2">

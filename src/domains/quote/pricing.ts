@@ -1,7 +1,16 @@
 export type Vehicle = 'ray' | 'starex';
 
+// 운임표 시행일: 2025-06-01 (참고 자료: "[26년]옹고잉 배송 서비스 제공 운임(25.6.1).pptx")
+// 30분 단위 lookup, 시간당 단가 × 과금시간(분/60)으로 시간당 요금 산출.
+// 스타렉스 2시간(36,000) > 2시간 반(34,000) 인버전 구간은 운임표 원본 의도 그대로 유지.
+//
+// [운영팀 컴펀 이력 — 2026-05-29]
+// 스타렉스 3시간 반: PPTX 원본 일일 94,500 / 20일 1,890,000 표기는 오타.
+// 정답은 시간당 30,000원 × 3.5h = 105,000원 / 20일 2,100,000원 (영업/운영팀 확인 완료).
+// 코드와 DB rate_tables 모두 정답 기준으로 적용됨.
+export const HOURLY_RATE_EFFECTIVE_FROM = '2025-06-01';
+
 export const HOURLY_RATE_TABLE: Record<Vehicle, Array<{ maxMinutes: number; ratePerHour: number }>> = {
-  // 30분 스텝, 테이블 구간의 시간당 단가 × 과금시간(분/60)
   ray: [
     { maxMinutes: 120, ratePerHour: 26500 },
     { maxMinutes: 150, ratePerHour: 26500 },
@@ -18,19 +27,19 @@ export const HOURLY_RATE_TABLE: Record<Vehicle, Array<{ maxMinutes: number; rate
     { maxMinutes: 480, ratePerHour: 21000 },
   ],
   starex: [
-    { maxMinutes: 120, ratePerHour: 35000 },
-    { maxMinutes: 150, ratePerHour: 35000 },
-    { maxMinutes: 180, ratePerHour: 29000 },
-    { maxMinutes: 210, ratePerHour: 29000 },
-    { maxMinutes: 240, ratePerHour: 26500 },
-    { maxMinutes: 270, ratePerHour: 26500 },
-    { maxMinutes: 300, ratePerHour: 25000 },
-    { maxMinutes: 330, ratePerHour: 25000 },
-    { maxMinutes: 360, ratePerHour: 24500 },
-    { maxMinutes: 390, ratePerHour: 24500 },
-    { maxMinutes: 420, ratePerHour: 24500 },
-    { maxMinutes: 450, ratePerHour: 24500 },
-    { maxMinutes: 480, ratePerHour: 24500 },
+    { maxMinutes: 120, ratePerHour: 36000 },
+    { maxMinutes: 150, ratePerHour: 34000 },
+    { maxMinutes: 180, ratePerHour: 30000 },
+    { maxMinutes: 210, ratePerHour: 30000 },
+    { maxMinutes: 240, ratePerHour: 27000 },
+    { maxMinutes: 270, ratePerHour: 27000 },
+    { maxMinutes: 300, ratePerHour: 26000 },
+    { maxMinutes: 330, ratePerHour: 26000 },
+    { maxMinutes: 360, ratePerHour: 25000 },
+    { maxMinutes: 390, ratePerHour: 25000 },
+    { maxMinutes: 420, ratePerHour: 25000 },
+    { maxMinutes: 450, ratePerHour: 25000 },
+    { maxMinutes: 480, ratePerHour: 25000 },
   ],
 };
 
@@ -70,6 +79,71 @@ export function pickHourlyRate(vehicle: Vehicle, billMinutes: number): number {
     if (billMinutes <= row.maxMinutes) return row.ratePerHour;
   }
   return table[table.length - 1].ratePerHour;
+}
+
+export type HourlyTierAdvice = {
+  vehicle: Vehicle;
+  currentBillMinutes: number;
+  currentRatePerHour: number;
+  currentDailyFare: number;
+  suggestedBillMinutes: number;
+  suggestedRatePerHour: number;
+  suggestedDailyFare: number;
+  /** 시간당 단가 변화 (음수면 단가 인하) */
+  ratePerHourDelta: number;
+  /** 일일 운임 변화 (보통 양수: 추가 30분 작업분의 비용) */
+  dailyFareDelta: number;
+  /** 화주/영업 응답에 그대로 붙일 한 줄 안내 */
+  message: string;
+};
+
+/**
+ * 같은 차종 안에서 30분을 늘렸을 때 시간당 단가가 더 떨어지는 인버전 구간을 찾는다.
+ * 스타렉스 2시간(36,000원/h) → 2.5시간(34,000원/h)처럼 단가가 내려가는 다음 구간이
+ * 있으면, "30분 더 늘리면 단가가 X원/h 떨어진다"는 영업 권유 문구를 만든다.
+ */
+export function suggestCheaperNextTier(vehicle: Vehicle, billMinutes: number): HourlyTierAdvice | null {
+  if (billMinutes <= 0) return null;
+  const currentBill = Math.max(120, Math.ceil(billMinutes / 30) * 30);
+  if (currentBill >= 480) return null;
+  const nextBill = currentBill + 30;
+
+  const currentRate = pickHourlyRate(vehicle, currentBill);
+  const suggestedRate = pickHourlyRate(vehicle, nextBill);
+  if (suggestedRate >= currentRate) return null;
+
+  const currentDaily = Math.round((currentBill / 60) * currentRate);
+  const suggestedDaily = Math.round((nextBill / 60) * suggestedRate);
+  const ratePerHourDelta = suggestedRate - currentRate;
+  const dailyFareDelta = suggestedDaily - currentDaily;
+
+  const formatWon = (v: number) => `${Math.abs(v).toLocaleString('ko-KR')}원`;
+  const labelHours = (m: number) =>
+    m % 60 === 0 ? `${m / 60}시간` : `${Math.floor(m / 60)}시간 ${m % 60}분`;
+  const deltaText =
+    dailyFareDelta > 0
+      ? `30분 추가 비용 +${formatWon(dailyFareDelta)}`
+      : dailyFareDelta < 0
+        ? `${formatWon(dailyFareDelta)} 절감`
+        : '일일 운임 동일';
+
+  const message =
+    `💡 ${labelHours(nextBill)} 계약으로 늘리면 시간당 단가가 ` +
+    `${currentRate.toLocaleString('ko-KR')}원 → ${suggestedRate.toLocaleString('ko-KR')}원으로 ` +
+    `${formatWon(ratePerHourDelta)}/h 낮아져요 (${deltaText}).`;
+
+  return {
+    vehicle,
+    currentBillMinutes: currentBill,
+    currentRatePerHour: currentRate,
+    currentDailyFare: currentDaily,
+    suggestedBillMinutes: nextBill,
+    suggestedRatePerHour: suggestedRate,
+    suggestedDailyFare: suggestedDaily,
+    ratePerHourDelta,
+    dailyFareDelta,
+    message,
+  };
 }
 
 // 과금시간을 30분 단위로 올림하는 함수

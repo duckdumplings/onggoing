@@ -10,9 +10,13 @@ import {
   fuelSurchargeHourlyCorrect,
   perJobBasePrice,
   perJobRegularPrice,
-  pickHourlyRate,
   roundUpTo30Minutes,
+  suggestCheaperNextTier,
 } from '@/domains/quote/pricing';
+import {
+  pickHourlyRateFromPayload,
+  resolveHourlyRateTable,
+} from '@/domains/quote/services/rateTableService';
 import { createServerClient } from '@/libs/supabase-client';
 import {
   buildConversationSummary,
@@ -1182,9 +1186,18 @@ function buildConversationalAssistantMessage(params: {
     summary += `- 총 소요 시간: ${q.basis.totalBillMinutes}분 (운행 ${q.basis.driveMinutes}분 + 체류 ${q.basis.dwellTotalMinutes}분)\n\n`;
 
     summary += `💰 **예상 기준 운임**\n`;
-    summary += `- 시간당 요금제: **${q.hourly?.formatted}**\n`;
-    summary += `- 단건 요금제: **${q.perJob?.formatted}**\n\n`;
-    summary += `우측 패널의 '전체 운임 시나리오 비교'를 통해 차량/스케줄 변경 시의 운임 차이도 확인해보세요. \n*(출발지로 인식된 곳 외의 추가 상차지가 있다면 경유지에 포함되어 계산되었습니다.)*`;
+    summary += `- 시간당 1회: **${q.hourly?.formatted}** (유류할증 포함)\n`;
+    if (q.hourly?.tiers) {
+      summary += `- 일일 운임 (운임표 기준): ${q.hourly.tiers.perDay.formatted}\n`;
+      summary += `- 20일 기준 월 운임: ${q.hourly.tiers.perMonth20d.formatted}\n`;
+    }
+    summary += `- 단건 요금제: **${q.perJob?.formatted}**\n`;
+    if (q.hourly?.advisor?.message) {
+      summary += `\n${q.hourly.advisor.message}\n`;
+    } else {
+      summary += `\n`;
+    }
+    summary += `우측 패널의 '전체 운임 시나리오 비교'를 통해 차량/스케줄 변경 시의 운임 차이도 확인해보세요. \n*(출발지로 인식된 곳 외의 추가 상차지가 있다면 경유지에 포함되어 계산되었습니다. 일일/월 운임은 PPTX 운임표 컬럼 기준이며 유류할증·통행료·정기 주차비 등 실비는 별도입니다.)*`;
     return summary;
   }
 
@@ -1471,7 +1484,15 @@ function buildFourBlockResultMessage(params: {
   readiness: ReadinessResult;
   routeDiffItems: string[];
   quote?: {
-    hourly?: { formatted?: string };
+    hourly?: {
+      formatted?: string;
+      tiers?: {
+        perTrip?: { formatted?: string };
+        perDay?: { formatted?: string };
+        perMonth20d?: { formatted?: string };
+      };
+      advisor?: { message?: string } | null;
+    };
     perJob?: { formatted?: string };
     basis?: {
       distanceKm?: number;
@@ -1507,8 +1528,15 @@ function buildFourBlockResultMessage(params: {
     lines.push(
       `- 총 소요 시간: ${params.quote.basis?.totalBillMinutes ?? '-'}분 (운행 ${params.quote.basis?.driveMinutes ?? '-'}분 + 체류 ${params.quote.basis?.dwellTotalMinutes ?? '-'}분)`
     );
-    lines.push(`- 시간당 요금제: ${params.quote.hourly?.formatted ?? '-'}`);
+    lines.push(`- 시간당 1회: ${params.quote.hourly?.formatted ?? '-'} (유류할증 포함)`);
+    if (params.quote.hourly?.tiers) {
+      lines.push(`- 일일 운임 (운임표 기준): ${params.quote.hourly.tiers.perDay?.formatted ?? '-'}`);
+      lines.push(`- 20일 기준 월 운임: ${params.quote.hourly.tiers.perMonth20d?.formatted ?? '-'}`);
+    }
     lines.push(`- 단건 요금제: ${params.quote.perJob?.formatted ?? '-'}`);
+    if (params.quote.hourly?.advisor?.message) {
+      lines.push(`- ${params.quote.hourly.advisor.message}`);
+    }
     const oneLineAssumption = (params.assumptions || []).slice(0, 1).join(' ');
     lines.push(`- 가정: ${oneLineAssumption || '입력된 주소/역할 기준으로 계산했습니다.'}`);
   } else {
@@ -1623,7 +1651,7 @@ function mergeWithSlotExtracted(extracted: any, slotState: SlotState) {
   });
 }
 
-function calculateQuoteFromRoute(params: {
+async function calculateQuoteFromRoute(params: {
   totalDistanceM: number;
   totalTimeSec: number;
   destinationCount: number;
@@ -1639,8 +1667,20 @@ function calculateQuoteFromRoute(params: {
 
   const billMinutes = roundUpTo30Minutes(totalBillMinutes);
 
+  // DB rate_tables 우선 lookup, 실패 시 코드 정적 fallback 자동 적용.
+  // 두 차종 운임표를 병렬로 한 번 미리 가져와서 4개 시나리오에 재사용한다.
+  const today = new Date();
+  const [rayResolved, starexResolved] = await Promise.all([
+    resolveHourlyRateTable('ray', today),
+    resolveHourlyRateTable('starex', today),
+  ]);
+  const rateTableByVehicle: Record<'ray' | 'starex', typeof rayResolved> = {
+    ray: rayResolved,
+    starex: starexResolved,
+  };
+
   const calcPricingForScenario = (veh: 'ray' | 'starex', schedule: 'regular' | 'ad-hoc') => {
-    const calcHourlyRate = pickHourlyRate(veh, billMinutes);
+    const calcHourlyRate = pickHourlyRateFromPayload(rateTableByVehicle[veh].payload, billMinutes);
     const calcHourlyBase = Math.round((billMinutes / 60) * calcHourlyRate);
     const calcHourlyFuel = fuelSurchargeHourlyCorrect(veh, km, billMinutes);
     const calcHourlyTotal = calcHourlyBase + calcHourlyFuel;
@@ -1684,6 +1724,15 @@ function calculateQuoteFromRoute(params: {
   const recommendedPlan: 'hourly' | 'perJob' = isHourlyRecommended ? 'hourly' : 'perJob';
   const totalPrice = isHourlyRecommended ? currentScenario.hourlyTotal : currentScenario.perJobTotal;
 
+  // 운임표(PPTX) 기준 3계층: 1회(유류할증 포함) / 일일(운임표 컬럼) / 20일(월 환산)
+  const dailyFromTable = Math.round(
+    (currentScenario.hourlyBreakdown.billMinutes / 60) * currentScenario.hourlyBreakdown.hourlyRate,
+  );
+  const monthly20dFromTable = dailyFromTable * 20;
+
+  // 인버전 추천 (예: 스타렉스 2시간 36,000원/h → 2.5시간 34,000원/h)
+  const tierAdvice = suggestCheaperNextTier(vehicleKey, currentScenario.hourlyBreakdown.billMinutes);
+
   return {
     recommendedPlan,
     totalPrice,
@@ -1695,6 +1744,29 @@ function calculateQuoteFromRoute(params: {
       billMinutes: currentScenario.hourlyBreakdown.billMinutes,
       ratePerHour: currentScenario.hourlyBreakdown.hourlyRate,
       fuelSurcharge: currentScenario.hourlyBreakdown.fuelSurcharge,
+      tiers: {
+        perTrip: {
+          value: currentScenario.hourlyTotal,
+          formatted: formatWon(currentScenario.hourlyTotal),
+          note: '유류할증 포함 1회 견적',
+        },
+        perDay: {
+          value: dailyFromTable,
+          formatted: formatWon(dailyFromTable),
+          note: '운임표 일일 운임 (시간당 × 시간, 유류할증 제외)',
+        },
+        perMonth20d: {
+          value: monthly20dFromTable,
+          formatted: formatWon(monthly20dFromTable),
+          note: '운임표 20일 기준 (일일 × 20, 유류할증 제외)',
+        },
+      },
+      advisor: tierAdvice,
+      rateTable: {
+        source: rateTableByVehicle[vehicleKey].source,
+        effectiveFrom: rateTableByVehicle[vehicleKey].effectiveFrom,
+        sourceDoc: rateTableByVehicle[vehicleKey].sourceDoc,
+      },
     },
     perJob: {
       total: currentScenario.perJobTotal,
@@ -2521,7 +2593,7 @@ export async function POST(request: NextRequest) {
     }
 
     const routeSummary = routeJson.data.summary;
-    const quote = calculateQuoteFromRoute({
+    const quote = await calculateQuoteFromRoute({
       totalDistanceM: Number(routeSummary.totalDistance || 0),
       totalTimeSec: Number(routeSummary.travelTime || routeSummary.totalTime || 0),
       destinationCount: destinationAddresses.length,
