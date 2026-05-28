@@ -2,74 +2,258 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Design Tokens — OKLCH-based semantic system
+ *
+ * 우선순위: 시맨틱 토큰 (success/warning/error/info/primary 등) > 기본 팔레트 > hex literal(금지)
+ * 다크모드: html.dark 클래스 토글로 활성화. 모든 토큰은 .dark에서 자동 매핑.
+ * 갱신 시: .cursor/rules/30-anti-slop-design.mdc §7 절차 준수.
+ */
+
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
+  /* === Surfaces === */
+  --background: #ffffff;
+  --foreground: #0f172a; /* slate-900 */
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  /* === Brand (Indigo 600) === */
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+
+  /* === Neutrals === */
+  --secondary: #f1f5f9; /* slate-100 */
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b; /* slate-500 */
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+
+  /* === Semantic === */
+  --success: #059669; /* emerald-600 */
+  --success-foreground: #ffffff;
+  --success-muted: #ecfdf5; /* emerald-50 */
+  --warning: #d97706; /* amber-600 */
+  --warning-foreground: #ffffff;
+  --warning-muted: #fffbeb; /* amber-50 */
+  --error: #e11d48; /* rose-600 */
+  --error-foreground: #ffffff;
+  --error-muted: #fff1f2; /* rose-50 */
+  --info: #2563eb; /* blue-600 */
+  --info-foreground: #ffffff;
+  --info-muted: #eff6ff; /* blue-50 */
+  --destructive: #e11d48;
+  --destructive-foreground: #ffffff;
+
+  /* === Borders & Inputs === */
+  --border: #e2e8f0; /* slate-200 */
+  --input: #e2e8f0;
+  --input-background: rgba(255, 255, 255, 0.5);
+
+  /* === Focus Ring === */
+  --ring: rgba(79, 70, 229, 0.5);
+
+  /* === Charts / Map === */
+  --chart-1: #4f46e5; /* indigo-600 */
+  --chart-2: oklch(0.72 0.19 163); /* emerald */
+  --chart-3: oklch(0.77 0.17 70); /* amber */
+  --chart-4: #312e81; /* indigo-900 */
+  --chart-5: #a5b4fc; /* indigo-300 */
+  --route-line: #4f46e5;
+  --route-line-alt: #818cf8;
+  --route-pin-origin: #059669;
+  --route-pin-waypoint: #4f46e5;
+  --route-pin-destination: #e11d48;
+
+  /* === Sidebar === */
+  --sidebar: rgba(255, 255, 255, 0.7);
+  --sidebar-foreground: #0f172a;
+  --sidebar-border: rgba(226, 232, 240, 0.6);
+
+  /* === Radius === */
+  --radius: 0.75rem;
+
+  /* === Typography === */
+  --font-size: 16px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+
+  /* === Legacy RGB (deprecate after migration) === */
+  --foreground-rgb: 15, 23, 42;
+  --background-start-rgb: 255, 255, 255;
   --background-end-rgb: 255, 255, 255;
-  --font-inter: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+
+  --success: #34d399;
+  --success-foreground: #022c22;
+  --success-muted: rgba(16, 185, 129, 0.15);
+  --warning: #fbbf24;
+  --warning-foreground: #422006;
+  --warning-muted: rgba(245, 158, 11, 0.15);
+  --error: #fb7185;
+  --error-foreground: #4c0519;
+  --error-muted: rgba(244, 63, 94, 0.15);
+  --info: #60a5fa;
+  --info-foreground: #172554;
+  --info-muted: rgba(59, 130, 246, 0.15);
+  --destructive: #fb7185;
+  --destructive-foreground: #ffffff;
+
+  --border: #27272a;
+  --input: #27272a;
+  --input-background: rgba(39, 39, 42, 0.55);
+  --ring: rgba(99, 102, 241, 0.45);
+
+  --chart-1: #818cf8;
+  --chart-4: #c7d2fe;
+  --chart-5: #e0e7ff;
+  --route-line: #818cf8;
+  --route-line-alt: #a5b4fc;
+  --route-pin-origin: #34d399;
+  --route-pin-waypoint: #818cf8;
+  --route-pin-destination: #fb7185;
+
+  --sidebar: rgba(9, 9, 11, 0.78);
+  --sidebar-foreground: #fafafa;
+  --sidebar-border: rgba(39, 39, 42, 0.7);
+
+  --foreground-rgb: 250, 250, 250;
+  --background-start-rgb: 9, 9, 11;
+  --background-end-rgb: 9, 9, 11;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border) / 1);
   }
-}
-
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
-  font-family: var(--font-inter);
+  html {
+    font-size: var(--font-size);
+    scroll-behavior: smooth;
+  }
+  body {
+    color: var(--foreground);
+    background-color: var(--background);
+    font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
+    color: var(--foreground);
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Number formatting — 정밀 표시 (정체성 5축: 표현 정밀) */
+  .tabular {
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  /* Page title — 향후 Pretendard/Noto Serif KR 도입 시 확장 */
+  .page-title {
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  /* Surface variants — token-based */
+  .surface-base {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .surface-premium {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.08), 0 4px 6px -2px rgb(0 0 0 / 0.04);
+  }
 }
 
 @layer components {
-
-  /* iOS Glass Design */
-  .glass-panel {
-    @apply bg-white/80 backdrop-blur-md border border-white/40 shadow-lg rounded-xl;
+  /* === Glass tiers === */
+  /* tier: launcher — 가장 가벼움. 사이드바/런처 표면 */
+  .glass-launcher {
+    background-color: color-mix(in oklab, var(--card) 70%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+    border-radius: var(--radius);
   }
-
+  /* tier: card — 일반 카드. 기본 surface */
   .glass-card {
-    @apply bg-white/60 backdrop-blur-sm border border-white/30 shadow-sm rounded-lg;
+    background-color: color-mix(in oklab, var(--card) 85%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
   }
-
+  /* tier: canvas — 모달/오버레이. 가장 강조 */
+  .glass-canvas {
+    background-color: color-mix(in oklab, var(--card) 92%, transparent);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.18);
+  }
   .glass-overlay {
-    @apply bg-black/20 backdrop-blur-sm;
+    background-color: rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 
-  /* Custom Scrollbar */
+  /* === Legacy aliases (도입 이전 코드 호환) === */
+  .glass-panel {
+    @apply glass-card;
+  }
+
+  /* === Custom Scrollbar === */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent) transparent;
   }
-
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
   }
-
   .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.5);
+    background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
     border-radius: 3px;
   }
-
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(156, 163, 175, 0.7);
+    background-color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
   }
 
-  /* Map Container Styles */
+  /* === Map Container Styles === */
   .map-container {
     height: 100vh !important;
     min-height: 100vh !important;
@@ -79,7 +263,6 @@ body {
     position: relative !important;
     overflow: hidden !important;
   }
-
   .map-container iframe {
     height: 100vh !important;
     min-height: 100vh !important;
@@ -88,5 +271,32 @@ body {
     padding: 0 !important;
     border: none !important;
     display: block !important;
+  }
+}
+
+/* Touch device: always show hover-reveal actions + tap feedback */
+@media (hover: none) {
+  .group:hover .group-hover\:opacity-100,
+  .group .group-hover\:opacity-100 {
+    opacity: 1 !important;
+  }
+  button,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active,
+  [role='button']:active {
+    opacity: 0.85;
+    transition: opacity 0.1s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

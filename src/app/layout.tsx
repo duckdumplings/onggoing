@@ -23,9 +23,9 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko">
+    <html lang="ko" className={inter.variable}>
       <head />
-      <body className={inter.className}>
+      <body className="font-sans">
         <RouteOptimizationProvider>
           {children}
         </RouteOptimizationProvider>
