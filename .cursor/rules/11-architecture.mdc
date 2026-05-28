@@ -1,6 +1,5 @@
 ---
-description:
-globs:
+description: 기술 아키텍처 (TRD) — Tech stack, 시스템 아키텍처, 폴더 구조, 외부 API 통합 패턴. 인프라/구조 결정 시 참조.
 alwaysApply: true
 ---
 # Technical Requirements Document (TRD)
@@ -91,7 +90,7 @@ graph TD
 ```
 /
 ├── src/
-│   ├── pages/                 # Next.js 페이지
+│   ├── app/                   # Next.js app directory (Server Components, Routes)
 │   ├── components/            # UI 컴포넌트
 │   ├── domains/
 │   │   ├── dispatch/          # 배차 관련 로직

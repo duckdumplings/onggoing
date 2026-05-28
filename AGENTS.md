@@ -18,11 +18,12 @@
 ## 필독 파일 (작업 시작 전)
 
 1. `.cursor/rules/00-karpathy-guidelines.mdc` — 최우선 행동 룰
-2. `.cursor/rules/30-anti-slop-design.mdc` — 디자인 슬롭 방지
-3. `.cursor/rules/31-anti-slop-code.mdc` — 코드 구조 슬롭 방지 (거대 파일 명단 포함)
-4. `.cursor/rules/32-domain-workflow-priority.mdc` — 도메인 워크플로 검증 절차
-5. `.cursor/rules/vooster__prd.mdc` — 제품 요구사항 (요금제, 차종 가중치, 인수기준)
-6. `.cursor/rules/vooster__architecture.mdc` — 기술 아키텍처
+2. `.cursor/rules/10-product-requirements.mdc` — 제품 요구사항 (요금제, 차종 가중치, 인수기준)
+3. `.cursor/rules/11-architecture.mdc` — 기술 아키텍처
+4. `.cursor/rules/20-git-commit-message.mdc` — 커밋 메시지 룰
+5. `.cursor/rules/30-anti-slop-design.mdc` — 디자인 슬롭 방지
+6. `.cursor/rules/31-anti-slop-code.mdc` — 코드 구조 슬롭 방지 (거대 파일 명단 포함)
+7. `.cursor/rules/32-domain-workflow-priority.mdc` — 도메인 워크플로 검증 절차
 
 ## 아키텍처 레이어
 

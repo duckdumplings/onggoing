@@ -208,7 +208,7 @@ npx next build         # 프로덕션 빌드
 - 절대 경로 import 사용 (`@/...`)
 
 ### 커밋 메시지
-[`.cursor/rules/vooster__git-commit-message.mdc`](./.cursor/rules/vooster__git-commit-message.mdc) 준수.
+[`.cursor/rules/20-git-commit-message.mdc`](./.cursor/rules/20-git-commit-message.mdc) 준수.
 
 ```
 feat(quote): add risk report generator

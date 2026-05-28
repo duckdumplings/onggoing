@@ -1,6 +1,5 @@
 ---
-description:
-globs:
+description: Conventional Commits 기반 커밋 메시지 형식. 사용자가 명시적으로 요청할 때만 커밋 생성.
 alwaysApply: true
 ---
 
@@ -65,7 +64,7 @@ BREAKING CHANGE: remove deprecated getUserData() method
 ```
 
 ## Workflow Integration
-**ALWAYS write a commit message after completing any development task, feature, or bug fix.**
+**Only create a git commit when the user explicitly requests it.**
 
 ## Validation Checklist
 - [ ] Type is from approved list

@@ -1,6 +1,5 @@
 ---
-description:
-globs:
+description: 제품 요구사항 (PRD) — 요금제, 차종 가중치, 기능별 인수기준 등 사실 정보. 도메인 결정 시 참조.
 alwaysApply: true
 ---
 # 제품 요구사항 문서 (PRD)
