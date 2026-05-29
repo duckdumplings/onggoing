@@ -10,7 +10,7 @@ export default function TestPage() {
         <h1 className="text-2xl font-bold mb-4">옹고잉 스마트 물류 플랫폼 - 테스트 페이지</h1>
 
         <div className="mb-8">
-          <h2 className="text-lg font-semibold mb-2">🚛 경로 최적화 테스트</h2>
+          <h2 className="text-lg font-semibold mb-2">경로 최적화 테스트</h2>
           <RouteOptimizationTest />
         </div>
       </div>

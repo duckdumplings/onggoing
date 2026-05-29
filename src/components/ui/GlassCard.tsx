@@ -10,8 +10,8 @@ import { cn } from '@/utils/cn';
  * - canvas:   가장 강조. 모달/오버레이 컨텐츠 wrapper
  *
  * 룰: .cursor/rules/30-anti-slop-design.mdc §2
- * 인라인 글래스 (`bg-white/55 backdrop-blur-xl`) 직접 사용 금지. 본 컴포넌트 또는
- * globals.css의 .glass-* 유틸리티만 사용.
+ * 반투명 표면을 만들 때 Tailwind 불투명도 + blur 조합을 인라인으로 직접 쓰지 말 것.
+ * 본 컴포넌트 또는 globals.css의 .glass-* 유틸리티만 사용.
  */
 export type GlassTier = 'launcher' | 'card' | 'canvas';
 

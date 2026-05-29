@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Navigation, MapPin } from 'lucide-react';
 
 interface DriverRoute {
   driverId: string;
@@ -42,7 +42,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
   const summary = driver.routeData?.summary || {};
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm overflow-hidden">
+    <div className="fixed inset-0 z-50 glass-overlay overflow-hidden">
       <div className="bg-white w-full h-full overflow-hidden flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200" style={{ backgroundColor: `${color}10` }}>
@@ -91,7 +91,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
           {/* 출발지 */}
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <span className="text-lg">🚀</span>
+              <Navigation className="w-5 h-5" />
               출발지
             </h3>
             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -105,7 +105,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
           {/* 경유지 목록 */}
           <div className="space-y-2">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <span className="text-lg">📍</span>
+              <MapPin className="w-5 h-5" />
               경유지 순서 ({driver.destinations.length}개)
             </h3>
             <div className="space-y-3">
