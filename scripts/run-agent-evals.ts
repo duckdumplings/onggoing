@@ -16,6 +16,27 @@ import { scoreAgentResponse, summarize, type ScoredCase } from '../src/domains/q
 const BASE_URL =
   process.env.AGENT_EVAL_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
+/** SSE 스트림에서 최종 payload(또는 JSON 응답)를 추출한다. */
+async function readAgentResponse(res: Response): Promise<any> {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('text/event-stream') || !res.body) {
+    return res.json();
+  }
+  const text = await res.text();
+  let final: any = null;
+  for (const chunk of text.split('\n\n')) {
+    const line = chunk.trim();
+    if (!line.startsWith('data:')) continue;
+    try {
+      const data = JSON.parse(line.slice(5).trim());
+      if (data.type === 'final') final = data.payload;
+    } catch {
+      /* 부분 파싱 무시 */
+    }
+  }
+  return final;
+}
+
 async function runOne(testCase: (typeof AGENT_EVAL_CASES)[number]): Promise<ScoredCase> {
   const res = await fetch(new URL('/api/quote/agent-chat', BASE_URL), {
     method: 'POST',
@@ -30,7 +51,14 @@ async function runOne(testCase: (typeof AGENT_EVAL_CASES)[number]): Promise<Scor
       checks: [{ name: 'http', passed: false, detail: `HTTP ${res.status} ${body.slice(0, 200)}` }],
     };
   }
-  const json = await res.json();
+  const json = await readAgentResponse(res);
+  if (!json) {
+    return {
+      id: testCase.id,
+      passed: false,
+      checks: [{ name: 'stream', passed: false, detail: 'final payload 누락(스트림 파싱 실패)' }],
+    };
+  }
   return scoreAgentResponse(testCase, json);
 }
 

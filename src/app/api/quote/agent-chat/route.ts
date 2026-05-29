@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateText, stepCountIs } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 
 import { resolveModel, AGENT_DEFAULTS } from '@/libs/llm/provider';
 import { buildQuoteAgentTools } from '@/domains/quote/agent/tools';
@@ -48,6 +48,45 @@ function buildAgentQuote(plans: any): any {
   };
 }
 
+type CollectedOutputs = {
+  scenarioComparison: any;
+  scenarioRouteErrors: any[];
+  scenarioRoutes: any[];
+  agentQuote: any;
+  routeRequest: any;
+  askedQuestion: string | null;
+};
+
+/** 도구 결과 1건을 누적 산출물에 반영(마지막 호출 우선). */
+function applyToolResult(acc: CollectedOutputs, toolName: string, output: any): void {
+  if (toolName === 'compare_scenarios' && output?.comparison) {
+    acc.scenarioComparison = output.comparison;
+    acc.scenarioRouteErrors = output.routeErrors || [];
+    acc.scenarioRoutes = output.scenarioRoutes || [];
+  } else if (toolName === 'calculate_quote' && output && !output.error) {
+    acc.agentQuote = buildAgentQuote(output.plans);
+  } else if (toolName === 'optimize_route' && output?.routeRequest) {
+    acc.routeRequest = output.routeRequest;
+  } else if (toolName === 'ask_user' && output?.question) {
+    acc.askedQuestion = output.question;
+  }
+}
+
+/** 사람이 읽을 수 있는 단계 라벨(진행 칩 표시용). */
+const STEP_LABELS: Record<string, string> = {
+  geocode_addresses: '주소 좌표 변환',
+  optimize_route: '경로 최적화',
+  compare_scenarios: '시나리오 비교 계산',
+  calculate_quote: '견적 산출',
+  validate_plan: '계획 점검',
+  read_attachments: '첨부 문서 읽기',
+  ask_user: '추가 질문 준비',
+};
+
+function sse(obj: unknown): Uint8Array {
+  return new TextEncoder().encode(`data: ${JSON.stringify(obj)}\n\n`);
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   try {
@@ -56,6 +95,7 @@ export async function POST(request: NextRequest) {
     const sessionId: string | null = body?.sessionId ? String(body.sessionId) : null;
     const history: ChatHistoryItem[] = Array.isArray(body?.history) ? body.history : [];
     const departureAt: string | undefined = body?.departureAt ? String(body.departureAt) : undefined;
+    const conversationContext = body?.conversationContext ?? null;
 
     if (!message) {
       return NextResponse.json(
@@ -85,93 +125,145 @@ export async function POST(request: NextRequest) {
       { role: 'user' as const, content: message },
     ];
 
-    const result = await generateText({
+    // 멀티턴 메모리: 직전 결과(차종/스케줄/주소/시나리오)를 컨텍스트로 주입.
+    const contextNote = conversationContext
+      ? `\n\n[직전 견적 컨텍스트 — 후속 요청 시 기본값으로 이어서 사용하고, 사용자가 바꾼 항목만 갱신하라]\n${JSON.stringify(conversationContext).slice(0, 1500)}`
+      : '';
+
+    const result = streamText({
       model,
-      system: SYSTEM_PROMPT,
+      system: SYSTEM_PROMPT + contextNote,
       messages,
       tools,
       temperature: AGENT_DEFAULTS.temperature,
       stopWhen: stepCountIs(AGENT_DEFAULTS.maxSteps),
     });
 
-    // 도구 결과에서 구조화 산출물 수집(마지막 호출 우선)
-    // generateText의 result.toolResults는 "마지막 스텝"의 결과만 담으므로,
-    // 모든 스텝의 toolResults를 순서대로 평탄화해 누락을 방지한다.
-    let scenarioComparison: any = null;
-    let scenarioRouteErrors: any[] = [];
-    let scenarioRoutes: any[] = [];
-    let agentQuote: any = null;
-    let routeRequest: any = null;
-    let askedQuestion: string | null = null;
+    const acc: CollectedOutputs = {
+      scenarioComparison: null,
+      scenarioRouteErrors: [],
+      scenarioRoutes: [],
+      agentQuote: null,
+      routeRequest: null,
+      askedQuestion: null,
+    };
 
-    const allToolResults = (result.steps ?? []).flatMap(
-      (s: any) => (s.toolResults ?? []) as Array<{ toolName: string; output: any }>
-    );
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (obj: unknown) => {
+          try {
+            controller.enqueue(sse(obj));
+          } catch {
+            /* 컨트롤러 종료 후 enqueue 무시 */
+          }
+        };
 
-    for (const tr of allToolResults) {
-      if (tr.toolName === 'compare_scenarios' && tr.output?.comparison) {
-        scenarioComparison = tr.output.comparison;
-        scenarioRouteErrors = tr.output.routeErrors || [];
-        scenarioRoutes = tr.output.scenarioRoutes || [];
-      } else if (tr.toolName === 'calculate_quote' && tr.output && !tr.output.error) {
-        agentQuote = buildAgentQuote(tr.output.plans);
-      } else if (tr.toolName === 'optimize_route' && tr.output?.routeRequest) {
-        // 단일 경로(비-비교) 케이스의 지도 렌더용 페이로드(마지막 호출 우선).
-        routeRequest = tr.output.routeRequest;
-      } else if (tr.toolName === 'ask_user' && tr.output?.question) {
-        askedQuestion = tr.output.question;
-      }
-    }
+        let fullText = '';
+        let streamError: string | null = null;
 
-    const toolNames = trace.map((t) => t.tool);
-    const missingFields = askedQuestion ? ['clarification'] : [];
+        try {
+          for await (const part of result.fullStream) {
+            switch (part.type) {
+              case 'text-delta':
+                fullText += part.text;
+                send({ type: 'text', delta: part.text });
+                break;
+              case 'tool-call':
+                send({ type: 'step', name: part.toolName, label: STEP_LABELS[part.toolName] || part.toolName, phase: 'start' });
+                break;
+              case 'tool-result':
+                applyToolResult(acc, part.toolName, (part as any).output);
+                send({ type: 'step', name: part.toolName, label: STEP_LABELS[part.toolName] || part.toolName, phase: 'done' });
+                break;
+              case 'tool-error':
+                send({ type: 'step', name: part.toolName, label: STEP_LABELS[part.toolName] || part.toolName, phase: 'error' });
+                break;
+              case 'error':
+                streamError = String((part as any).error ?? 'stream error');
+                break;
+              default:
+                break;
+            }
+          }
+        } catch (err) {
+          streamError = err instanceof Error ? err.message : String(err);
+        }
 
-    // 대화 영속(베스트 에포트)
-    if (sessionId) {
-      try {
-        const supabase = createServerClient();
-        await supabase.from('quote_chat_messages').insert([
-          { session_id: sessionId, role: 'user', content: message },
-          {
-            session_id: sessionId,
-            role: 'assistant',
-            content: result.text,
-            metadata: {
-              kind: 'agent-response',
-              provider,
-              model: modelId,
-              steps: result.steps.length,
-              tools: toolNames,
-              hasScenarioComparison: Boolean(scenarioComparison),
-            },
+        const toolNames = trace.map((t) => t.tool);
+        let finishReason = 'stop';
+        let stepCount = 0;
+        try {
+          finishReason = await result.finishReason;
+          stepCount = (await result.steps).length;
+        } catch {
+          /* 무시 */
+        }
+
+        const succeeded = !streamError || Boolean(fullText);
+
+        const finalPayload = {
+          success: succeeded,
+          assistantMessage: fullText,
+          quote: acc.agentQuote,
+          scenarioComparison: acc.scenarioComparison,
+          scenarioRouteErrors: acc.scenarioRouteErrors,
+          scenarioRoutes: acc.scenarioRoutes,
+          routeRequest: acc.routeRequest,
+          missingFields: acc.askedQuestion ? ['clarification'] : [],
+          followUpQuestions: acc.askedQuestion ? [{ field: 'clarification', question: acc.askedQuestion }] : [],
+          assumptions: [],
+          error: succeeded
+            ? undefined
+            : { code: 'LLM_ERROR', message: '견적 에이전트 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.', details: streamError },
+          pipeline: {
+            mode: 'agent',
+            provider,
+            llmModel: modelId,
+            steps: stepCount,
+            toolCalls: toolNames,
+            finishReason,
+            elapsedMs: Date.now() - startedAt,
           },
-        ]);
-      } catch {
-        /* 영속 실패 무시 */
-      }
-    }
+          trace,
+        };
 
-    return NextResponse.json({
-      success: true,
-      assistantMessage: result.text,
-      quote: agentQuote,
-      scenarioComparison,
-      scenarioRouteErrors,
-      scenarioRoutes,
-      routeRequest,
-      missingFields,
-      followUpQuestions: askedQuestion ? [{ field: 'clarification', question: askedQuestion }] : [],
-      assumptions: [],
-      pipeline: {
-        mode: 'agent',
-        provider,
-        llmModel: modelId,
-        steps: result.steps.length,
-        toolCalls: toolNames,
-        finishReason: result.finishReason,
-        elapsedMs: Date.now() - startedAt,
+        send({ type: 'final', payload: finalPayload });
+        controller.close();
+
+        // 대화 영속(베스트 에포트, 스트림 종료 후)
+        if (sessionId && fullText) {
+          try {
+            const supabase = createServerClient();
+            await supabase.from('quote_chat_messages').insert([
+              { session_id: sessionId, role: 'user', content: message },
+              {
+                session_id: sessionId,
+                role: 'assistant',
+                content: fullText,
+                metadata: {
+                  kind: 'agent-response',
+                  provider,
+                  model: modelId,
+                  steps: stepCount,
+                  tools: toolNames,
+                  hasScenarioComparison: Boolean(acc.scenarioComparison),
+                },
+              },
+            ]);
+          } catch {
+            /* 영속 실패 무시 */
+          }
+        }
       },
-      trace,
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
     });
   } catch (error) {
     const messageText = error instanceof Error ? error.message : 'unknown';

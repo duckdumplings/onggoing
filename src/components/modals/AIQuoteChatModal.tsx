@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2 } from 'lucide-react';
+import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
@@ -115,6 +117,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [agentSteps, setAgentSteps] = useState<Array<{ name: string; label: string; phase: 'start' | 'done' | 'error' }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const [latestResult, setLatestResult] = useState<AIQuoteResponse | null>(null);
   const [isQuoteDetailOpen, setIsQuoteDetailOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -137,16 +142,41 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const [authError, setAuthError] = useState<string | null>(null);
   const [showAuthForm, setShowAuthForm] = useState(false);
 
+  // 직전 결과(견적/시나리오/경로 좌표)를 후속 요청 컨텍스트로 구조화 — 멀티턴 메모리.
   const conversationContext = useMemo(() => {
-    if (!latestResult?.extracted) return undefined;
-    return {
-      vehicleType: latestResult.extracted.vehicleType,
-      scheduleType: latestResult.extracted.scheduleType,
-      knownAddresses: [
-        latestResult.extracted.origin?.address,
-        ...(latestResult.extracted.destinations || []).map((d: any) => d.address),
-      ].filter(Boolean),
+    if (!latestResult) return undefined;
+    const ctx: Record<string, any> = {};
+    const basis = latestResult.quote?.basis;
+    if (basis?.vehicleType) ctx.vehicleType = basis.vehicleType;
+    if (basis?.scheduleType) ctx.scheduleType = basis.scheduleType;
+
+    const results = latestResult.scenarioComparison?.results;
+    if (results?.length) {
+      ctx.scenarios = results.map((r: any) => ({
+        label: r.label,
+        stops: r.counts?.totalStops,
+        vehicleType: r.vehicleType,
+      }));
+    }
+
+    const addrs = new Set<string>();
+    const collect = (rr: any) => {
+      if (!rr) return;
+      [...(rr.origins || []), ...(rr.destinations || [])].forEach((p: any) => {
+        const a = typeof p === 'string' ? p : p?.address;
+        if (a) addrs.add(String(a));
+      });
+      if (rr.finalDestinationAddress) addrs.add(String(rr.finalDestinationAddress));
     };
+    collect(latestResult.routeRequest);
+    (latestResult.scenarioRoutes || []).forEach((s: any) => collect(s.routeRequest));
+    if (addrs.size) ctx.knownAddresses = Array.from(addrs).slice(0, 30);
+
+    // 구 파이프라인 호환(있으면 사용)
+    if (!ctx.vehicleType && latestResult.extracted?.vehicleType) ctx.vehicleType = latestResult.extracted.vehicleType;
+    if (!ctx.scheduleType && latestResult.extracted?.scheduleType) ctx.scheduleType = latestResult.extracted.scheduleType;
+
+    return Object.keys(ctx).length ? ctx : undefined;
   }, [latestResult]);
 
   useEffect(() => {
@@ -252,50 +282,51 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
     const raw = String(msg.content || '').trim();
     if (!raw) return null;
-    const blocks = raw.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
 
     return (
-      <div className="space-y-3 text-[15px] leading-7">
-        {blocks.map((block, blockIndex) => {
-          const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
-          const isOrderedList = lines.length >= 2 && lines.every((line) => /^\d+\.\s+/.test(line));
-          const isBulletList = lines.length >= 2 && lines.every((line) => /^[-*•]\s+/.test(line));
-          const isHeading = lines.length === 1 && /:$/.test(lines[0]) && lines[0].length <= 36;
-
-          if (isOrderedList) {
-            return (
-              <ol key={`block-${blockIndex}`} className="list-decimal pl-5 space-y-1.5">
-                {lines.map((line, lineIndex) => (
-                  <li key={`block-${blockIndex}-line-${lineIndex}`}>{line.replace(/^\d+\.\s+/, '')}</li>
-                ))}
-              </ol>
-            );
-          }
-
-          if (isBulletList) {
-            return (
-              <ul key={`block-${blockIndex}`} className="list-disc pl-5 space-y-1.5">
-                {lines.map((line, lineIndex) => (
-                  <li key={`block-${blockIndex}-line-${lineIndex}`}>{line.replace(/^[-*•]\s+/, '')}</li>
-                ))}
-              </ul>
-            );
-          }
-
-          if (isHeading) {
-            return (
-              <h4 key={`block-${blockIndex}`} className="text-[13px] font-semibold text-slate-600">
-                {lines[0]}
-              </h4>
-            );
-          }
-
-          return (
-            <p key={`block-${blockIndex}`} className="whitespace-pre-wrap break-words">
-              {block}
-            </p>
-          );
-        })}
+      <div className="text-[15px] leading-7 break-words space-y-2">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({ children }) => <p className="leading-7 [&:not(:first-child)]:mt-2">{children}</p>,
+            strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+            em: ({ children }) => <em className="italic">{children}</em>,
+            ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 my-1">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 my-1">{children}</ol>,
+            li: ({ children }) => <li className="leading-6">{children}</li>,
+            a: ({ children, href }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-700">
+                {children}
+              </a>
+            ),
+            h1: ({ children }) => <h3 className="text-base font-bold text-gray-900 mt-3 mb-1">{children}</h3>,
+            h2: ({ children }) => <h3 className="text-base font-bold text-gray-900 mt-3 mb-1">{children}</h3>,
+            h3: ({ children }) => <h4 className="text-sm font-semibold text-gray-900 mt-2 mb-0.5">{children}</h4>,
+            h4: ({ children }) => <h4 className="text-sm font-semibold text-gray-700 mt-2 mb-0.5">{children}</h4>,
+            hr: () => <hr className="my-3 border-gray-200" />,
+            blockquote: ({ children }) => (
+              <blockquote className="border-l-2 border-gray-200 pl-3 text-gray-600 my-1">{children}</blockquote>
+            ),
+            code: ({ children }) => (
+              <code className="px-1 py-0.5 rounded bg-gray-100 text-[13px] font-mono text-gray-800">{children}</code>
+            ),
+            pre: ({ children }) => (
+              <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-[13px] my-2">{children}</pre>
+            ),
+            table: ({ children }) => (
+              <div className="my-2 overflow-x-auto">
+                <table className="w-full text-sm border-collapse">{children}</table>
+              </div>
+            ),
+            thead: ({ children }) => <thead>{children}</thead>,
+            th: ({ children }) => (
+              <th className="text-left font-medium text-gray-500 border-b border-gray-200 py-1.5 px-2 whitespace-nowrap">{children}</th>
+            ),
+            td: ({ children }) => <td className="py-1.5 px-2 border-b border-gray-100 align-top">{children}</td>,
+          }}
+        >
+          {raw}
+        </ReactMarkdown>
       </div>
     );
   };
@@ -310,7 +341,12 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     const merged = [...fromSuggestions, ...recentUsers].filter(Boolean);
     const unique = Array.from(new Set(merged));
     if (unique.length > 0) return unique.slice(0, 4);
-    return ['출발지: 강남역, 목적지: 판교역, 차량: 레이', '내일 오전 10시 출발, 정기 배송으로 계산해줘'];
+    return [
+      '강남역에서 판교역으로 레이 퀵 보낼래',
+      '3개·5개·10개 구청 수거 후 문래역 하차, 스타렉스로 시나리오 비교해줘',
+      '분기 1회(연 4회) 정기 수거로 연간 비용까지 계산해줘',
+      '견적 의뢰 메일 붙여넣을게, 그대로 견적내줘',
+    ];
   }, [latestResult?.suggestedPrompts, messages]);
 
   const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit | undefined> => {
@@ -715,14 +751,16 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     };
   }, []);
 
-  const handleSend = async () => {
-    const message = input.trim();
+  const handleSend = async (overrideMessage?: string, opts?: { skipUserEcho?: boolean }) => {
+    const message = (typeof overrideMessage === 'string' ? overrideMessage : input).trim();
     if (!message || loading) return;
 
-    setMessages((prev) => [...prev, { id: createMessageId(), role: 'user', content: message, timestamp: new Date() }]);
-    setInput('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '56px'; // 초기 높이로 리셋
+    if (!opts?.skipUserEcho) {
+      setMessages((prev) => [...prev, { id: createMessageId(), role: 'user', content: message, timestamp: new Date() }]);
+      setInput('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = '56px'; // 초기 높이로 리셋
+      }
     }
     setLoading(true);
 
@@ -753,7 +791,23 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         }));
       const sessionSummary = sessions.find((s) => s.id === sessionId)?.last_summary || null;
 
-      // 추론 기반 견적 에이전트(tool-calling)로 단일화. 구 규칙 파이프라인은 제거됨.
+      // 추론 기반 견적 에이전트(tool-calling). SSE 스트리밍으로 토큰/도구 단계를 실시간 수신한다.
+      setAgentSteps([]);
+      const liveId = createMessageId();
+      let liveText = '';
+      let liveCreated = false;
+      const ensureLiveMessage = () => {
+        if (liveCreated) return;
+        liveCreated = true;
+        setMessages((prev) => [
+          ...prev,
+          { id: liveId, role: 'assistant', content: '', kind: 'normal', timestamp: new Date() },
+        ]);
+      };
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const res = await fetch('/api/quote/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -765,100 +819,137 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           attachmentIds: attachments.map((a) => a.id),
           conversationContext,
         }),
+        signal: controller.signal,
       });
-      const json = (await res.json()) as AIQuoteResponse;
-      setLatestResult(json);
 
-      if (!json.success) {
-        if (json.assistantMessage) {
-          pushAssistantMessage(json.assistantMessage, 'normal', { evidence: json.evidence, sourceUserText: message });
-          if (sessionId) {
-            await persistMessage(sessionId, 'assistant', json.assistantMessage, {
-              error: json.error || null,
-              suggestedPrompts: json.suggestedPrompts || [],
-              evidence: json.evidence || null,
-              sourceUserText: message,
-            });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !res.body || !contentType.includes('text/event-stream')) {
+        const json = (await res.json().catch(() => null)) as AIQuoteResponse | null;
+        if (json) setLatestResult(json);
+        const errMsg = json?.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
+        pushAssistantMessage(errMsg, 'normal', { sourceUserText: message });
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalPayload: AIQuoteResponse | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop() || '';
+        for (const chunk of chunks) {
+          const line = chunk.trim();
+          if (!line.startsWith('data:')) continue;
+          let data: any;
+          try {
+            data = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
           }
-        } else {
-          const fallbackError = `견적 처리에 실패했어요: ${json.error?.message || '잠시 후 다시 시도해 주세요'}`;
-          pushAssistantMessage(fallbackError, 'normal', { evidence: json.evidence, sourceUserText: message });
-          if (sessionId) {
-            await persistMessage(sessionId, 'assistant', fallbackError, {
-              error: json.error || null,
-              evidence: json.evidence || null,
-              sourceUserText: message,
+          if (data.type === 'text') {
+            ensureLiveMessage();
+            liveText += data.delta || '';
+            setMessages((prev) => prev.map((m) => (m.id === liveId ? { ...m, content: liveText } : m)));
+          } else if (data.type === 'step') {
+            setAgentSteps((prev) => {
+              if (data.phase === 'start') {
+                if (prev.some((s) => s.name === data.name)) return prev;
+                return [...prev, { name: data.name, label: data.label, phase: 'start' }];
+              }
+              const exists = prev.some((s) => s.name === data.name);
+              if (!exists) return [...prev, { name: data.name, label: data.label, phase: data.phase }];
+              return prev.map((s) => (s.name === data.name ? { ...s, phase: data.phase } : s));
             });
+          } else if (data.type === 'final') {
+            finalPayload = data.payload as AIQuoteResponse;
           }
+        }
+      }
+
+      setAgentSteps([]);
+
+      if (!finalPayload) {
+        if (!liveText) {
+          pushAssistantMessage('응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message });
         }
         return;
       }
 
-      const hasQuote = Boolean(json.quote);
+      const payload = finalPayload;
+      setLatestResult(payload);
 
-      // 1. 서버가 구성한 대화형 메시지를 우선 출력
-      if (json.assistantMessage) {
-        pushAssistantMessage(json.assistantMessage, hasQuote ? 'result' : 'normal', {
-          evidence: json.evidence,
+      if (!payload.success) {
+        const errText = payload.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
+        if (liveCreated) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === liveId ? { ...m, content: liveText || errText, sourceUserText: message } : m))
+          );
+        } else {
+          pushAssistantMessage(liveText || errText, 'normal', { sourceUserText: message });
+        }
+        return;
+      }
+
+      const hasQuote = Boolean(payload.quote);
+      const text = (liveText || payload.assistantMessage || '').trim();
+
+      if (liveCreated) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === liveId
+              ? { ...m, content: text || '(응답 없음)', kind: hasQuote ? 'result' : 'normal', evidence: payload.evidence, sourceUserText: message }
+              : m
+          )
+        );
+      } else if (text) {
+        pushAssistantMessage(text, hasQuote ? 'result' : 'normal', { evidence: payload.evidence, sourceUserText: message });
+      } else if (payload.followUpQuestions?.length) {
+        pushAssistantMessage(payload.followUpQuestions.map((q) => `• ${q.question}`).join('\n'), 'system');
+      } else {
+        pushAssistantMessage('정보가 조금 더 필요합니다. 출발지와 목적지를 알려주시겠어요?', 'system');
+      }
+
+      if (sessionId && text) {
+        await persistMessage(sessionId, 'assistant', text, {
+          quote: payload.quote || null,
+          routeSummary: payload.routeSummary || null,
+          evidence: payload.evidence || null,
           sourceUserText: message,
         });
-        if (sessionId) {
-          await persistMessage(sessionId, 'assistant', json.assistantMessage, {
-            quote: json.quote || null,
-            routeSummary: json.routeSummary || null,
-            evidence: json.evidence || null,
-            sourceUserText: message,
-          });
-        }
-      } else {
-        // Fallback: AI 답변이 없을 때만 하드코딩 메시지 사용
-        if (hasQuote) {
-          const fallbackContent = `견적 산출이 완료되었습니다.\n추천 요금제는 **${json.quote.recommendedPlan === 'hourly' ? '시간당 요금제' : '단건 요금제'}**이며, 예상 견적가는 **${json.quote.totalPriceFormatted}**입니다.`;
-          pushAssistantMessage(fallbackContent, 'result', { evidence: json.evidence, sourceUserText: message });
-          if (sessionId) {
-            await persistMessage(sessionId, 'assistant', fallbackContent, {
-              quote: json.quote || null,
-              routeSummary: json.routeSummary || null,
-              evidence: json.evidence || null,
-              sourceUserText: message,
-            });
-          }
-        } else {
-          // 정보가 부족한데 AI가 아무 말도 안 했을 때 (드문 경우)
-          const fallbackContent = '정보가 조금 더 필요합니다. 출발지와 목적지를 알려주시겠어요?';
-          pushAssistantMessage(fallbackContent, 'normal', { evidence: json.evidence, sourceUserText: message });
-          if (sessionId) {
-            await persistMessage(sessionId, 'assistant', fallbackContent, {
-              evidence: json.evidence || null,
-              sourceUserText: message,
-            });
-          }
-        }
       }
 
-      // 2. 추가 질문(Missing Fields)이 명시적으로 온 경우, 
-      //    AI 답변에서 이미 물어봤을 수 있으므로, 여기서는 "팁"이나 "시스템 가이드" 형태로 작게 보여주거나 생략하는 것이 좋음.
-      //    현재는 사용자가 놓친 부분을 명확히 인지하도록 'system' 메시지로 보조적으로만 보여줌.
-      //    단, AI 답변이 이미 질문을 포함하고 있다면 중복 느낌이 들 수 있으므로 체크가 필요하지만,
-      //    명확성을 위해 리스트 형태는 유지하되 톤을 낮춤.
-      if (!json.assistantMessage && json.followUpQuestions?.length) {
-        const questionText = json.followUpQuestions.map(q => `• ${q.question}`).join('\n');
-        pushAssistantMessage(questionText, 'system');
+      if (payload.assumptions?.length) {
+        pushAssistantMessage(`참고: ${payload.assumptions.join(', ')}`, 'system');
       }
-
-      // 3. 가정이 포함된 경우 (시스템 메시지)
-      if (json.assumptions?.length) {
-        const assumptionText = `💡 참고: ${json.assumptions.join(', ')}`;
-        // 시스템 메시지로 조용히 추가하지 않고, 툴팁이나 별도 영역에 표시하는 게 좋지만
-        // 현재는 메시지 흐름에 자연스럽게 녹임
-        pushAssistantMessage(assumptionText, 'system');
-      }
-
     } catch (error) {
-      pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.');
+      if ((error as any)?.name === 'AbortError') {
+        pushAssistantMessage('요청을 중단했어요.', 'system');
+      } else {
+        pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.');
+      }
     } finally {
+      abortRef.current = null;
+      setAgentSteps([]);
       setLoading(false);
     }
+  };
+
+  const handleStopGeneration = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  };
+
+  // 마지막 사용자 질문으로 답변을 다시 생성(사용자 말풍선 중복 없이).
+  const handleRegenerate = () => {
+    if (loading) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.content) return;
+    void handleSend(lastUser.content, { skipUserEcho: true });
   };
 
   const handleSelectSession = async (sessionId: string) => {
@@ -1306,7 +1397,31 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           )}
 
           {/* Messages Scroll Area */}
-          <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-6 scroll-smooth custom-scrollbar bg-slate-50/50">
+          <div
+            className="relative flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-6 scroll-smooth custom-scrollbar bg-slate-50/50"
+            onDragOver={(e) => {
+              if (e.dataTransfer?.types?.includes('Files')) {
+                e.preventDefault();
+                setIsDragging(true);
+              }
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget === e.target) setIsDragging(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              if (e.dataTransfer?.files?.length) void handleUploadFiles(e.dataTransfer.files);
+            }}
+          >
+            {isDragging && (
+              <div className="absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/80 backdrop-blur-sm pointer-events-none">
+                <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
+                  <Paperclip className="w-4 h-4" />
+                  여기에 파일을 놓으면 첨부됩니다
+                </div>
+              </div>
+            )}
             {messages.map((msg, idx) => (
               <div
                 key={msg.id}
@@ -1442,17 +1557,36 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
             {loading && (
               <div className="flex justify-start w-full">
-                <div className="flex items-center gap-3 max-w-[85%]">
+                <div className="flex items-start gap-3 max-w-[85%]">
                   <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
                     <Loader2 className="h-4 w-4 animate-spin" />
                   </div>
-                  <div className="bg-white px-5 py-4 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm flex items-center gap-2">
-                    <span className="text-sm text-gray-500">분석 중입니다...</span>
-                    <span className="flex space-x-1">
-                      <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                      <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                      <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
-                    </span>
+                  <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm">
+                    {agentSteps.length === 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">분석 중입니다...</span>
+                        <span className="flex space-x-1">
+                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                        </span>
+                      </div>
+                    ) : (
+                      <ul className="space-y-1.5 min-w-[180px]">
+                        {agentSteps.map((s) => (
+                          <li key={s.name} className="flex items-center gap-2 text-sm">
+                            {s.phase === 'done' ? (
+                              <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                            ) : s.phase === 'error' ? (
+                              <X className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
+                            ) : (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500 flex-shrink-0" />
+                            )}
+                            <span className={s.phase === 'done' ? 'text-gray-400' : 'text-gray-700'}>{s.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1462,6 +1596,18 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
           {/* Input Area (Floating Style) */}
           <div className="flex-shrink-0 px-4 md:px-8 pb-6 pt-2 bg-gradient-to-t from-white via-white to-transparent">
+            {!loading && latestResult && messages.some((m) => m.role === 'user') && (
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleRegenerate}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-indigo-600 transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  다시 생성
+                </button>
+              </div>
+            )}
             {!!latestResult?.suggestedPrompts?.length && (
               <div className="mb-2 flex gap-2 overflow-x-auto hide-scrollbar">
                 {latestResult.suggestedPrompts.map((prompt, idx) => (
@@ -1534,17 +1680,39 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       handleSend();
                     }
                   }}
-                  placeholder="무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)"
-                  className="w-full max-h-[200px] min-h-[56px] py-4 pl-5 pr-14 bg-transparent text-[15px] text-gray-800 placeholder:text-gray-400 resize-none focus:outline-none scrollbar-thin"
+                  onPaste={(e) => {
+                    const files = Array.from(e.clipboardData?.files || []);
+                    if (files.length) {
+                      e.preventDefault();
+                      const dt = new DataTransfer();
+                      files.forEach((f) => dt.items.add(f));
+                      void handleUploadFiles(dt.files);
+                    }
+                  }}
+                  placeholder={loading ? '답변을 생성하고 있어요…' : '무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)'}
+                  disabled={loading}
+                  className="w-full max-h-[200px] min-h-[56px] py-4 pl-5 pr-14 bg-transparent text-[15px] text-gray-800 placeholder:text-gray-400 resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
                   rows={1}
                 />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || loading}
-                  className="absolute right-2 bottom-2 p-2.5 rounded-lg bg-indigo-600 text-white shadow-md hover:bg-indigo-700 disabled:bg-gray-200 disabled:cursor-not-allowed transition-all active:scale-95"
-                >
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
-                </button>
+                {loading ? (
+                  <button
+                    type="button"
+                    onClick={handleStopGeneration}
+                    title="생성 중단"
+                    className="absolute right-2 bottom-2 p-2.5 rounded-lg bg-rose-500 text-white shadow-md hover:bg-rose-600 transition-all active:scale-95"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSend()}
+                    disabled={!input.trim()}
+                    className="absolute right-2 bottom-2 p-2.5 rounded-lg bg-indigo-600 text-white shadow-md hover:bg-indigo-700 disabled:bg-gray-200 disabled:cursor-not-allowed transition-all active:scale-95"
+                  >
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                )}
               </div>
             </div>
             {!!attachments.length && (
@@ -1807,6 +1975,63 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   routeErrors={latestResult.scenarioRouteErrors}
                   onSelect={(r) => handleScenarioSelect(r.label)}
                 />
+              </div>
+            )}
+
+            {/* 결과 빠른 액션 칩 */}
+            {!loading && (latestResult?.quote || latestResult?.scenarioComparison) && (
+              <div className="flex flex-wrap gap-2 animate-in fade-in duration-500">
+                <button
+                  type="button"
+                  onClick={() => handleSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  다른 차종으로 비교
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                >
+                  <Calculator className="w-3.5 h-3.5" />
+                  다른 요금제로 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGenerateFile('pdf')}
+                  disabled={isGeneratingFile || !currentSessionId || currentSessionId.startsWith('local-')}
+                  title={!currentSessionId || currentSessionId.startsWith('local-') ? '로그인 후 저장된 세션에서 사용할 수 있어요' : undefined}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
+                >
+                  {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                  PDF 견적서
+                </button>
+              </div>
+            )}
+
+            {/* 지오코딩 실패 복구: 실패한 지점의 정확한 주소를 직접 지정하도록 유도 */}
+            {!loading && !!latestResult?.scenarioRouteErrors?.length && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2 animate-in fade-in duration-500">
+                <div className="font-semibold">일부 지점의 좌표를 찾지 못했어요. 정확한 도로명 주소로 다시 시도해 보세요.</div>
+                <div className="flex flex-wrap gap-2">
+                  {latestResult.scenarioRouteErrors.map((e) => (
+                    <button
+                      key={e.label}
+                      type="button"
+                      onClick={() => {
+                        setInput(`${e.label} 시나리오에서 좌표를 못 찾은 지점의 정확한 도로명 주소를 알려줄게(예: 서울 ○○구 ○○로 12): `);
+                        if (textareaRef.current) {
+                          textareaRef.current.focus();
+                          requestAnimationFrame(autoResize);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-full border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 transition-colors"
+                    >
+                      {e.label} 주소 직접 지정
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
