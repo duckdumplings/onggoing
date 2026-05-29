@@ -35,7 +35,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-gray-700"
+            className="block text-sm font-medium text-foreground"
           >
             {label}
           </label>
@@ -50,11 +50,11 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               focus:outline-none focus:ring-2 focus:ring-offset-0
               disabled:opacity-50 disabled:cursor-not-allowed
               transition-colors duration-200
-              bg-white
+              bg-card text-foreground
             `,
             error
               ? 'border-error-300 focus:ring-error-500 focus:border-error-500'
-              : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500',
+              : 'border-input focus:ring-primary-500 focus:border-primary-500',
             className
           )}
           aria-invalid={error ? 'true' : 'false'}
@@ -90,7 +90,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         {helperText && !error && (
           <p
             id={`${selectId}-helper`}
-            className="text-sm text-gray-500"
+            className="text-sm text-muted-foreground"
           >
             {helperText}
           </p>

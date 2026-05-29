@@ -31,16 +31,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantClasses = {
       primary: `
-        bg-primary-500 hover:bg-primary-600 
-        text-white 
+        bg-primary hover:bg-primary-700 
+        text-primary-foreground 
         focus:ring-primary-500
         shadow-sm hover:shadow-md
       `,
       secondary: `
-        bg-secondary-100 hover:bg-secondary-200 
-        text-secondary-700 
+        bg-secondary hover:bg-accent 
+        text-secondary-foreground 
         focus:ring-secondary-500
-        border border-secondary-300
+        border border-border
       `,
       danger: `
         bg-error-500 hover:bg-error-600 
@@ -49,9 +49,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         shadow-sm hover:shadow-md
       `,
       ghost: `
-        bg-transparent hover:bg-gray-100 
-        text-gray-700 
-        focus:ring-gray-500
+        bg-transparent hover:bg-muted 
+        text-foreground 
+        focus:ring-secondary-500
       `
     };
 

@@ -18,7 +18,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     ...props
   }, ref) => {
     const baseClasses = `
-      bg-white border rounded-lg shadow-sm
+      bg-card text-card-foreground border rounded-lg shadow-sm
       transition-all duration-200
     `;
 
@@ -26,16 +26,16 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
       basic: '',
       interactive: `
         hover:shadow-md cursor-pointer
-        hover:border-gray-300
+        hover:border-muted-foreground/40
       `,
       status: ''
     };
 
     const statusClasses = {
-      success: 'border-success-200 bg-success-50',
-      warning: 'border-warning-200 bg-warning-50',
-      error: 'border-error-200 bg-error-50',
-      info: 'border-info-200 bg-info-50'
+      success: 'border-success/30 bg-success-muted',
+      warning: 'border-warning/30 bg-warning-muted',
+      error: 'border-error/30 bg-error-muted',
+      info: 'border-info/30 bg-info-muted'
     };
 
     return (
