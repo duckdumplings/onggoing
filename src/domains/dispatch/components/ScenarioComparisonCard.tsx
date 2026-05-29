@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Map as MapIcon } from 'lucide-react';
 import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
 import type { ScenarioQuoteResult } from '@/domains/dispatch/types/routePlan';
 import { summarizeComparison, type SavingsTip } from '@/domains/dispatch/services/scenarioInsights';
@@ -145,9 +145,10 @@ export default function ScenarioComparisonCard({
                               e.stopPropagation();
                               onSelect(r);
                             }}
-                            className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                            className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
                           >
-                            이 시나리오 지도/패널로 보기
+                            <MapIcon className="h-3.5 w-3.5" />
+                            지도에서 보기
                           </button>
                         )}
                       </td>

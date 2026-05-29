@@ -9,6 +9,7 @@ type QuoteInput = {
   dwellMinutes?: number[] // per-stop dwell/handling minutes
   stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
   scheduleType?: 'regular' | 'ad-hoc' // 단건: 정기/비정기
+  hourlyRateOverride?: number // 협의 단가(시간당 KRW). 지정 시 운임표 대신 사용.
 }
 
 export async function POST(req: NextRequest) {
@@ -69,7 +70,11 @@ export async function POST(req: NextRequest) {
     // DB rate_tables 우선 lookup, 실패 시 코드 정적 fallback 자동 적용.
     const billMinutes = Math.max(120, Math.ceil(totalMinutes / 30) * 30)
     const hourlyRateTable = await resolveHourlyRateTable(vehicleKey, new Date())
-    const ratePerHour = pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
+    const tableRatePerHour = pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
+    // 협의 단가(시간당) 지정 시 운임표 대신 사용. 임의 추정이 아니라 호출자가 명시한 값만 반영.
+    const overrideRate = Number(body.hourlyRateOverride)
+    const useRateOverride = Number.isFinite(overrideRate) && overrideRate > 0
+    const ratePerHour = useRateOverride ? overrideRate : tableRatePerHour
     const hourlyBase = ratePerHour * (billMinutes / 60)
     // 포함거리 = 10km * 과금시간(시간)
     const includedKm = 10 * (billMinutes / 60)
@@ -155,12 +160,15 @@ export async function POST(req: NextRequest) {
         hourly: (() => {
           const dailyFromTable = Math.round(ratePerHour * (billMinutes / 60))
           const monthly20dFromTable = dailyFromTable * 20
-          const tierAdvice = suggestCheaperNextTier(vehicleKey, billMinutes)
+          // 협의 단가 적용 시 운임표 기반 절감 조언은 의미가 없으므로 생략.
+          const tierAdvice = useRateOverride ? null : suggestCheaperNextTier(vehicleKey, billMinutes)
           return {
             total: hourlyTotal,
             formatted: `₩${hourlyTotal.toLocaleString('ko-KR')}`,
             billMinutes,
             ratePerHour,
+            rateOverride: useRateOverride,
+            tableRatePerHour,
             fuelSurcharge: hourlyFuelSurcharge,
             tiers: {
               perTrip: {

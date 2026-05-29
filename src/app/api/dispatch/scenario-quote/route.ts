@@ -103,11 +103,14 @@ function buildRoutePayload(
     vehicleType: scenario.vehicleType,
     optimizeOrder: true,
     returnToOrigin: false,
+    useRealtimeTraffic: true,
     roadOption: 'time-first',
     departureAt: departureAt ?? undefined,
     dwellMinutes: orderedRemaining.map((s) => s.dwellMinutes ?? 0),
   };
 }
+
+type ScenarioRoutePayload = ReturnType<typeof buildRoutePayload>;
 
 /** route-optimization 에러 본문에서 사람이 읽을 메시지를 뽑는다. */
 function describeRouteError(status: number, body: unknown): string {
@@ -125,8 +128,7 @@ function describeRouteError(status: number, body: unknown): string {
 async function resolveMetrics(
   request: NextRequest,
   scenario: QuoteScenario,
-  geocodeCache: Map<string, GeocodedStop>,
-  departureAt?: string
+  payload: ScenarioRoutePayload
 ): Promise<{ metrics?: RouteMetrics; error?: string }> {
   if (scenario.routeMetrics) return { metrics: scenario.routeMetrics };
 
@@ -136,7 +138,7 @@ async function resolveMetrics(
     const res = await fetch(new URL('/api/route-optimization', request.url), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRoutePayload(scenario, geocodeCache, departureAt)),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -181,10 +183,16 @@ export async function POST(request: NextRequest) {
     )
       ? body.sortKey
       : 'annualPrice';
-    const departureAt = body?.departureAt ? String(body.departureAt) : undefined;
+    // 견적 산정과 지도 미리보기가 동일 결과를 내도록 출발 시각을 한 번 고정한다.
+    // (미설정 시 현재+5분 스냅샷 → 동일 페이로드 재실행 시 교통 변동에 의한 불일치 방지)
+    const departureAt = body?.departureAt
+      ? String(body.departureAt)
+      : new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
     const metricsByLabel: Record<string, RouteMetrics> = {};
     const routeErrors: ScenarioRouteError[] = [];
+    // 각 시나리오의 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
+    const scenarioRoutes: Array<{ label: string; routeRequest: ScenarioRoutePayload }> = [];
 
     // 모든 시나리오의 주소를 한 번에 좌표로 해석(중복 캐시 공유) → 지오코딩 실패 최소화
     const allAddresses = scenarios.flatMap((s: QuoteScenario) => s.stops.map((st) => st.address));
@@ -192,7 +200,9 @@ export async function POST(request: NextRequest) {
 
     await Promise.all(
       scenarios.map(async (scenario: QuoteScenario) => {
-        const { metrics, error } = await resolveMetrics(request, scenario, geocodeCache, departureAt);
+        const routeRequest = buildRoutePayload(scenario, geocodeCache, departureAt);
+        scenarioRoutes.push({ label: scenario.label, routeRequest });
+        const { metrics, error } = await resolveMetrics(request, scenario, routeRequest);
         if (metrics) metricsByLabel[scenario.label] = metrics;
         if (error) routeErrors.push({ label: scenario.label, message: error });
       })
@@ -200,9 +210,15 @@ export async function POST(request: NextRequest) {
 
     const comparison = compareScenarios(scenarios, metricsByLabel, sortKey);
 
+    // comparison.results 순서에 맞춰 scenarioRoutes를 정렬(라벨 매칭).
+    const orderedRoutes = comparison.results
+      .map((r) => scenarioRoutes.find((sr) => sr.label === r.label))
+      .filter((x): x is { label: string; routeRequest: ScenarioRoutePayload } => Boolean(x));
+
     return NextResponse.json({
       success: true,
       comparison,
+      scenarioRoutes: orderedRoutes,
       routeErrors: routeErrors.length > 0 ? routeErrors : undefined,
     });
   } catch (e) {

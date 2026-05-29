@@ -34,6 +34,7 @@ type AIQuoteResponse = {
   routeSummary?: any;
   scenarioComparison?: ScenarioComparison;
   scenarioRouteErrors?: Array<{ label: string; message: string }>;
+  scenarioRoutes?: Array<{ label: string; routeRequest: any }>;
   assumptions?: string[];
   routeRequest?: any;
   routeRequestMeta?: {
@@ -967,14 +968,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     }
   };
 
-  const handleApplyToPanel = () => {
-    if (!latestResult?.routeRequest) return;
-    const requestData = latestResult.routeRequest;
-
+  const applyToPanel = (requestData: any) => {
+    if (!requestData) return;
     if (typeof window.setRouteOptimizerInput === 'function') {
       window.setRouteOptimizerInput(requestData);
     }
-
     window.dispatchEvent(
       new CustomEvent('ai-quote-apply', {
         detail: { requestData },
@@ -982,33 +980,59 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     );
   };
 
-  const handlePreviewOnMap = async (useSanitizedFallback = false) => {
-    if (!latestResult?.routeRequest) return;
+  const handleApplyToPanel = () => applyToPanel(latestResult?.routeRequest);
+
+  // 좌표가 해석된 지점은 좌표로(재지오코딩 회피), 아니면 주소 문자열로 미리보기를 실행한다.
+  const previewRouteOnMap = async (rawRequest: any, useSanitizedFallback = false) => {
+    if (!rawRequest) return;
     const requestData = useSanitizedFallback
-      ? sanitizeRequestDataForPreview(latestResult.routeRequest)
-      : latestResult.routeRequest;
+      ? sanitizeRequestDataForPreview(rawRequest)
+      : rawRequest;
     setPreviewError(null);
     setIsPreviewLoading(true);
-    handleApplyToPanel();
+    applyToPanel(requestData);
     window.multiDriverResult = null;
 
+    const toCoord = (p: any) =>
+      p && typeof p === 'object' && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
+        ? { lat: Number(p.latitude), lng: Number(p.longitude), address: String(p.address || '') }
+        : null;
+    const toAddr = (p: any) => (typeof p === 'string' ? p : String(p?.address || ''));
+
+    const originCoord = toCoord(requestData.origins?.[0]);
+    const destPoints: any[] = requestData.destinations || [];
+    const destCoords = destPoints.map(toCoord);
+    const allResolved = Boolean(originCoord) && destCoords.length > 0 && destCoords.every(Boolean);
+
+    const commonOptions = {
+      optimizeOrder: requestData.optimizeOrder ?? previewMode === 'optimized-order',
+      useRealtimeTraffic: requestData.useRealtimeTraffic,
+      departureAt: requestData.departureAt || null,
+      deliveryTimes: requestData.deliveryTimes || [],
+      isNextDayFlags: requestData.isNextDayFlags || [],
+      useExplicitDestination: Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress),
+      returnToOrigin: requestData.returnToOrigin ?? true,
+      roadOption: requestData.roadOption || 'time-first',
+    };
+
     try {
-      const result = await optimizeRouteWith({
-        rawOrigins: requestData.origins?.[0] ? [requestData.origins[0]] : [],
-        rawDestinations: requestData.destinations || [],
-        vehicleType: requestData.vehicleType,
-        options: {
-          optimizeOrder: previewMode === 'optimized-order',
-          useRealtimeTraffic: requestData.useRealtimeTraffic,
-          departureAt: requestData.departureAt || null,
-          deliveryTimes: requestData.deliveryTimes || [],
-          isNextDayFlags: requestData.isNextDayFlags || [],
-          useExplicitDestination: Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress),
-          returnToOrigin: requestData.returnToOrigin ?? true,
-          roadOption: requestData.roadOption || 'time-first',
-        },
-        dwellMinutes: requestData.dwellMinutes || [],
-      });
+      const result = await optimizeRouteWith(
+        allResolved
+          ? {
+              origins: originCoord,
+              destinations: destCoords as any,
+              vehicleType: requestData.vehicleType,
+              options: commonOptions,
+              dwellMinutes: requestData.dwellMinutes || [],
+            }
+          : {
+              rawOrigins: requestData.origins?.[0] ? [toAddr(requestData.origins[0])] : [],
+              rawDestinations: destPoints.map(toAddr),
+              vehicleType: requestData.vehicleType,
+              options: commonOptions,
+              dwellMinutes: requestData.dwellMinutes || [],
+            }
+      );
 
       if (!result.success) {
         const baseMessage = result.error || '경로 계산에 실패했습니다. 입력 값을 확인해주세요.';
@@ -1036,6 +1060,19 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     } finally {
       setIsPreviewLoading(false);
     }
+  };
+
+  const handlePreviewOnMap = (useSanitizedFallback = false) =>
+    previewRouteOnMap(latestResult?.routeRequest, useSanitizedFallback);
+
+  // 시나리오 비교에서 특정 시나리오를 앱 지도에 표시.
+  const handleScenarioSelect = (label: string) => {
+    const match = latestResult?.scenarioRoutes?.find((s) => s.label === label);
+    if (!match?.routeRequest) {
+      pushAssistantMessage('이 시나리오의 경로 정보를 찾지 못했어요. 다시 견적을 요청해 주세요.', 'system');
+      return;
+    }
+    void previewRouteOnMap(match.routeRequest);
   };
 
   const renderQuoteDetailModal = () => {
@@ -1768,6 +1805,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <ScenarioComparisonCard
                   comparison={latestResult.scenarioComparison}
                   routeErrors={latestResult.scenarioRouteErrors}
+                  onSelect={(r) => handleScenarioSelect(r.label)}
                 />
               </div>
             )}

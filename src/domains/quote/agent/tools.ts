@@ -101,7 +101,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           optimizeOrder: true,
           returnToOrigin: false,
           roadOption,
-          departureAt: ctx.departureAt,
+          // 견적 산정과 지도 미리보기 결과 일치를 위해 출발 시각을 고정.
+          departureAt: ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           dwellMinutes: ordered.map((s) => s.dwellMinutes ?? 0),
         };
 
@@ -126,8 +127,10 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
           optimizedOrder: summary?.optimizationInfo?.optimizedOrder ?? null,
+          // 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
+          routeRequest: { ...payload, useRealtimeTraffic: true },
         };
-        track('optimize_route', payload, out);
+        track('optimize_route', payload, { km: out.km, driveMinutes: out.driveMinutes });
         return out;
       },
     }),
@@ -143,8 +146,13 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
         frequency: FrequencySchema.optional(),
+        customHourlyRate: z
+          .number()
+          .positive()
+          .optional()
+          .describe('사용자가 명시한 협의 시간당 단가(KRW/시간). 지정되면 시간당 요금제를 이 단가로 계산하고 추천 요금제로 삼는다. 절대 임의로 지어내지 말 것.'),
       }),
-      execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency }) => {
+      execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate }) => {
         const body = {
           distance: km * 1000,
           time: driveMinutes * 60,
@@ -152,6 +160,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           dwellMinutes: dwellMinutes ?? [],
           stopsCount: stopsCount ?? (dwellMinutes?.length ?? 0),
           scheduleType,
+          hourlyRateOverride: customHourlyRate,
         };
         const res = await fetch(new URL('/api/quote-calculation', ctx.baseUrl), {
           method: 'POST',
@@ -166,17 +175,31 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         }
         const json = await res.json();
         const perJobTotal = Number(json?.plans?.perJob?.total ?? 0);
+        const hourlyTotal = Number(json?.plans?.hourly?.total ?? 0);
+        const rateOverride = Boolean(json?.plans?.hourly?.rateOverride);
         const freq = frequency as Frequency | undefined;
+        // 협의 단가가 적용되면 시간당 요금제를 추천/대표값으로 사용.
+        const recommendedPlan = rateOverride ? ('hourly' as const) : ('perJob' as const);
+        const representative = rateOverride ? hourlyTotal : perJobTotal;
         const out = {
           plans: json?.plans ?? null,
-          recommendedPlan: 'perJob' as const,
-          oneTimePrice: perJobTotal,
-          annualPrice: annualizePrice(perJobTotal, freq),
+          recommendedPlan,
+          rateOverride,
+          oneTimePrice: representative,
+          annualPrice: annualizePrice(representative, freq),
+          hourly: {
+            total: hourlyTotal,
+            ratePerHour: Number(json?.plans?.hourly?.ratePerHour ?? 0),
+            billMinutes: Number(json?.plans?.hourly?.billMinutes ?? 0),
+            rateOverride,
+            formatted: won(hourlyTotal),
+          },
+          perJob: { total: perJobTotal, formatted: won(perJobTotal) },
           frequencyLabel: formatFrequency(freq),
-          formattedOneTime: won(perJobTotal),
-          formattedAnnual: won(annualizePrice(perJobTotal, freq)),
+          formattedOneTime: won(representative),
+          formattedAnnual: won(annualizePrice(representative, freq)),
         };
-        track('calculate_quote', body, out);
+        track('calculate_quote', body, { recommendedPlan, oneTimePrice: representative, rateOverride });
         return out;
       },
     }),
@@ -201,8 +224,12 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return { error: message };
         }
         const json = await res.json();
-        const out = { comparison: json?.comparison ?? null, routeErrors: json?.routeErrors ?? [] };
-        track('compare_scenarios', { count: scenarios.length, sortKey }, out);
+        const out = {
+          comparison: json?.comparison ?? null,
+          routeErrors: json?.routeErrors ?? [],
+          scenarioRoutes: json?.scenarioRoutes ?? [],
+        };
+        track('compare_scenarios', { count: scenarios.length, sortKey }, { ...out, scenarioRoutes: out.scenarioRoutes.length });
         return out;
       },
     }),
