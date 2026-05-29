@@ -529,30 +529,30 @@ export default function TmapMainMap() {
                 <Truck className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-lg">다중 배송원 최적화</h3>
-                <p className="text-xs text-slate-500 font-medium">{multiDriverResult.drivers.length}명 배송원</p>
+                <h3 className="font-bold text-foreground text-lg">다중 배송원 최적화</h3>
+                <p className="text-xs text-muted-foreground font-medium">{multiDriverResult.drivers.length}명 배송원</p>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
               {/* 전체 통계 */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 거리</div>
-                  <div className="text-lg font-black text-slate-800">
-                    {(multiDriverResult.summary.totalDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-slate-500 ml-0.5">km</span>
+                <div className="bg-muted rounded-xl p-3 border border-border text-center">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 거리</div>
+                  <div className="text-lg font-black text-foreground">
+                    {(multiDriverResult.summary.totalDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-muted-foreground ml-0.5">km</span>
                   </div>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 시간</div>
-                  <div className="text-lg font-black text-slate-800">
-                    {Math.ceil(multiDriverResult.summary.totalTime / 60)}<span className="text-xs font-normal text-slate-500 ml-0.5">분</span>
+                <div className="bg-muted rounded-xl p-3 border border-border text-center">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 시간</div>
+                  <div className="text-lg font-black text-foreground">
+                    {Math.ceil(multiDriverResult.summary.totalTime / 60)}<span className="text-xs font-normal text-muted-foreground ml-0.5">분</span>
                   </div>
                 </div>
-                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                  <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">평균 거리</div>
-                  <div className="text-lg font-black text-slate-800">
-                    {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-slate-500 ml-0.5">km</span>
+                <div className="bg-muted rounded-xl p-3 border border-border text-center">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">평균 거리</div>
+                  <div className="text-lg font-black text-foreground">
+                    {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-muted-foreground ml-0.5">km</span>
                   </div>
                 </div>
               </div>
@@ -596,14 +596,14 @@ export default function TmapMainMap() {
               </div>
 
               {/* 배송원별 상세 정보 */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">배송원별 작업량</div>
+              <div className="space-y-2 pt-2 border-t border-border">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">배송원별 작업량</div>
                 {multiDriverResult.drivers.map((driver: any, idx: number) => {
                   const color = DRIVER_COLORS[idx % DRIVER_COLORS.length];
                   return (
                     <div
                       key={driver.driverId}
-                      className="p-3 rounded-xl border transition-all hover:shadow-md bg-white hover:border-indigo-200 group"
+                      className="p-3 rounded-xl border transition-all hover:shadow-md bg-card hover:border-indigo-200 group"
                       style={{ borderColor: `${color}40` }}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -612,30 +612,30 @@ export default function TmapMainMap() {
                             className="w-2 h-2 rounded-full border"
                             style={{ backgroundColor: color, borderColor: `${color}80` }}
                           ></div>
-                          <span className="text-xs font-bold text-slate-700 group-hover:text-indigo-700 transition-colors">
+                          <span className="text-xs font-bold text-foreground group-hover:text-indigo-700 transition-colors">
                             {driver.driverId.replace('driver-', '배송원 ')}
                           </span>
                         </div>
-                        <div className="text-[10px] font-medium text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                        <div className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
                           {driver.destinations.length}개 경유지
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         <div>
-                          <div className="text-[10px] text-slate-400 mb-0.5">거리</div>
-                          <div className="font-bold text-slate-700">
+                          <div className="text-[10px] text-muted-foreground mb-0.5">거리</div>
+                          <div className="font-bold text-foreground">
                             {(driver.totalDistance / 1000).toFixed(1)}km
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-400 mb-0.5">이동</div>
-                          <div className="font-bold text-slate-700">
+                          <div className="text-[10px] text-muted-foreground mb-0.5">이동</div>
+                          <div className="font-bold text-foreground">
                             {Math.round(driver.travelTime / 60)}분
                           </div>
                         </div>
                         <div>
-                          <div className="text-[10px] text-slate-400 mb-0.5">체류</div>
-                          <div className="font-bold text-slate-700">
+                          <div className="text-[10px] text-muted-foreground mb-0.5">체류</div>
+                          <div className="font-bold text-foreground">
                             {Math.round(driver.dwellTime / 60)}분
                           </div>
                         </div>
@@ -655,24 +655,24 @@ export default function TmapMainMap() {
                 <Map className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-lg tracking-tight">경로 정보</h3>
-                <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Real-time Optimization</p>
+                <h3 className="font-bold text-foreground text-lg tracking-tight">경로 정보</h3>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
               </div>
             </div>
 
             <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4">
-              <div className="flex-none flex p-1 bg-slate-100 rounded-lg">
+              <div className="flex-none flex p-1 bg-muted rounded-lg">
                 <button
                   type="button"
                   onClick={() => setDetailTab('kpi')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'kpi' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'kpi' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   KPI 요약
                 </button>
                 <button
                   type="button"
                   onClick={() => setDetailTab('eta')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'eta' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'eta' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   ETA 상세
                 </button>
@@ -681,24 +681,24 @@ export default function TmapMainMap() {
               {/* 주요 정보 카드 */}
               {detailTab === 'kpi' && (
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center hover:border-indigo-100 transition-colors group">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">총 거리</div>
-                    <div className="text-lg font-black text-slate-800">
-                      {((routeData.summary as any).totalDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-slate-500 ml-0.5">km</span>
+                  <div className="bg-muted rounded-xl p-3 border border-border text-center hover:border-indigo-100 transition-colors group">
+                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">총 거리</div>
+                    <div className="text-lg font-black text-foreground">
+                      {((routeData.summary as any).totalDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-muted-foreground ml-0.5">km</span>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center hover:border-indigo-100 transition-colors group">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">이동 시간</div>
-                    <div className="text-lg font-black text-slate-800">
-                      {Math.ceil((routeData.summary as any).totalTime / 60)}<span className="text-xs font-normal text-slate-500 ml-0.5">분</span>
+                  <div className="bg-muted rounded-xl p-3 border border-border text-center hover:border-indigo-100 transition-colors group">
+                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">이동 시간</div>
+                    <div className="text-lg font-black text-foreground">
+                      {Math.ceil((routeData.summary as any).totalTime / 60)}<span className="text-xs font-normal text-muted-foreground ml-0.5">분</span>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center hover:border-indigo-100 transition-colors group">
-                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">경유지</div>
-                    <div className="text-lg font-black text-slate-800">
-                      {waypoints?.length ? waypoints.length - 2 : 0}<span className="text-xs font-normal text-slate-500 ml-0.5">개</span>
+                  <div className="bg-muted rounded-xl p-3 border border-border text-center hover:border-indigo-100 transition-colors group">
+                    <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1 group-hover:text-indigo-500 transition-colors">경유지</div>
+                    <div className="text-lg font-black text-foreground">
+                      {waypoints?.length ? waypoints.length - 2 : 0}<span className="text-xs font-normal text-muted-foreground ml-0.5">개</span>
                     </div>
                   </div>
                 </div>
@@ -718,9 +718,9 @@ export default function TmapMainMap() {
                   return `${deltaWon > 0 ? '+' : '-'}${abs}원`;
                 };
                 return (
-                  <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100 space-y-2">
+                  <div className="bg-slate-50/50 rounded-xl p-3 border border-border space-y-2">
                     <div className="flex items-center justify-between px-1">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">옵션별 비교 (현재 적용 옵션 대비)</div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">옵션별 비교 (현재 적용 옵션 대비)</div>
                       <div className="flex items-center gap-1.5">
                         {comparisons.some((row: any) => row?.tollSource === 'estimated') && (
                           <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5" title="일부 옵션의 통행료는 Tmap에서 제공되지 않아 거리 기반 추정값입니다.">
@@ -736,7 +736,7 @@ export default function TmapMainMap() {
                         </button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3">
+                    <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-3">
                       <span className="col-span-3">옵션</span>
                       <span className="col-span-2 text-right">거리</span>
                       <span className="col-span-3 text-right">시간 (Δ)</span>
@@ -755,35 +755,35 @@ export default function TmapMainMap() {
                           disabled={isLoading || isApplyingRoadOption || isCurrent}
                           title={isCurrent ? '현재 적용된 도로 옵션입니다.' : `${item.label} 옵션으로 재계산`}
                           className={`group relative grid grid-cols-12 gap-2 items-center text-xs rounded-lg px-3 py-2 border transition-all duration-300 overflow-hidden ${item.isSelected
-                            ? 'bg-white border-indigo-300 shadow-md ring-2 ring-indigo-500/20 z-10'
-                            : 'bg-slate-50/80 border-slate-200/60 text-slate-400 hover:bg-white hover:border-indigo-200 hover:shadow-sm'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
+                            ? 'bg-card border-indigo-300 shadow-md ring-2 ring-indigo-500/20 z-10'
+                            : 'bg-slate-50/80 border-slate-200/60 text-muted-foreground hover:bg-card hover:border-indigo-200 hover:shadow-sm'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
                         >
                           {!isCurrent && (
                             <div className="absolute inset-0 bg-gradient-to-r from-foreground/0 via-foreground/5 to-foreground/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
                           )}
-                          <span className={`col-span-3 font-bold text-left transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-slate-500 group-hover:text-indigo-600'}`}>
+                          <span className={`col-span-3 font-bold text-left transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-muted-foreground group-hover:text-indigo-600'}`}>
                             {item.label}
                             {isCurrent && <span className="ml-1 text-[9px] font-bold text-indigo-500">●</span>}
                           </span>
-                          <span className={`col-span-2 text-right transition-colors ${item.isSelected ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                          <span className={`col-span-2 text-right transition-colors ${item.isSelected ? 'text-foreground' : 'text-muted-foreground group-hover:text-muted-foreground'}`}>
                             {(item.estimatedDistance / 1000).toFixed(1)}km
                           </span>
-                          <span className={`col-span-3 text-right transition-colors ${item.isSelected ? 'text-slate-900 font-medium' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                          <span className={`col-span-3 text-right transition-colors ${item.isSelected ? 'text-foreground font-medium' : 'text-muted-foreground group-hover:text-foreground'}`}>
                             <span>{Math.ceil(item.estimatedTime / 60)}분</span>
                             {!isCurrent && (
-                              <span className={`ml-1 text-[10px] font-semibold ${timeDeltaSec > 0 ? 'text-rose-500' : timeDeltaSec < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              <span className={`ml-1 text-[10px] font-semibold ${timeDeltaSec > 0 ? 'text-rose-500' : timeDeltaSec < 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                                 ({formatTimeDelta(timeDeltaSec)})
                               </span>
                             )}
                           </span>
-                          <span className={`col-span-4 text-right font-medium transition-colors ${item.isSelected ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-800'}`}>
+                          <span className={`col-span-4 text-right font-medium transition-colors ${item.isSelected ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>
                             {isFreeRoadEstimated ? (
-                              <span className="text-slate-400 italic">확인 불가</span>
+                              <span className="text-muted-foreground italic">확인 불가</span>
                             ) : (
                               <>
                                 <span>{item.estimatedToll.toLocaleString()}원</span>
                                 {!isCurrent && (
-                                  <span className={`ml-1 text-[10px] font-semibold ${tollDeltaWon > 0 ? 'text-rose-500' : tollDeltaWon < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                  <span className={`ml-1 text-[10px] font-semibold ${tollDeltaWon > 0 ? 'text-rose-500' : tollDeltaWon < 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                                     ({formatTollDelta(tollDeltaWon)})
                                   </span>
                                 )}
@@ -799,7 +799,7 @@ export default function TmapMainMap() {
                         </button>
                       );
                     })}
-                    <div className="text-[10px] text-slate-500 px-1 leading-snug">
+                    <div className="text-[10px] text-muted-foreground px-1 leading-snug">
                       Δ는 현재 적용 옵션 대비 변화량 · <span className="text-rose-500">붉은색</span>은 늘어남, <span className="text-emerald-600">초록색</span>은 줄어듦.
                       <span className="text-emerald-700 font-semibold ml-1">Tmap</span> 뱃지는 공식 통행료, <span className="text-amber-700 font-semibold">추정</span>은 거리 기반 추정값입니다.
                     </div>
@@ -808,8 +808,8 @@ export default function TmapMainMap() {
               })()}
 
               {detailTab === 'eta' && !!(routeData as any)?.waypoints?.length && (
-                <div className="bg-slate-50/50 rounded-xl p-1 border border-slate-100 max-h-48 overflow-y-auto custom-scrollbar">
-                  <div className="grid grid-cols-4 gap-2 px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200/50">
+                <div className="bg-slate-50/50 rounded-xl p-1 border border-border max-h-48 overflow-y-auto custom-scrollbar">
+                  <div className="grid grid-cols-4 gap-2 px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-slate-200/50">
                     <span>순서</span>
                     <span>도착</span>
                     <span>출발</span>
@@ -820,12 +820,12 @@ export default function TmapMainMap() {
                       type="button"
                       key={`${wp.latitude}-${wp.longitude}-${idx}`}
                       onClick={() => setFocusedWaypoint({ lat: wp.latitude, lng: wp.longitude, label: String(idx + 1) })}
-                      className="w-full text-left text-xs text-slate-600 grid grid-cols-4 gap-2 px-3 py-2 rounded-lg hover:bg-white hover:shadow-sm transition-all group"
+                      className="w-full text-left text-xs text-muted-foreground grid grid-cols-4 gap-2 px-3 py-2 rounded-lg hover:bg-card hover:shadow-sm transition-all group"
                     >
-                      <span className="font-bold text-slate-400 group-hover:text-indigo-600 transition-colors">{idx + 1}</span>
+                      <span className="font-bold text-muted-foreground group-hover:text-indigo-600 transition-colors">{idx + 1}</span>
                       <span className="font-medium">{formatHm(wp.arrivalTime)}</span>
-                      <span className="font-medium text-slate-400">{formatHm(wp.departureTime)}</span>
-                      <span className="text-slate-400">{wp.dwellTime ?? 0}분</span>
+                      <span className="font-medium text-muted-foreground">{formatHm(wp.departureTime)}</span>
+                      <span className="text-muted-foreground">{wp.dwellTime ?? 0}분</span>
                     </button>
                   ))}
                 </div>
@@ -862,26 +862,26 @@ export default function TmapMainMap() {
               )}
 
               {/* 상태 정보 */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
+              <div className="space-y-2 pt-2 border-t border-border">
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">최적화</span>
-                    <span className="text-slate-700 font-bold text-xs">
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg border border-border">
+                    <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-wider">최적화</span>
+                    <span className="text-foreground font-bold text-xs">
                       {(routeData.summary as any)?.optimizeOrder ? '자동 순서' : '수동 순서'}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">차량</span>
-                    <span className="text-slate-700 font-bold text-xs">
+                  <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg border border-border">
+                    <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-wider">차량</span>
+                    <span className="text-foreground font-bold text-xs">
                       {(routeData.summary as any)?.vehicleTypeCode === '2' ? '스타렉스' : '레이'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">도로 옵션</span>
-                  <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
+                <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg border border-border">
+                  <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-wider">도로 옵션</span>
+                  <span className="text-foreground font-bold text-xs flex items-center gap-1">
                     {(routeData.summary as any)?.roadOptionApplied === 'toll-saving'
                       ? <><Coins className="w-3.5 h-3.5 text-emerald-500" /> 통행료 절감</>
                       : (routeData.summary as any)?.roadOptionApplied === 'free-road-first'
@@ -890,9 +890,9 @@ export default function TmapMainMap() {
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">종료 정책</span>
-                  <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
+                <div className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg border border-border">
+                  <span className="text-muted-foreground font-medium text-[10px] uppercase tracking-wider">종료 정책</span>
+                  <span className="text-foreground font-bold text-xs flex items-center gap-1">
                     {(routeData.summary as any)?.returnedToOrigin
                       ? <><CornerUpLeft className="w-3.5 h-3.5 text-indigo-500" /> 출발지 복귀</>
                       : <><Flag className="w-3.5 h-3.5 text-rose-500" /> 마지막 경유지 종료</>}
@@ -902,8 +902,8 @@ export default function TmapMainMap() {
             </div>
 
             {/* 교통정보 상태 + 계산 기준 시각 */}
-            <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
-              <div className="text-[10px] font-medium text-slate-400 text-center bg-slate-50/50 rounded-lg py-2 flex items-center justify-center gap-1.5">
+            <div className="mt-4 pt-3 border-t border-border space-y-1.5">
+              <div className="text-[10px] font-medium text-muted-foreground text-center bg-slate-50/50 rounded-lg py-2 flex items-center justify-center gap-1.5">
                 {(routeData.summary as any)?.usedTraffic === 'realtime'
                   ? <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 교통정보 반영됨 (지금 출발 기준)</>
                   : <><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 예측 교통 기반 (미래 출발 시각 설정됨)</>
@@ -924,10 +924,10 @@ export default function TmapMainMap() {
                 });
                 return (
                   <div
-                    className="text-[10px] text-slate-500 text-center"
+                    className="text-[10px] text-muted-foreground text-center"
                     title="Tmap이 이 시각의 예측 교통 패턴으로 소요시간을 산출했습니다."
                   >
-                    계산 기준 <span className="font-bold text-slate-700">{label}</span> 출발
+                    계산 기준 <span className="font-bold text-foreground">{label}</span> 출발
                   </div>
                 );
               })()}
@@ -950,54 +950,54 @@ export default function TmapMainMap() {
 
       {showQuoteDetailDialog && routeQuoteDetail && (
         <div className="absolute inset-0 z-[2300] glass-overlay flex items-center justify-center px-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl p-5 max-h-[86vh] overflow-y-auto">
+          <div className="w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl p-5 max-h-[86vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-base font-extrabold text-slate-800">견적 상세 정보 (전체 시나리오)</h4>
+              <h4 className="text-base font-extrabold text-foreground">견적 상세 정보 (전체 시나리오)</h4>
               <button
                 type="button"
                 onClick={() => setShowQuoteDetailDialog(false)}
-                className="text-xs font-bold text-slate-500 hover:text-slate-700"
+                className="text-xs font-bold text-muted-foreground hover:text-foreground"
               >
                 닫기
               </button>
             </div>
             
-            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-3">
+            <div className="flex items-center gap-4 bg-muted p-4 rounded-xl border border-border mb-3">
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
-                <div className="text-base font-black text-slate-800">{routeQuoteDetail.distanceKm} km</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
+                <div className="text-base font-black text-foreground">{routeQuoteDetail.distanceKm} km</div>
               </div>
               <div className="w-px h-8 bg-slate-200"></div>
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 과금시간</div>
-                <div className="text-base font-black text-slate-800">{routeQuoteDetail.totalBillMinutes} 분</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 과금시간</div>
+                <div className="text-base font-black text-foreground">{routeQuoteDetail.totalBillMinutes} 분</div>
               </div>
               <div className="w-px h-8 bg-slate-200"></div>
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">경유지</div>
-                <div className="text-base font-black text-slate-800">{routeQuoteDetail.destinationCount} 곳</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">경유지</div>
+                <div className="text-base font-black text-foreground">{routeQuoteDetail.destinationCount} 곳</div>
               </div>
             </div>
 
-            <div className="flex p-1 bg-slate-100 rounded-lg mb-3">
+            <div className="flex p-1 bg-muted rounded-lg mb-3">
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('pricing')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'pricing' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'pricing' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 요금 상세
               </button>
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('eta')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'eta' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'eta' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 ETA 상세
               </button>
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('route')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'route' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'route' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 경로/옵션
               </button>
@@ -1006,8 +1006,8 @@ export default function TmapMainMap() {
               <>
                 {/* 시나리오 매트릭스 */}
                 {routeQuoteDetail.scenarios && (
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3 shadow-sm">
-                    <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
+                  <div className="rounded-lg border border-border bg-card p-4 mb-3 shadow-sm">
+                    <h4 className="font-bold text-foreground flex items-center gap-2 mb-3">
                       <BarChart3 className="w-4 h-4 text-indigo-500" />
                       전체 운임 시나리오 비교
                     </h4>
@@ -1016,31 +1016,31 @@ export default function TmapMainMap() {
                       <table className="w-full text-left border-collapse min-w-[500px]">
                         <thead>
                           <tr>
-                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 rounded-tl-lg">차량 / 스케줄</th>
-                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500">시간당 요금제</th>
-                            <th className="py-2 px-3 bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 rounded-tr-lg">단건 요금제</th>
+                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground rounded-tl-lg">차량 / 스케줄</th>
+                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground">시간당 요금제</th>
+                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground rounded-tr-lg">단건 요금제</th>
                           </tr>
                         </thead>
                         <tbody className="text-xs">
-                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                            <td className="py-2.5 px-3 font-semibold text-slate-700">레이 <span className="text-slate-400 font-medium text-[10px] ml-1">비정기</span></td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</td>
+                          <tr className="border-b border-border hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-foreground">레이 <span className="text-muted-foreground font-medium text-[10px] ml-1">비정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</td>
                           </tr>
-                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                            <td className="py-2.5 px-3 font-semibold text-slate-700">레이 <span className="text-slate-400 font-medium text-[10px] ml-1">정기</span></td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.perJobTotal || 0)}</td>
+                          <tr className="border-b border-border hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-foreground">레이 <span className="text-muted-foreground font-medium text-[10px] ml-1">정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.perJobTotal || 0)}</td>
                           </tr>
-                          <tr className="border-b border-slate-100 hover:bg-slate-50/50">
-                            <td className="py-2.5 px-3 font-semibold text-slate-700">스타렉스 <span className="text-slate-400 font-medium text-[10px] ml-1">비정기</span></td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</td>
+                          <tr className="border-b border-border hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-foreground">스타렉스 <span className="text-muted-foreground font-medium text-[10px] ml-1">비정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</td>
                           </tr>
                           <tr className="hover:bg-slate-50/50">
-                            <td className="py-2.5 px-3 font-semibold text-slate-700 rounded-bl-lg">스타렉스 <span className="text-slate-400 font-medium text-[10px] ml-1">정기</span></td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900 rounded-br-lg">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.perJobTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-semibold text-foreground rounded-bl-lg">스타렉스 <span className="text-muted-foreground font-medium text-[10px] ml-1">정기</span></td>
+                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.hourlyTotal || 0)}</td>
+                            <td className="py-2.5 px-3 font-bold text-foreground rounded-br-lg">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.perJobTotal || 0)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1049,12 +1049,12 @@ export default function TmapMainMap() {
                 )}
 
                 {/* 요금 변동 시뮬레이터 */}
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs shadow-sm mb-3">
+                <div className="rounded-lg border border-border bg-muted p-4 text-xs shadow-sm mb-3">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="font-bold text-slate-800 text-sm">운임 시뮬레이터</div>
+                    <div className="font-bold text-foreground text-sm">운임 시뮬레이터</div>
                     <button 
                       onClick={() => { setSliderExtraWaitMin(0); setSliderExtraDistancePercent(0); }}
-                      className="text-[10px] text-slate-400 hover:text-indigo-600 bg-white border border-slate-200 px-2 py-1 rounded"
+                      className="text-[10px] text-muted-foreground hover:text-indigo-600 bg-card border border-border px-2 py-1 rounded"
                     >
                       초기화
                     </button>
@@ -1064,7 +1064,7 @@ export default function TmapMainMap() {
                     {/* 추가 대기 시간 슬라이더 */}
                     <div>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="font-semibold text-slate-600">추가 대기/작업 시간</label>
+                        <label className="font-semibold text-muted-foreground">추가 대기/작업 시간</label>
                         <span className="font-bold text-indigo-600">+{sliderExtraWaitMin}분</span>
                       </div>
                       <input 
@@ -1076,13 +1076,13 @@ export default function TmapMainMap() {
                         onChange={(e) => setSliderExtraWaitMin(Number(e.target.value))}
                         className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                       />
-                      <div className="text-[10px] text-slate-400 mt-1">상하차 또는 지연 시간 추가 시 요금 변화 확인</div>
+                      <div className="text-[10px] text-muted-foreground mt-1">상하차 또는 지연 시간 추가 시 요금 변화 확인</div>
                     </div>
 
                     {/* 거리 할증 슬라이더 */}
                     <div>
                       <div className="flex justify-between items-center mb-1">
-                        <label className="font-semibold text-slate-600">실제 운행 거리 오차</label>
+                        <label className="font-semibold text-muted-foreground">실제 운행 거리 오차</label>
                         <span className="font-bold text-indigo-600">+{sliderExtraDistancePercent}%</span>
                       </div>
                       <input 
@@ -1094,26 +1094,26 @@ export default function TmapMainMap() {
                         onChange={(e) => setSliderExtraDistancePercent(Number(e.target.value))}
                         className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                       />
-                      <div className="text-[10px] text-slate-400 mt-1">우회 도로 이용 등 실주행 거리 증가 시 요금 변화 확인</div>
+                      <div className="text-[10px] text-muted-foreground mt-1">우회 도로 이용 등 실주행 거리 증가 시 요금 변화 확인</div>
                     </div>
 
                     {/* 시뮬레이션 결과 */}
-                    <div className="mt-4 p-3 bg-white rounded-lg border border-indigo-100 flex items-center justify-between">
+                    <div className="mt-4 p-3 bg-card rounded-lg border border-indigo-100 flex items-center justify-between">
                       <div>
-                        <div className="text-[10px] text-slate-500 font-bold mb-0.5">시뮬레이션 적용 요금</div>
-                        <div className="text-xs text-slate-600">
+                        <div className="text-[10px] text-muted-foreground font-bold mb-0.5">시뮬레이션 적용 요금</div>
+                        <div className="text-xs text-muted-foreground">
                           {routeQuoteDetail.interactiveScenario.distanceKm}km · {routeQuoteDetail.interactiveScenario.billMinutes}분
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-black text-indigo-700">{formatWon(routeQuoteDetail.interactiveScenario.pricing.totalPrice)}</div>
-                        <div className="text-[10px] font-bold text-slate-500">추천: {routeQuoteDetail.interactiveScenario.pricing.recommendedPlan === 'hourly' ? '시간당' : '단건'}</div>
+                        <div className="text-[10px] font-bold text-muted-foreground">추천: {routeQuoteDetail.interactiveScenario.pricing.recommendedPlan === 'hourly' ? '시간당' : '단건'}</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
+                <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground space-y-1">
                   <div>총 거리: {routeQuoteDetail.distanceKm}km</div>
                   <div>총 과금시간: {routeQuoteDetail.totalBillMinutes}분</div>
                   <div>주행시간: {routeQuoteDetail.driveMinutes}분 / 체류시간: {routeQuoteDetail.dwellTotalMin}분</div>
@@ -1124,8 +1124,8 @@ export default function TmapMainMap() {
               </>
             )}
             {quoteDetailTab === 'eta' && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                <div className="grid grid-cols-5 gap-2 px-2 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200">
+              <div className="rounded-lg border border-border bg-muted p-2">
+                <div className="grid grid-cols-5 gap-2 px-2 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border">
                   <span>순서</span>
                   <span>주소</span>
                   <span>도착</span>
@@ -1134,8 +1134,8 @@ export default function TmapMainMap() {
                 </div>
                 <div className="max-h-64 overflow-y-auto">
                   {routeQuoteDetail.waypointRows.map((row: any) => (
-                    <div key={`${row.order}-${row.address}`} className="grid grid-cols-5 gap-2 px-2 py-2 text-xs text-slate-700 border-b border-slate-100">
-                      <span className="font-bold text-slate-500">{row.order}</span>
+                    <div key={`${row.order}-${row.address}`} className="grid grid-cols-5 gap-2 px-2 py-2 text-xs text-foreground border-b border-border">
+                      <span className="font-bold text-muted-foreground">{row.order}</span>
                       <span className="truncate" title={row.address}>{row.address}</span>
                       <span>{row.arrival}</span>
                       <span>{row.departure}</span>
@@ -1162,21 +1162,21 @@ export default function TmapMainMap() {
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-3 text-sm">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">교통정보</div>
-                    <div className="font-bold text-slate-800 mt-1">{routeQuoteDetail.trafficLabel}</div>
+                  <div className="rounded-lg border border-border bg-muted p-3">
+                    <div className="text-xs text-muted-foreground">교통정보</div>
+                    <div className="font-bold text-foreground mt-1">{routeQuoteDetail.trafficLabel}</div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">도로 옵션</div>
-                    <div className="font-bold text-slate-800 mt-1">{routeQuoteDetail.roadOptionLabel}</div>
+                  <div className="rounded-lg border border-border bg-muted p-3">
+                    <div className="text-xs text-muted-foreground">도로 옵션</div>
+                    <div className="font-bold text-foreground mt-1">{routeQuoteDetail.roadOptionLabel}</div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">종료 정책</div>
-                    <div className="font-bold text-slate-800 mt-1">{routeQuoteDetail.returnPolicyLabel}</div>
+                  <div className="rounded-lg border border-border bg-muted p-3">
+                    <div className="text-xs text-muted-foreground">종료 정책</div>
+                    <div className="font-bold text-foreground mt-1">{routeQuoteDetail.returnPolicyLabel}</div>
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1">
-                  <div className="font-semibold text-slate-700 mb-1">도로 옵션 비교</div>
+                <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground space-y-1">
+                  <div className="font-semibold text-foreground mb-1">도로 옵션 비교</div>
                   {routeQuoteDetail.roadComparisons.length === 0 && (
                     <div>비교할 경로 데이터가 비어 있어요.</div>
                   )}
@@ -1186,8 +1186,8 @@ export default function TmapMainMap() {
                     </div>
                   ))}
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-1 mt-3">
-                  <div className="font-semibold text-slate-700 mb-1">방문 순서(주소)</div>
+                <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground space-y-1 mt-3">
+                  <div className="font-semibold text-foreground mb-1">방문 순서(주소)</div>
                   {routeQuoteDetail.waypointRows.length === 0 && <div>경유지 정보가 없습니다.</div>}
                   {routeQuoteDetail.waypointRows.map((row: any) => (
                     <div key={`route-address-${row.order}`} className="truncate" title={row.address}>
@@ -1197,7 +1197,7 @@ export default function TmapMainMap() {
                 </div>
               </>
             )}
-            <div className="mt-3 text-[11px] text-slate-500">
+            <div className="mt-3 text-[11px] text-muted-foreground">
               * {routeQuoteDetail.assumptions[0]}
             </div>
           </div>
@@ -1209,20 +1209,20 @@ export default function TmapMainMap() {
         <div className="absolute inset-0 glass-overlay flex items-center justify-center z-[2000]">
           <div className="glass-canvas p-8 text-center rounded-2xl">
             <div className="relative w-16 h-16 mx-auto mb-6">
-              <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-border rounded-full"></div>
               <div className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
             </div>
-            <div className="text-slate-800 font-black text-xl mb-2 tracking-tight">최적 경로 계산 중</div>
-            <div className="text-sm text-slate-500 font-medium">AI가 실시간 교통정보를 분석하고 있습니다</div>
+            <div className="text-foreground font-black text-xl mb-2 tracking-tight">최적 경로 계산 중</div>
+            <div className="text-sm text-muted-foreground font-medium">AI가 실시간 교통정보를 분석하고 있습니다</div>
           </div>
         </div>
       )}
 
       {showRecalculateDialog && pendingRoadOption && (
         <div className="absolute inset-0 z-[2500] glass-overlay flex items-center justify-center px-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-5">
-            <h4 className="text-base font-extrabold text-slate-800 mb-2">경로 재계산</h4>
-            <p className="text-sm text-slate-600 leading-relaxed">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-2xl p-5">
+            <h4 className="text-base font-extrabold text-foreground mb-2">경로 재계산</h4>
+            <p className="text-sm text-muted-foreground leading-relaxed">
               <span className="font-bold text-indigo-700">{roadOptionLabelMap[pendingRoadOption]}</span> 옵션으로 경로를 다시 계산할까요?
               결과 경로/소요시간/통행료가 바뀔 수 있습니다.
             </p>
@@ -1240,7 +1240,7 @@ export default function TmapMainMap() {
                   setPendingRoadOption(null);
                   setRoadOptionApplyError(null);
                 }}
-                className="px-3 py-2 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                className="px-3 py-2 text-xs font-bold rounded-lg border border-border text-muted-foreground hover:bg-muted"
               >
                 취소
               </button>
@@ -1259,38 +1259,38 @@ export default function TmapMainMap() {
 
       {showTollDetailDialog && (
         <div className="absolute inset-0 z-[2400] glass-overlay flex items-center justify-center px-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl p-5">
+          <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-base font-extrabold text-slate-800">통행료 상세 정보</h4>
+              <h4 className="text-base font-extrabold text-foreground">통행료 상세 정보</h4>
               <button
                 type="button"
                 onClick={() => setShowTollDetailDialog(false)}
-                className="text-xs font-bold text-slate-500 hover:text-slate-700"
+                className="text-xs font-bold text-muted-foreground hover:text-foreground"
               >
                 닫기
               </button>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
               {(((routeData?.summary as any)?.roadComparisons as Array<any>) || []).map((row: any, idx: number) => (
-                <div key={`${row.option}-detail-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div key={`${row.option}-detail-${idx}`} className="rounded-xl border border-border bg-muted px-3 py-2.5">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-extrabold text-slate-800">{row.label}</span>
+                    <span className="text-xs font-extrabold text-foreground">{row.label}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border ${row.tollSource === 'api' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
                       {row.tollSource === 'api' ? '실측(API)' : '추정'}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-600 leading-relaxed">
+                  <div className="text-[11px] text-muted-foreground leading-relaxed">
                     {row.tollSource === 'api'
                       ? 'Tmap 경로 응답의 통행료 필드 기반으로 계산한 값입니다.'
                       : 'Tmap 응답에 통행료 상세 필드가 없어 거리 기반으로 추정한 값입니다.'}
                   </div>
-                  <div className="mt-1 text-[11px] text-slate-500">
+                  <div className="mt-1 text-[11px] text-muted-foreground">
                     거리 {(row.estimatedDistance / 1000).toFixed(1)}km · 소요 {Math.ceil(row.estimatedTime / 60)}분 · 통행료 {row.option === 'free-road-first' && row.tollSource === 'estimated' ? '확인 불가' : `${Number(row.estimatedToll || 0).toLocaleString()}원`}
                   </div>
                 </div>
               ))}
             </div>
-            <div className="mt-3 text-[11px] text-slate-500 leading-relaxed">
+            <div className="mt-3 text-[11px] text-muted-foreground leading-relaxed">
               * 통행료 발생 여부는 고속도로/유료도로 진입 여부와 옵션에 따라 달라지며,
               API 제공 범위에 따라 상세 근거가 제한될 수 있습니다.
             </div>
