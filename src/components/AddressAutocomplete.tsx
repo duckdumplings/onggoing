@@ -379,7 +379,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
       />
       {loading && <div className="absolute right-2 top-9 text-xs text-gray-500">검색중...</div>}
       {open && (
-        <ul id={listboxId} className="absolute z-10 mt-1 w-full bg-white border rounded shadow max-h-60 overflow-auto" role="listbox">
+        <ul id={listboxId} className="absolute z-10 mt-1 w-full bg-popover text-popover-foreground border rounded shadow max-h-60 overflow-auto" role="listbox">
           {visibleSuggestions.map((s, i) => (
             <li
               id={`${listboxId}-option-${i}`}
@@ -390,7 +390,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
                 e.preventDefault()
                 handleSelect(s, 'network')
               }}
-              className={`px-3 py-2 cursor-pointer ${i === highlight ? 'bg-gray-100' : ''}`}
+              className={`px-3 py-2 cursor-pointer ${i === highlight ? 'bg-muted' : ''}`}
             >
               <div className="text-sm font-medium">{s.name || s.label || s.address}</div>
               {s.name && (

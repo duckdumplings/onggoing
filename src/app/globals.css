@@ -144,7 +144,7 @@
 
 @layer base {
   * {
-    border-color: hsl(var(--border) / 1);
+    border-color: var(--border);
   }
   html {
     font-size: var(--font-size);
@@ -156,6 +156,23 @@
     font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+  /*
+   * 폼 컨트롤 다크모드 기본값.
+   * Tailwind preflight는 text input의 UA 흰 배경을 리셋하지 않으므로,
+   * 배경을 명시하지 않은 입력이 다크모드에서 흰 박스로 남는다.
+   * 토큰 배경/텍스트를 base 기본값으로 깔아 일괄 대응한다.
+   * (개별 컴포넌트가 bg-* 유틸리티를 지정하면 utilities 레이어가 우선한다)
+   */
+  input,
+  textarea,
+  select {
+    background-color: var(--input-background);
+    color: var(--foreground);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted-foreground);
   }
   ::selection {
     background-color: color-mix(in oklab, var(--primary) 20%, transparent);

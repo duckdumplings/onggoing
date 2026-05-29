@@ -127,9 +127,9 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
     <div
       ref={setNodeRef}
       style={style}
-      className={`p-3 bg-white rounded-xl border transition-all duration-200 group ${isDragging
+      className={`p-3 bg-card rounded-xl border transition-all duration-200 group ${isDragging
         ? 'shadow-xl border-indigo-300 ring-2 ring-indigo-100'
-        : 'border-slate-200 hover:border-indigo-200 hover:shadow-md'
+        : 'border-border hover:border-indigo-200 hover:shadow-md'
         }`}
     >
       <div className="flex items-start gap-3">
@@ -154,8 +154,8 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
             onSelect={(selection) => onUpdate(waypoint.id, { selection })}
           />
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-              <label className="text-[10px] font-semibold text-slate-500">체류</label>
+            <div className="flex items-center gap-2 bg-muted px-2 py-1 rounded-lg border border-border">
+              <label className="text-[10px] font-semibold text-muted-foreground">체류</label>
               <input
                 type="number"
                 min="0"
@@ -165,13 +165,13 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                   const value = Math.max(0, parseInt(e.target.value || '10', 10));
                   onUpdate(waypoint.id, { dwellTime: value });
                 }}
-                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-indigo-500 transition-colors font-medium text-slate-700"
+                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-indigo-500 transition-colors font-medium text-foreground"
               />
-              <span className="text-[10px] text-slate-400">분</span>
+              <span className="text-[10px] text-muted-foreground">분</span>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-              <label className="text-[10px] font-semibold text-slate-500">도착</label>
+            <div className="flex items-center gap-2 bg-muted px-2 py-1 rounded-lg border border-border">
+              <label className="text-[10px] font-semibold text-muted-foreground">도착</label>
               <div className="flex items-center gap-1">
                 <input
                   type="time"
@@ -182,7 +182,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                   }}
                   className={`w-20 h-6 bg-transparent text-xs focus:outline-none border-b border-transparent focus:border-indigo-500 transition-colors font-medium ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime)
                     ? 'text-rose-600'
-                    : 'text-slate-700'
+                    : 'text-foreground'
                     }`}
                   placeholder="선택"
                 />
@@ -314,7 +314,7 @@ export default function WaypointList({ waypoints, onWaypointsChange, hasAnyDeliv
     return (
       <div className="space-y-3">
         {waypoints.map((waypoint, index) => (
-          <div key={waypoint.id} className="p-3 bg-white rounded-xl border border-slate-200">
+          <div key={waypoint.id} className="p-3 bg-card rounded-xl border border-border">
             {/* SSR Fallback Content */}
             Loading...
           </div>

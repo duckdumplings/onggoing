@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "rm -rf .next && next dev",
     "build": "next build",
     "start": "next start",
+    "clean": "rm -rf .next",
     "lint": "next lint",
     "lint:design": "npx --yes tsx scripts/check-design-slop.ts",
     "lint:design:strict": "npx --yes tsx scripts/check-design-slop.ts --strict",
