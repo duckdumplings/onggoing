@@ -1,93 +1,40 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
-import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
-
-type ChatMessage = {
-  id: string;
-  role: 'assistant' | 'user';
-  content: string;
-  kind?: 'normal' | 'system' | 'result';
-  timestamp: Date;
-  evidence?: AIQuoteResponse['evidence'];
-  sourceUserText?: string;
-};
-
-type AIQuoteResponse = {
-  success: boolean;
-  assistantMessage?: string;
-  suggestedPrompts?: string[];
-  evidence?: {
-    basis?: string[];
-    sources?: Array<{ type: 'internal' | 'attachment' | 'web'; label: string; url?: string }>;
-    fetchedAt?: string;
-  };
-  extracted?: any;
-  missingFields?: string[];
-  followUpQuestions?: Array<{ field: string; question: string }>;
-  quote?: any;
-  routeSummary?: any;
-  scenarioComparison?: ScenarioComparison;
-  scenarioRouteErrors?: Array<{ label: string; message: string }>;
-  scenarioRoutes?: Array<{ label: string; routeRequest: any }>;
-  assumptions?: string[];
-  routeRequest?: any;
-  routeRequestMeta?: {
-    usedSanitizedPayload?: boolean;
-  };
-  pipeline?: {
-    stageState?: 'blocked' | 'need-input' | 'completed';
-    readiness?: { score?: number; isReady?: boolean; reasons?: string[] };
-  };
-  rag?: { sources?: string[]; attachmentIds?: string[] };
-  error?: { code: string; message: string };
-};
-
-type ChatSession = {
-  id: string;
-  title: string;
-  last_summary?: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-type PersistedChatMessage = {
-  id: string;
-  session_id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  metadata?: Record<string, unknown>;
-  created_at: string;
-};
-
-type ChatAttachment = {
-  id: string;
-  session_id: string;
-  file_url: string;
-  file_name: string;
-  file_type: string;
-  file_size: number;
-  parse_status: 'pending' | 'parsed' | 'failed';
-  parse_error?: string | null;
-  created_at: string;
-};
-
-type GeneratedFile = {
-  id: string;
-  session_id: string;
-  file_type: 'pdf' | 'xlsx' | 'md' | 'txt' | 'docx' | 'json';
-  file_name: string;
-  file_url: string;
-  file_size: number;
-  created_at: string;
-};
+import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
+import QuoteDetailModal from '@/domains/chat/components/QuoteDetailModal';
+import {
+  createMessageId,
+  shouldRenderEvidence,
+  getDomainFromUrl,
+  sanitizeRequestDataForPreview,
+  WELCOME_MESSAGE,
+} from '@/domains/chat/utils';
+import {
+  fetchSessionsApi,
+  createSessionApi,
+  loadSessionMessagesApi,
+  persistMessageApi,
+  fetchAttachmentsApi,
+  fetchGeneratedFilesApi,
+  uploadAttachmentApi,
+  generateFileApi,
+  deleteSessionApi,
+  submitFeedbackApi,
+} from '@/domains/chat/services/chatSessionApi';
+import type {
+  ChatMessage,
+  AIQuoteResponse,
+  ChatSession,
+  ChatAttachment,
+  GeneratedFile,
+  AgentStep,
+} from '@/domains/chat/types';
 
 interface AIQuoteChatModalProps {
   isOpen: boolean;
@@ -104,13 +51,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       id: `msg-${Date.now()}-welcome`,
       role: 'assistant',
       kind: 'system',
-      content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+      content: WELCOME_MESSAGE,
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [agentSteps, setAgentSteps] = useState<Array<{ name: string; label: string; phase: 'start' | 'done' | 'error' }>>([]);
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [latestResult, setLatestResult] = useState<AIQuoteResponse | null>(null);
@@ -192,35 +139,6 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
   };
 
-  const createMessageId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const isSmallTalkMessage = (text?: string) => {
-    const normalized = String(text || '').trim().toLowerCase();
-    if (!normalized) return false;
-    if (normalized.length > 24) return false;
-    if (normalized.length <= 3) return true;
-    return /^(안녕|하이|ㅎㅇ|hello|hi|고마워|감사|응|네|ㅇㅋ|ok|오케이|잘가|굿모닝|좋은아침|반가워)[!~.\s?]*$/.test(normalized);
-  };
-
-  const shouldRenderEvidence = (msg: ChatMessage) => {
-    if (msg.role !== 'assistant') return false;
-    if (!msg.evidence) return false;
-    const hasEvidence = Boolean(msg.evidence.basis?.length || msg.evidence.sources?.length);
-    if (!hasEvidence) return false;
-    if (isSmallTalkMessage(msg.sourceUserText)) return false;
-    if (msg.kind === 'system') return false;
-    return true;
-  };
-
-  const getDomainFromUrl = (url?: string) => {
-    if (!url) return null;
-    try {
-      return new URL(url).hostname.replace(/^www\./, '');
-    } catch {
-      return null;
-    }
-  };
-
   const pushAssistantMessage = (
     content: string,
     kind: ChatMessage['kind'] = 'normal',
@@ -240,88 +158,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     ]);
   };
 
-  const normalizeAddressForPreview = (address: string) =>
-    String(address || '')
-      .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/^서울시\s+/, '서울특별시 ')
-      .replace(/(\d+)\s*충/g, '$1층')
-      .replace(/(로|길|대로)(\d)/g, '$1 $2')
-      .replace(/(로)\s*(\d+)\s*가길\s*(\d+)/g, '$1$2가길 $3')
-      .replace(/\([^)]*\)/g, ' ')
-      .replace(/(?:지하\s*)?\d+\s*(?:층|충)/g, ' ')
-      .replace(/\d+\s*호/g, ' ')
-      .replace(/\d+\s*동/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const sanitizeRequestDataForPreview = (requestData: any) => {
-    const origin = requestData?.origins?.[0] ? normalizeAddressForPreview(String(requestData.origins[0])) : '';
-    const destinations = Array.isArray(requestData?.destinations)
-      ? requestData.destinations.map((d: string) => normalizeAddressForPreview(String(d)))
-      : [];
-    return {
-      ...requestData,
-      origins: origin ? [origin] : [],
-      destinations,
-      finalDestinationAddress: destinations.length ? destinations[destinations.length - 1] : null,
-    };
-  };
-
   const renderMessageBody = (msg: ChatMessage) => {
     if (msg.role === 'user') {
       return <div className="whitespace-pre-wrap break-words">{msg.content}</div>;
     }
-
-    const raw = String(msg.content || '').trim();
-    if (!raw) return null;
-
-    return (
-      <div className="text-[15px] leading-7 break-words space-y-2">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            p: ({ children }) => <p className="leading-7 [&:not(:first-child)]:mt-2">{children}</p>,
-            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-            em: ({ children }) => <em className="italic">{children}</em>,
-            ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 my-1">{children}</ul>,
-            ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 my-1">{children}</ol>,
-            li: ({ children }) => <li className="leading-6">{children}</li>,
-            a: ({ children, href }) => (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-700">
-                {children}
-              </a>
-            ),
-            h1: ({ children }) => <h3 className="text-base font-bold text-foreground mt-3 mb-1">{children}</h3>,
-            h2: ({ children }) => <h3 className="text-base font-bold text-foreground mt-3 mb-1">{children}</h3>,
-            h3: ({ children }) => <h4 className="text-sm font-semibold text-foreground mt-2 mb-0.5">{children}</h4>,
-            h4: ({ children }) => <h4 className="text-sm font-semibold text-foreground mt-2 mb-0.5">{children}</h4>,
-            hr: () => <hr className="my-3 border-border" />,
-            blockquote: ({ children }) => (
-              <blockquote className="border-l-2 border-border pl-3 text-muted-foreground my-1">{children}</blockquote>
-            ),
-            code: ({ children }) => (
-              <code className="px-1 py-0.5 rounded bg-muted text-[13px] font-mono text-foreground">{children}</code>
-            ),
-            pre: ({ children }) => (
-              <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-[13px] my-2">{children}</pre>
-            ),
-            table: ({ children }) => (
-              <div className="my-2 overflow-x-auto">
-                <table className="w-full text-sm border-collapse">{children}</table>
-              </div>
-            ),
-            thead: ({ children }) => <thead>{children}</thead>,
-            th: ({ children }) => (
-              <th className="text-left font-medium text-muted-foreground border-b border-border py-1.5 px-2 whitespace-nowrap">{children}</th>
-            ),
-            td: ({ children }) => <td className="py-1.5 px-2 border-b border-border align-top">{children}</td>,
-          }}
-        >
-          {raw}
-        </ReactMarkdown>
-      </div>
-    );
+    return <ChatMarkdown content={msg.content} />;
   };
 
   const quickTemplates = useMemo(() => {
@@ -342,15 +183,6 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     ];
   }, [latestResult?.suggestedPrompts, messages]);
 
-  const getAuthHeaders = async (base?: HeadersInit): Promise<HeadersInit | undefined> => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return undefined;
-    const headers = new Headers(base || {});
-    headers.set('Authorization', `Bearer ${token}`);
-    return Object.fromEntries(headers.entries());
-  };
-
   const bootstrapServerSession = async () => {
     const list = await fetchSessions();
     if (list.length > 0) {
@@ -369,14 +201,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         id: createMessageId(),
         role: 'assistant',
         kind: 'system',
-        content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
-        timestamp: new Date(),
+      content: WELCOME_MESSAGE,
+      timestamp: new Date(),
       },
     ]);
     await persistMessage(
       created.id,
       'system',
-      '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+      WELCOME_MESSAGE
     );
     await fetchAttachments(created.id);
     await fetchGeneratedFiles(created.id);
@@ -439,22 +271,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
   const fetchSessions = async () => {
     try {
-      const headers = await getAuthHeaders();
-      if (!headers) {
-        setSessionPersistenceEnabled(false);
-        return [] as ChatSession[];
-      }
-      const res = await fetch('/api/quote/chat-sessions?limit=50', {
-        headers,
-      });
-      if (!res.ok) {
-        setSessionPersistenceEnabled(false);
-        return [] as ChatSession[];
-      }
-      const json = await res.json();
-      if (!json?.success) return [] as ChatSession[];
-      const list = (json.data || []) as ChatSession[];
-      setSessionPersistenceEnabled(true);
+      const { ok, sessions: list } = await fetchSessionsApi();
+      setSessionPersistenceEnabled(ok);
+      if (!ok) return [] as ChatSession[];
       setSessions(list);
       return list;
     } catch {
@@ -464,57 +283,40 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   };
 
   const createNewSession = async (title?: string) => {
-    try {
-      const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
-      if (!headers) throw new Error('NO_AUTH_SESSION');
-      const res = await fetch('/api/quote/chat-sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          title: title || `견적 대화 ${new Date().toLocaleDateString('ko-KR')}`,
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP_${res.status}`);
-      const json = await res.json();
-      if (!json?.success) throw new Error('CREATE_SESSION_FAILED');
-      const created = json.data as ChatSession;
+    const created = await createSessionApi(title || `견적 대화 ${new Date().toLocaleDateString('ko-KR')}`);
+    if (created) {
       setSessionPersistenceEnabled(true);
       await fetchSessions();
       setCurrentSessionId(created.id);
       return created;
-    } catch {
-      const localId = `local-${Date.now()}`;
-      const created: ChatSession = {
-        id: localId,
-        title: title || `로컬 대화 ${new Date().toLocaleDateString('ko-KR')}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_summary: null,
-      };
-      setSessionPersistenceEnabled(false);
-      setSessions((prev) => [created, ...prev.filter((s) => !s.id.startsWith('local-'))]);
-      setCurrentSessionId(localId);
-      return created;
     }
+    const localId = `local-${Date.now()}`;
+    const localSession: ChatSession = {
+      id: localId,
+      title: title || `로컬 대화 ${new Date().toLocaleDateString('ko-KR')}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_summary: null,
+    };
+    setSessionPersistenceEnabled(false);
+    setSessions((prev) => [localSession, ...prev.filter((s) => !s.id.startsWith('local-'))]);
+    setCurrentSessionId(localId);
+    return localSession;
   };
 
   const loadSessionMessages = async (sessionId: string) => {
     if (sessionId.startsWith('local-')) return;
     setIsSessionLoading(true);
     try {
-      const res = await fetch(`/api/quote/chat-sessions/${sessionId}/messages`, {
-        headers: (await getAuthHeaders()) ?? undefined,
-      });
-      const json = await res.json();
-      if (!json?.success) return;
-      const persisted = (json.data || []) as PersistedChatMessage[];
+      const persisted = await loadSessionMessagesApi(sessionId);
+      if (!persisted) return;
       if (persisted.length === 0) {
         setMessages([
           {
             id: createMessageId(),
             role: 'assistant',
             kind: 'system',
-            content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+            content: WELCOME_MESSAGE,
             timestamp: new Date(),
           },
         ]);
@@ -546,12 +348,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     metadata?: Record<string, unknown>
   ) => {
     if (!sessionPersistenceEnabled || sessionId.startsWith('local-')) return;
-    const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
-    await fetch(`/api/quote/chat-sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ role, content, metadata: metadata || {} }),
-    });
+    await persistMessageApi(sessionId, role, content, metadata);
   };
 
   const fetchAttachments = async (sessionId: string) => {
@@ -559,12 +356,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       setAttachments([]);
       return;
     }
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
-      headers: (await getAuthHeaders()) ?? undefined,
-    });
-    const json = await res.json();
-    if (!json?.success) return;
-    setAttachments((json.data || []) as ChatAttachment[]);
+    const list = await fetchAttachmentsApi(sessionId);
+    if (list) setAttachments(list);
   };
 
   const fetchGeneratedFiles = async (sessionId: string) => {
@@ -572,12 +365,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       setGeneratedFiles([]);
       return;
     }
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}/generated-files`, {
-      headers: (await getAuthHeaders()) ?? undefined,
-    });
-    const json = await res.json();
-    if (!json?.success) return;
-    setGeneratedFiles((json.data || []) as GeneratedFile[]);
+    const list = await fetchGeneratedFilesApi(sessionId);
+    if (list) setGeneratedFiles(list);
   };
 
   const handleUploadFiles = async (files: FileList | null) => {
@@ -596,16 +385,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     try {
       const list = Array.from(files).slice(0, 5);
       for (const file of list) {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch(`/api/quote/chat-sessions/${sessionId}/attachments`, {
-          method: 'POST',
-          headers: (await getAuthHeaders()) ?? undefined,
-          body: formData,
-        });
-        const json = await res.json();
-        if (!json?.success) {
-          pushAssistantMessage(`파일 업로드 실패: ${file.name} (${json?.error?.message || '알 수 없는 오류'})`, 'system');
+        const result = await uploadAttachmentApi(sessionId, file);
+        if (!result.success) {
+          pushAssistantMessage(`파일 업로드 실패: ${file.name} (${result.message || '알 수 없는 오류'})`, 'system');
           continue;
         }
       }
@@ -638,32 +420,23 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           r.metrics != null ? Number(r.metrics.driveMinutes || 0) + Number(r.metrics.dwellMinutes || 0) : undefined,
       }));
       const firstResult = comparison?.results?.[0];
-      const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
-      const res = await fetch(`/api/quote/chat-sessions/${currentSessionId}/generated-files`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          fileType,
-          input: {
-            sessionTitle: sessions.find((s) => s.id === currentSessionId)?.title,
-            userRequest: lastUser,
-            assistantMessage: lastAssistant,
-            quote: latestResult?.quote,
-            routeSummary: latestResult?.routeSummary,
-            extracted: latestResult?.extracted,
-            assumptions: latestResult?.assumptions || [],
-            ragSources: latestResult?.rag?.sources || [],
-            vehicleType: firstResult?.vehicleType,
-            scheduleType: firstResult?.scheduleType,
-            frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
-            scenarios,
-            recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
-          },
-        }),
+      const result = await generateFileApi(currentSessionId, fileType, {
+        sessionTitle: sessions.find((s) => s.id === currentSessionId)?.title,
+        userRequest: lastUser,
+        assistantMessage: lastAssistant,
+        quote: latestResult?.quote,
+        routeSummary: latestResult?.routeSummary,
+        extracted: latestResult?.extracted,
+        assumptions: latestResult?.assumptions || [],
+        ragSources: latestResult?.rag?.sources || [],
+        vehicleType: firstResult?.vehicleType,
+        scheduleType: firstResult?.scheduleType,
+        frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
+        scenarios,
+        recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
       });
-      const json = await res.json();
-      if (!json?.success) {
-        pushAssistantMessage(`파일 생성 실패: ${json?.error?.message || '알 수 없는 오류'}`, 'system');
+      if (!result.success) {
+        pushAssistantMessage(`파일 생성 실패: ${result.message || '알 수 없는 오류'}`, 'system');
         return;
       }
       await fetchGeneratedFiles(currentSessionId);
@@ -688,14 +461,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               id: createMessageId(),
               role: 'assistant',
               kind: 'system',
-              content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
-              timestamp: new Date(),
+      content: WELCOME_MESSAGE,
+      timestamp: new Date(),
             },
           ]);
           await persistMessage(
             created.id,
             'system',
-            '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+            WELCOME_MESSAGE
           );
           await fetchAttachments(created.id);
           await fetchGeneratedFiles(created.id);
@@ -722,14 +495,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               id: createMessageId(),
               role: 'assistant',
               kind: 'system',
-              content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+              content: WELCOME_MESSAGE,
               timestamp: new Date(),
             },
           ]);
           await persistMessage(
             created.id,
             'system',
-            '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+            WELCOME_MESSAGE
           );
           await fetchAttachments(created.id);
           await fetchGeneratedFiles(created.id);
@@ -994,7 +767,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 id: createMessageId(),
                 role: 'assistant',
                 kind: 'system',
-                content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+                content: WELCOME_MESSAGE,
                 timestamp: new Date(),
               },
             ]);
@@ -1004,13 +777,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       return;
     }
 
-    const res = await fetch(`/api/quote/chat-sessions/${sessionId}`, {
-      method: 'DELETE',
-      headers: (await getAuthHeaders()) ?? undefined,
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.success) {
-      pushAssistantMessage(`대화방 삭제 실패: ${json?.error?.message || '알 수 없는 오류'}`, 'system');
+    const deleted = await deleteSessionApi(sessionId);
+    if (!deleted.success) {
+      pushAssistantMessage(`대화방 삭제 실패: ${deleted.message || '알 수 없는 오류'}`, 'system');
       return;
     }
 
@@ -1026,14 +795,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               id: createMessageId(),
               role: 'assistant',
               kind: 'system',
-              content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
+              content: WELCOME_MESSAGE,
               timestamp: new Date(),
             },
           ]);
           await persistMessage(
             created.id,
             'system',
-            '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+            WELCOME_MESSAGE
           );
         }
       }
@@ -1046,22 +815,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     // UX: 버튼 클릭 즉시 시각적 반영(로그인/세션 유무와 무관)
     setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: type }));
     try {
-      const res = await fetch('/api/quote/chat-feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: currentSessionId && !currentSessionId.startsWith('local-') ? currentSessionId : null,
-          userInput: msg.sourceUserText || 'unknown',
-          assistantOutput: msg.content,
-          feedbackType: type,
-          messageId: msg.id,
-          metadata: { messageId: msg.id },
-        }),
+      await submitFeedbackApi({
+        sessionId: currentSessionId && !currentSessionId.startsWith('local-') ? currentSessionId : null,
+        userInput: msg.sourceUserText || 'unknown',
+        assistantOutput: msg.content,
+        feedbackType: type,
+        messageId: msg.id,
+        metadata: { messageId: msg.id },
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error?.message || `HTTP_${res.status}`);
-      }
     } catch (error) {
       // 실패 시 버튼 상태 롤백
       setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: undefined }));
@@ -1074,8 +835,6 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     if (!requestData) return;
     requestInputApply(requestData);
   };
-
-  const handleApplyToPanel = () => applyToPanel(latestResult?.routeRequest);
 
   // 좌표가 해석된 지점은 좌표로(재지오코딩 회피), 아니면 주소 문자열로 미리보기를 실행한다.
   const previewRouteOnMap = async (rawRequest: any, useSanitizedFallback = false) => {
@@ -1168,126 +927,6 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
       return;
     }
     void previewRouteOnMap(match.routeRequest);
-  };
-
-  const renderQuoteDetailModal = () => {
-    if (!isQuoteDetailOpen || !latestResult?.quote) return null;
-    const q = latestResult.quote;
-
-    const formatWonStr = (val: number) => `₩${Math.round(val).toLocaleString('ko-KR')}`;
-
-    return (
-      <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-2xl rounded-2xl bg-card shadow-2xl border border-border overflow-hidden flex flex-col max-h-[90vh]">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
-            <h3 className="text-base font-bold text-foreground">운임 시나리오 상세</h3>
-            <button
-              onClick={() => setIsQuoteDetailOpen(false)}
-              className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-muted-foreground"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-5 overflow-y-auto space-y-6 text-sm flex-1 custom-scrollbar">
-            {/* 기초 정보 요약 */}
-            <div className="flex items-center gap-4 bg-muted p-4 rounded-xl border border-border">
-              <div className="flex-1">
-                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
-                <div className="text-base font-black text-foreground">{q.basis?.distanceKm ?? '-'} km</div>
-              </div>
-              <div className="w-px h-8 bg-slate-200"></div>
-              <div className="flex-1">
-                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">예상 소요 시간</div>
-                <div className="text-base font-black text-foreground">{q.basis?.totalBillMinutes ?? '-'} 분</div>
-              </div>
-              <div className="w-px h-8 bg-slate-200"></div>
-              <div className="flex-1">
-                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">경유지</div>
-                <div className="text-base font-black text-foreground">{q.basis?.destinationCount ?? '-'} 곳</div>
-              </div>
-            </div>
-
-            {/* 시나리오 매트릭스 */}
-            {q.scenarios && (
-              <div className="space-y-4">
-                <h4 className="font-bold text-foreground flex items-center gap-2">
-                  <Calculator className="w-4 h-4 text-indigo-500" />
-                  전체 운임 비교 테이블
-                </h4>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[500px]">
-                    <thead>
-                      <tr>
-                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tl-xl">차량/스케줄</th>
-                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground">시간당 요금제</th>
-                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tr-xl">단건 요금제</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-sm">
-                      {/* 레이 / 비정기 */}
-                      <tr className="border-b border-border hover:bg-muted transition-colors">
-                        <td className="py-3 px-4 font-semibold text-foreground">
-                          레이 <span className="text-muted-foreground font-medium text-[11px] ml-1">비정기</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</div>
-                        </td>
-                      </tr>
-                      {/* 레이 / 정기 */}
-                      <tr className="border-b border-border hover:bg-muted transition-colors">
-                        <td className="py-3 px-4 font-semibold text-foreground">
-                          레이 <span className="text-muted-foreground font-medium text-[11px] ml-1">정기</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.hourlyTotal || 0)}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.perJobTotal || 0)}</div>
-                        </td>
-                      </tr>
-                      {/* 스타렉스 / 비정기 */}
-                      <tr className="border-b border-border hover:bg-muted transition-colors">
-                        <td className="py-3 px-4 font-semibold text-foreground">
-                          스타렉스 <span className="text-muted-foreground font-medium text-[11px] ml-1">비정기</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</div>
-                        </td>
-                      </tr>
-                      {/* 스타렉스 / 정기 */}
-                      <tr className="hover:bg-muted transition-colors">
-                        <td className="py-3 px-4 font-semibold text-foreground rounded-bl-xl">
-                          스타렉스 <span className="text-muted-foreground font-medium text-[11px] ml-1">정기</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.hourlyTotal || 0)}</div>
-                        </td>
-                        <td className="py-3 px-4 rounded-br-xl">
-                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.perJobTotal || 0)}</div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div className="text-[11px] text-muted-foreground leading-relaxed bg-muted p-3 rounded-lg border border-border">
-              * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br />
-              * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br />
-              * 정기 배송의 단건 운임은 별도 정기 요금표가 적용되며, 시간당 운임은 동일한 단가를 기초로 계산됩니다.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   if (!isOpen) return null;
@@ -1776,14 +1415,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                         id: createMessageId(),
                         role: 'assistant',
                         kind: 'system',
-                        content: '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.',
-                        timestamp: new Date(),
+      content: WELCOME_MESSAGE,
+      timestamp: new Date(),
                       },
                     ]);
                     await persistMessage(
                       created.id,
                       'system',
-                      '안녕하세요! 배송 견적을 도와드릴까요?\n출발지, 목적지, 차량, 시간 정보를 편하게 말씀해 주세요.'
+                      WELCOME_MESSAGE
                     );
                     await fetchAttachments(created.id);
                     await fetchGeneratedFiles(created.id);
@@ -2167,7 +1806,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           </div>
         </div>
       </div>
-      {renderQuoteDetailModal()}
+      {isQuoteDetailOpen && latestResult?.quote && (
+        <QuoteDetailModal quote={latestResult.quote} onClose={() => setIsQuoteDetailOpen(false)} />
+      )}
     </div>
   );
 }

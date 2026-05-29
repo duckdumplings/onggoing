@@ -22,11 +22,17 @@ const nextConfig = {
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     if (isServer) {
       // 서버 사이드에서 pdf-parse 관련 모듈을 외부로 처리
       config.externals = config.externals || [];
       config.externals.push('pdf-parse');
+    }
+    // 개발 모드의 webpack 영속(filesystem) 캐시가 .pack.gz 손상
+    // ("invalid code lengths set" / rename ENOENT)을 반복 유발하므로
+    // 메모리 캐시로 전환해 구조적으로 차단한다. (세션마다 재빌드)
+    if (dev) {
+      config.cache = { type: 'memory' };
     }
     return config;
   },
