@@ -207,7 +207,7 @@ export function buildHourlySavingsTip(
   return {
     id: 'hourly-tier',
     tone: 'positive',
-    message: advice.message.replace(/^💡\s*/, ''),
+    message: advice.message.replace(/^\u{1F4A1}\s*/u, ''),
     cta: '이 조건으로 재견적',
   };
 }

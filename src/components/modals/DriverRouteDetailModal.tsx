@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X, Navigation, MapPin } from 'lucide-react';
+import { X, Navigation, MapPin, BarChart3 } from 'lucide-react';
 
 interface DriverRoute {
   driverId: string;
@@ -143,13 +143,13 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                   
                   if (diffMinutes > 0) {
                     timeCompliance = 'violation';
-                    complianceMessage = `⚠️ ${Math.round(diffMinutes)}분 지각 예상`;
+                    complianceMessage = `${Math.round(diffMinutes)}분 지각 예상`;
                   } else if (diffMinutes > -10) {
                     timeCompliance = 'warning';
-                    complianceMessage = `⚠️ ${Math.round(Math.abs(diffMinutes))}분 여유`;
+                    complianceMessage = `${Math.round(Math.abs(diffMinutes))}분 여유`;
                   } else {
                     timeCompliance = 'ok';
-                    complianceMessage = `✅ 시간 준수 가능`;
+                    complianceMessage = `시간 준수 가능`;
                   }
                 }
                 
@@ -237,7 +237,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
           {summary && (
             <div className="space-y-2">
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <span className="text-lg">📊</span>
+                <BarChart3 className="w-5 h-5" />
                 경로 상세 정보
               </h3>
               <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-2 text-sm">
@@ -259,7 +259,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                   <div className="flex justify-between">
                     <span className="text-gray-600">차량 타입:</span>
                     <span className="font-medium text-gray-900">
-                      {summary.vehicleTypeCode === '2' ? '🚐 스타렉스' : '🚗 레이'}
+                      {summary.vehicleTypeCode === '2' ? '스타렉스' : '레이'}
                     </span>
                   </div>
                 )}

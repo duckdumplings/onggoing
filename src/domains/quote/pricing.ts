@@ -128,7 +128,7 @@ export function suggestCheaperNextTier(vehicle: Vehicle, billMinutes: number): H
         : '일일 운임 동일';
 
   const message =
-    `💡 ${labelHours(nextBill)} 계약으로 늘리면 시간당 단가가 ` +
+    `${labelHours(nextBill)} 계약으로 늘리면 시간당 단가가 ` +
     `${currentRate.toLocaleString('ko-KR')}원 → ${suggestedRate.toLocaleString('ko-KR')}원으로 ` +
     `${formatWon(ratePerHourDelta)}/h 낮아져요 (${deltaText}).`;
 
