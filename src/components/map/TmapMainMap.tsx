@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3 } from 'lucide-react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import {
@@ -522,10 +523,10 @@ export default function TmapMainMap() {
       {/* 우측 사이드 패널 (Drawer) - 경로 정보 */}
       {multiDriverResult && multiDriverResult.success ? (
         <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
-          <div className="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
+          <div className="glass-canvas rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
             <div className="flex-none flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <span className="text-white text-2xl">🚛</span>
+              <div className="w-12 h-12 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
+                <Truck className="w-6 h-6" />
               </div>
               <div>
                 <h3 className="font-bold text-slate-800 text-lg">다중 배송원 최적화</h3>
@@ -648,10 +649,10 @@ export default function TmapMainMap() {
         </div>
       ) : routeData?.summary && (
         <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
-          <div className="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl shadow-indigo-500/10 rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
+          <div className="glass-canvas rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
             <div className="flex-none flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <span className="text-white text-lg">🗺️</span>
+              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
+                <Map className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="font-bold text-slate-800 text-lg tracking-tight">경로 정보</h3>
@@ -758,7 +759,7 @@ export default function TmapMainMap() {
                             : 'bg-slate-50/80 border-slate-200/60 text-slate-400 hover:bg-white hover:border-indigo-200 hover:shadow-sm'} ${isCurrent ? 'cursor-default' : 'cursor-pointer'}`}
                         >
                           {!isCurrent && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/5 to-indigo-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-foreground/0 via-foreground/5 to-foreground/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
                           )}
                           <span className={`col-span-3 font-bold text-left transition-colors ${item.isSelected ? 'text-indigo-700' : 'text-slate-500 group-hover:text-indigo-600'}`}>
                             {item.label}
@@ -832,12 +833,12 @@ export default function TmapMainMap() {
 
               {/* 최적화 효과 표시 (개선된 디자인) */}
               {optimizationEffect?.hasOptimization && (
-                <div className="bg-gradient-to-r from-violet-50 to-indigo-50 rounded-xl p-4 border border-indigo-100 relative overflow-hidden group">
+                <div className="bg-muted rounded-xl p-4 border border-indigo-100 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <span className="text-4xl">✨</span>
+                    <Sparkles className="w-8 h-8 text-indigo-500" />
                   </div>
                   <div className="flex items-center gap-2 mb-2 relative z-10">
-                    <span className="text-indigo-600 text-sm">⚡</span>
+                    <Zap className="w-4 h-4 text-indigo-600" />
                     <span className="text-indigo-900 font-bold text-sm">AI 최적화 효과</span>
                   </div>
                   <div className="flex justify-between items-end relative z-10">
@@ -882,10 +883,10 @@ export default function TmapMainMap() {
                   <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">도로 옵션</span>
                   <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
                     {(routeData.summary as any)?.roadOptionApplied === 'toll-saving'
-                      ? <><span className="text-emerald-500">💰</span> 통행료 절감</>
+                      ? <><Coins className="w-3.5 h-3.5 text-emerald-500" /> 통행료 절감</>
                       : (routeData.summary as any)?.roadOptionApplied === 'free-road-first'
-                        ? <><span className="text-emerald-500">🛣️</span> 무료도로 우선</>
-                        : <><span className="text-amber-500">⚡</span> 시간 우선</>}
+                        ? <><Route className="w-3.5 h-3.5 text-emerald-500" /> 무료도로 우선</>
+                        : <><Zap className="w-3.5 h-3.5 text-amber-500" /> 시간 우선</>}
                   </span>
                 </div>
 
@@ -893,8 +894,8 @@ export default function TmapMainMap() {
                   <span className="text-slate-500 font-medium text-[10px] uppercase tracking-wider">종료 정책</span>
                   <span className="text-slate-700 font-bold text-xs flex items-center gap-1">
                     {(routeData.summary as any)?.returnedToOrigin
-                      ? <><span className="text-indigo-500">↩️</span> 출발지 복귀</>
-                      : <><span className="text-rose-500">🏁</span> 마지막 경유지 종료</>}
+                      ? <><CornerUpLeft className="w-3.5 h-3.5 text-indigo-500" /> 출발지 복귀</>
+                      : <><Flag className="w-3.5 h-3.5 text-rose-500" /> 마지막 경유지 종료</>}
                   </span>
                 </div>
               </div>
@@ -948,7 +949,7 @@ export default function TmapMainMap() {
       )}
 
       {showQuoteDetailDialog && routeQuoteDetail && (
-        <div className="absolute inset-0 z-[2300] bg-slate-900/35 backdrop-blur-[2px] flex items-center justify-center px-4">
+        <div className="absolute inset-0 z-[2300] glass-overlay flex items-center justify-center px-4">
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl p-5 max-h-[86vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-base font-extrabold text-slate-800">견적 상세 정보 (전체 시나리오)</h4>
@@ -1007,7 +1008,7 @@ export default function TmapMainMap() {
                 {routeQuoteDetail.scenarios && (
                   <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3 shadow-sm">
                     <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
-                      <span className="text-indigo-500">📊</span>
+                      <BarChart3 className="w-4 h-4 text-indigo-500" />
                       전체 운임 시나리오 비교
                     </h4>
                     
@@ -1205,8 +1206,8 @@ export default function TmapMainMap() {
 
       {/* 로딩 오버레이 (개선된 디자인) */}
       {isLoading && (
-        <div className="absolute inset-0 bg-white/20 backdrop-blur-sm flex items-center justify-center z-[2000]">
-          <div className="bg-white/90 backdrop-blur-xl p-8 text-center rounded-2xl shadow-2xl border border-white/60">
+        <div className="absolute inset-0 glass-overlay flex items-center justify-center z-[2000]">
+          <div className="glass-canvas p-8 text-center rounded-2xl">
             <div className="relative w-16 h-16 mx-auto mb-6">
               <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
@@ -1218,7 +1219,7 @@ export default function TmapMainMap() {
       )}
 
       {showRecalculateDialog && pendingRoadOption && (
-        <div className="absolute inset-0 z-[2500] bg-slate-900/35 backdrop-blur-[2px] flex items-center justify-center px-4">
+        <div className="absolute inset-0 z-[2500] glass-overlay flex items-center justify-center px-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-5">
             <h4 className="text-base font-extrabold text-slate-800 mb-2">경로 재계산</h4>
             <p className="text-sm text-slate-600 leading-relaxed">
@@ -1257,7 +1258,7 @@ export default function TmapMainMap() {
       )}
 
       {showTollDetailDialog && (
-        <div className="absolute inset-0 z-[2400] bg-slate-900/35 backdrop-blur-[2px] flex items-center justify-center px-4">
+        <div className="absolute inset-0 z-[2400] glass-overlay flex items-center justify-center px-4">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl p-5">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-base font-extrabold text-slate-800">통행료 상세 정보</h4>
