@@ -12,8 +12,8 @@ export default function AIQuoteLauncher({ onOpen }: AIQuoteLauncherProps) {
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-900">AI 텍스트 견적챗</h3>
-            <p className="mt-1 text-xs text-gray-600">
+            <h3 className="font-semibold text-foreground">AI 텍스트 견적챗</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
               출발지, 경유지, 시간 조건을 자연어로 입력하면 견적안을 자동 도출합니다.
             </p>
           </div>

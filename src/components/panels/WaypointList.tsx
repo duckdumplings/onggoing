@@ -129,7 +129,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
       style={style}
       className={`p-3 bg-card rounded-xl border transition-all duration-200 group ${isDragging
         ? 'shadow-xl border-indigo-300 ring-2 ring-indigo-100'
-        : 'border-border hover:border-indigo-200 hover:shadow-md'
+        : 'border-border hover:border-primary/40 hover:shadow-md'
         }`}
     >
       <div className="flex items-start gap-3">
@@ -137,7 +137,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
         <div
           {...attributes}
           {...listeners}
-          className="w-6 h-6 mt-1 flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-300 hover:text-indigo-500 transition-colors"
+          className="w-6 h-6 mt-1 flex items-center justify-center cursor-grab active:cursor-grabbing text-muted-foreground hover:text-primary transition-colors"
           title="드래그하여 순서 변경"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,12 +160,13 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                 type="number"
                 min="0"
                 step="5"
+                aria-label="체류 시간(분)"
                 value={waypoint.dwellTime}
                 onChange={(e) => {
                   const value = Math.max(0, parseInt(e.target.value || '10', 10));
                   onUpdate(waypoint.id, { dwellTime: value });
                 }}
-                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-indigo-500 transition-colors font-medium text-foreground"
+                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-primary transition-colors font-medium text-foreground"
               />
               <span className="text-[10px] text-muted-foreground">분</span>
             </div>
@@ -175,12 +176,13 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
               <div className="flex items-center gap-1">
                 <input
                   type="time"
+                  aria-label="목표 도착 시간"
                   value={waypoint.deliveryTime || ''}
                   onChange={(e) => {
                     const timeValue = e.target.value || undefined;
                     onUpdate(waypoint.id, { deliveryTime: timeValue });
                   }}
-                  className={`w-20 h-6 bg-transparent text-xs focus:outline-none border-b border-transparent focus:border-indigo-500 transition-colors font-medium ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime)
+                  className={`w-20 h-6 bg-transparent text-xs focus:outline-none border-b border-transparent focus:border-primary transition-colors font-medium ${waypoint.deliveryTime && !isValidDeliveryTime(waypoint.deliveryTime, hasAnyDeliveryTime)
                     ? 'text-rose-600'
                     : 'text-foreground'
                     }`}
@@ -190,7 +192,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                   <button
                     type="button"
                     onClick={() => onUpdate(waypoint.id, { deliveryTime: undefined, isNextDay: false })}
-                    className="text-slate-400 hover:text-rose-500 transition-colors"
+                    className="text-muted-foreground hover:text-rose-500 transition-colors"
                     title="시간 초기화"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,7 +217,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
         {/* 액션 버튼들 */}
         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <button
-            className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
             onClick={() => onDuplicate(waypoint.id)}
             aria-label="경유지 추가"
             title="아래에 추가"
@@ -327,12 +329,12 @@ export default function WaypointList({ waypoints, onWaypointsChange, hasAnyDeliv
   return (
     <div className="space-y-3">
       {waypoints.length === 0 ? (
-        <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center hover:border-indigo-300 hover:bg-indigo-50/30 transition-all cursor-pointer group" onClick={handleAddWaypoint}>
-          <div className="w-12 h-12 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+        <div className="p-8 border-2 border-dashed border-border rounded-2xl text-center hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer group" onClick={handleAddWaypoint}>
+          <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           </div>
-          <p className="text-sm font-bold text-slate-600">경유지가 없습니다</p>
-          <p className="text-xs text-slate-400 mt-1">클릭하여 첫 번째 경유지를 추가하세요</p>
+          <p className="text-sm font-bold text-muted-foreground">경유지가 없습니다</p>
+          <p className="text-xs text-muted-foreground mt-1">클릭하여 첫 번째 경유지를 추가하세요</p>
         </div>
       ) : (
         <>
@@ -363,9 +365,9 @@ export default function WaypointList({ waypoints, onWaypointsChange, hasAnyDeliv
           <button
             type="button"
             onClick={handleAddWaypoint}
-            className="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all flex items-center justify-center gap-2 text-xs font-bold group"
+            className="w-full py-2.5 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-indigo-300 hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2 text-xs font-bold group"
           >
-            <span className="w-5 h-5 rounded-full bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">＋</span>
+            <span className="w-5 h-5 rounded-full bg-muted group-hover:bg-indigo-100 flex items-center justify-center transition-colors">＋</span>
             경유지 추가하기
           </button>
         </>

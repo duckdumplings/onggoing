@@ -340,7 +340,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
 
   return (
     <div className="w-full relative">
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-foreground mb-1">{label}</label>
       <input
         aria-autocomplete="list"
         aria-controls={listboxId}
@@ -377,7 +377,7 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
         className="w-full h-11 border rounded px-3"
         role="combobox"
       />
-      {loading && <div className="absolute right-2 top-9 text-xs text-gray-500">검색중...</div>}
+      {loading && <div className="absolute right-2 top-9 text-xs text-muted-foreground">검색중...</div>}
       {open && (
         <ul id={listboxId} className="absolute z-10 mt-1 w-full bg-popover text-popover-foreground border rounded shadow max-h-60 overflow-auto" role="listbox">
           {visibleSuggestions.map((s, i) => (
@@ -394,29 +394,29 @@ export default function AddressAutocomplete({ label, placeholder, value, onSelec
             >
               <div className="text-sm font-medium">{s.name || s.label || s.address}</div>
               {s.name && (
-                <div className="text-xs text-gray-600">{s.address}</div>
+                <div className="text-xs text-muted-foreground">{s.address}</div>
               )}
             </li>
           ))}
           {visibleSuggestions.length === 0 && !loading && (
-            <li className="px-3 py-2 text-sm text-gray-500">{getStatusMessage(searchStatus)}</li>
+            <li className="px-3 py-2 text-sm text-muted-foreground">{getStatusMessage(searchStatus)}</li>
           )}
         </ul>
       )}
       {statusMessage && (
-        <div id={statusId} className="mt-1 text-[11px] text-gray-500" aria-live="polite">
+        <div id={statusId} className="mt-1 text-[11px] text-muted-foreground" aria-live="polite">
           {statusMessage}
         </div>
       )}
       {value && (
-        <div className="mt-2 flex items-center gap-2 text-xs text-gray-700 flex-nowrap min-w-0">
+        <div className="mt-2 flex items-center gap-2 text-xs text-foreground flex-nowrap min-w-0">
           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">확정됨</span>
           <span className="flex-1 min-w-0 truncate" title={`${value.address} (${value.latitude.toFixed(5)}, ${value.longitude.toFixed(5)})`}>
             {value.address}
           </span>
           <button
             type="button"
-            className="ml-auto px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 whitespace-nowrap"
+            className="ml-auto px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-muted whitespace-nowrap"
             title="주소 복사"
             onClick={() => navigator.clipboard?.writeText(value.address).catch(() => { })}
           >

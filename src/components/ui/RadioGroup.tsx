@@ -111,9 +111,9 @@ function RadioGroupInner<T extends string>(
               'transition-all duration-200',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               'disabled:cursor-not-allowed disabled:opacity-50',
-              selected
-                ? 'border-primary bg-primary/5 text-primary ring-1 ring-primary/20'
-                : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/20',
+            selected
+              ? 'border-primary bg-primary/5 text-foreground ring-1 ring-primary/20'
+              : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/20',
             )}
           >
             {opt.icon && <span className="flex h-4 w-4 items-center justify-center">{opt.icon}</span>}

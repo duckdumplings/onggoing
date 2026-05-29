@@ -158,6 +158,7 @@ export default function TmapMap({
   useEffect(() => {
     if (containerRef.current && !iframeRef.current) {
       const iframe = document.createElement('iframe');
+      iframe.title = '경로 지도';
       iframe.width = '100%';
       iframe.height = '100%';
       iframe.style.border = '0';
@@ -321,10 +322,10 @@ export default function TmapMap({
         </div>
       )}
       {!ready && (
-        <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
+        <div className="absolute inset-0 bg-muted flex items-center justify-center">
           <div className="text-center">
-            <div className="text-gray-700 font-semibold">지도 로딩 중</div>
-            <div className="text-gray-500 text-sm">지도를 불러오는 중…</div>
+            <div className="text-foreground font-semibold">지도 로딩 중</div>
+            <div className="text-muted-foreground text-sm">지도를 불러오는 중…</div>
           </div>
         </div>
       )}

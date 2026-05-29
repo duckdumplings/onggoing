@@ -12,7 +12,7 @@ export default function Home() {
   const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
 
   return (
-    <div className="h-screen bg-slate-50 flex overflow-hidden font-sans">
+    <div className="h-screen bg-background flex overflow-hidden font-sans">
       {/* 좌측 패널 */}
       <motion.aside
         initial={{ x: -300, opacity: 0 }}
@@ -30,9 +30,9 @@ export default function Home() {
               <Compass className="w-5 h-5" />
             </motion.div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-800 flex items-center gap-1">
+              <h1 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-1">
                 <span className="text-primary">옹라우팅</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-bold tracking-wide border border-indigo-100">BETA</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold tracking-wide border border-primary/20">BETA</span>
               </h1>
             </div>
           </div>
@@ -43,7 +43,7 @@ export default function Home() {
           <RouteOptimizerPanel />
 
           {/* 섹션 구분선 */}
-          <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent my-4 mx-4"></div>
+          <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent my-4 mx-4"></div>
 
           <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
         </div>
@@ -51,14 +51,14 @@ export default function Home() {
       </motion.aside>
 
       {/* 모바일 상단 패널 */}
-      <div className="md:hidden w-full p-4 space-y-3 bg-slate-50">
+      <div className="md:hidden w-full p-4 space-y-3 bg-background">
         <RouteOptimizerPanel />
         <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
 
       </div>
 
       {/* 우측 지도 - 전체 화면 차지 */}
-      <main className="relative flex-1 h-full bg-slate-100">
+      <main className="relative flex-1 h-full bg-muted">
         <TmapMainMap />
       </main>
 

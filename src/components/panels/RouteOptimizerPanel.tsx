@@ -488,7 +488,7 @@ export default function RouteOptimizerPanel() {
               <Map className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800 tracking-tight leading-tight">경로 최적화</h2>
+              <h2 className="text-lg font-bold text-foreground tracking-tight leading-tight">경로 최적화</h2>
             </div>
           </div>
           <ThemeToggle />
@@ -531,7 +531,7 @@ export default function RouteOptimizerPanel() {
           {/* 다중 배송원 모드일 때만 표시: 배송원 수 */}
           {optimizationMode === 'multi' && (
             <div className="flex items-center justify-between pt-2 border-t border-border">
-              <span className="text-xs font-medium text-slate-600">배송원 수</span>
+              <span className="text-xs font-medium text-muted-foreground">배송원 수</span>
               <div className="flex items-center gap-2">
                 <input
                   type="range"
@@ -539,9 +539,9 @@ export default function RouteOptimizerPanel() {
                   max="10"
                   value={driverCount}
                   onChange={(e) => setDriverCount(parseInt(e.target.value))}
-                  className="w-24 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  className="w-24 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary-600"
                 />
-                <span className="text-xs font-bold text-indigo-600 w-8 text-right">{driverCount}명</span>
+                <span className="text-xs font-bold text-primary w-8 text-right">{driverCount}명</span>
               </div>
             </div>
           )}
@@ -550,16 +550,16 @@ export default function RouteOptimizerPanel() {
         {/* 2. Route Section (Origin & Waypoints) */}
         <div className="space-y-4 relative">
           {/* 타임라인 연결선 (출발지부터 경유지까지) */}
-          <div className="absolute left-[11px] top-6 bottom-[100px] w-0.5 bg-slate-200/60 -z-10 rounded-full" />
+          <div className="absolute left-[11px] top-6 bottom-[100px] w-0.5 bg-border -z-10 rounded-full" />
           
           {/* 출발지 입력 */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)] z-10 -ml-[5px] ring-4 ring-white"></div>
               출발지 정보
             </label>
             <div className="relative group ml-4">
-              <div className="relative bg-white rounded-xl shadow-sm border border-slate-200/60 transition-colors group-focus-within:border-primary/40">
+              <div className="relative bg-card rounded-xl shadow-sm border border-border transition-colors group-focus-within:border-primary/40">
                 <AddressAutocomplete
                   label=""
                   placeholder="출발지를 검색하세요"
@@ -575,38 +575,38 @@ export default function RouteOptimizerPanel() {
             {originSelection && (
               <div className="ml-4 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
                 <div className="flex gap-2">
-                  <div className="flex-1 flex items-center gap-2 bg-white shadow-sm px-3 py-2 rounded-lg border border-slate-200/60">
-                    <span className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">체류</span>
+                  <div className="flex-1 flex items-center gap-2 bg-card shadow-sm px-3 py-2 rounded-lg border border-border">
+                    <span className="text-[10px] font-semibold text-muted-foreground whitespace-nowrap">체류</span>
                     <input
                       type="number"
                       min="0"
                       step="5"
                       value={originDwellTime}
                       onChange={(e) => setOriginDwellTime(Math.max(0, parseInt(e.target.value || '0')))}
-                      className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none border-b border-transparent focus:border-indigo-500"
+                      className="w-full bg-transparent text-xs text-center font-bold text-foreground focus:outline-none border-b border-transparent focus:border-primary"
                     />
-                    <span className="text-[10px] text-slate-400">분</span>
+                    <span className="text-[10px] text-muted-foreground">분</span>
                   </div>
-                  <div className={`flex-[1.5] shadow-sm flex items-center gap-2 bg-white px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-300 bg-rose-50' : 'border-slate-200/60'}`}>
-                    <span className={`text-[10px] font-semibold whitespace-nowrap ${isOriginDepartureTimeRequired ? 'text-rose-600' : 'text-slate-500'}`}>
+                  <div className={`flex-[1.5] shadow-sm flex items-center gap-2 bg-card px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-300 bg-rose-50' : 'border-border'}`}>
+                    <span className={`text-[10px] font-semibold whitespace-nowrap ${isOriginDepartureTimeRequired ? 'text-rose-600' : 'text-muted-foreground'}`}>
                       출발 {isOriginDepartureTimeRequired && '*'}
                     </span>
                     <input
                       type="time"
                       value={originDepartureTime}
                       onChange={(e) => setOriginDepartureTime(e.target.value)}
-                      className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none"
+                      className="w-full bg-transparent text-xs text-center font-bold text-foreground focus:outline-none"
                     />
                   </div>
                 </div>
 
                 {/* 계산 기준 날짜 안내: 입력 시각의 today/tomorrow/주말보정 결과를 투명하게 노출 */}
                 {resolvedDeparture && (
-                  <div className="flex items-center gap-1.5 px-1 text-[10px] text-slate-500">
+                  <div className="flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground">
                     <Calendar className="w-3 h-3 text-indigo-500" />
                     <span>
                       계산 기준{' '}
-                      <span className="font-bold text-slate-700">
+                      <span className="font-bold text-foreground">
                         {describeRelativeDay(resolvedDeparture.date)
                           ? `${describeRelativeDay(resolvedDeparture.date)} · `
                           : ''}
@@ -617,7 +617,7 @@ export default function RouteOptimizerPanel() {
                     {resolvedDeparture.adjustedForWeekend && (
                       <span className="text-amber-600 font-semibold">(주말→평일 보정)</span>
                     )}
-                    <span className="ml-auto text-slate-400">예측 교통</span>
+                    <span className="ml-auto text-muted-foreground">예측 교통</span>
                   </div>
                 )}
               </div>
@@ -626,15 +626,15 @@ export default function RouteOptimizerPanel() {
 
           {/* 경유지 리스트 Header & Bulk Actions */}
           <div className="flex items-center justify-between pt-2 ml-4">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full border-2 border-slate-300 bg-white z-10 -ml-[25px] ring-4 ring-white"></div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full border-2 border-border bg-card z-10 -ml-[25px] ring-4 ring-background"></div>
               경유지 목록
             </label>
             <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
               <button
                 type="button"
                 onClick={() => setWaypoints(prev => prev.map(w => ({ ...w, dwellTime: 10 })))}
-                className="text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded transition-colors"
+                className="text-[10px] font-medium bg-muted hover:bg-accent text-foreground px-2 py-1 rounded transition-colors"
                 title="모든 경유지 체류시간을 10분으로 통일"
               >
                 10분 통일
@@ -642,7 +642,7 @@ export default function RouteOptimizerPanel() {
               <button
                 type="button"
                 onClick={() => setWaypoints(prev => prev.map(w => ({ ...w, deliveryTime: undefined })))}
-                className="text-[10px] font-medium bg-slate-100 hover:bg-rose-100 hover:text-rose-600 text-slate-600 px-2 py-1 rounded transition-colors"
+                className="text-[10px] font-medium bg-muted hover:bg-error-muted hover:text-error text-foreground px-2 py-1 rounded transition-colors"
                 title="모든 도착시간 설정 초기화"
               >
                 시간 초기화
@@ -651,7 +651,7 @@ export default function RouteOptimizerPanel() {
           </div>
 
           {/* 경유지 리스트 Content */}
-          <div className="bg-slate-50/50 rounded-2xl border border-slate-200/60 p-1 ml-4 shadow-sm">
+          <div className="bg-muted/50 rounded-2xl border border-border p-1 ml-4 shadow-sm">
             <WaypointList
               waypoints={waypoints}
               onWaypointsChange={setWaypoints}
@@ -662,28 +662,28 @@ export default function RouteOptimizerPanel() {
         </div>
 
         {/* 3. Strategy Section (Options Accordion) */}
-        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="border border-border rounded-xl overflow-hidden shadow-sm">
           <button
             onClick={() => setIsOptionsOpen(!isOptionsOpen)}
-            className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors"
+            className="w-full flex items-center justify-between p-4 bg-card hover:bg-muted transition-colors"
           >
-            <div className="flex items-center gap-2 text-slate-700">
+            <div className="flex items-center gap-2 text-foreground">
               <Settings className="w-4 h-4 text-indigo-500" />
               <span className="text-sm font-bold">고급 설정</span>
               {!isOptionsOpen && (
-                <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                <span className="text-[10px] font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full ml-2">
                   {getAdvancedSettingsSummary()}
                 </span>
               )}
             </div>
-            {isOptionsOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+            {isOptionsOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
           </button>
 
           {isOptionsOpen && (
-            <div className="p-4 bg-slate-50/50 border-t border-slate-200 space-y-5 animate-in slide-in-from-top-2">
+            <div className="p-4 bg-muted/50 border-t border-border space-y-5 animate-in slide-in-from-top-2">
               {/* 종료 정책 */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">종료 정책</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">종료 정책</span>
                 <RadioGroup
                   value={destinationPolicy ?? 'last-stop'}
                   onValueChange={(value) => {
@@ -726,7 +726,7 @@ export default function RouteOptimizerPanel() {
 
               {/* 도로 옵션 */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">도로 옵션</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">도로 옵션</span>
                 <RadioGroup
                   value={roadOption}
                   onValueChange={(value) => setRoadOption(value)}
@@ -738,7 +738,7 @@ export default function RouteOptimizerPanel() {
                     { value: 'free-road-first', label: '무료우선', icon: <Route className="w-3 h-3" />, description: '유료도로 회피, 시간 무관' },
                   ]}
                 />
-                <p className="text-[10px] text-slate-500 leading-snug px-1">
+                <p className="text-[10px] text-muted-foreground leading-snug px-1">
                   {roadOption === 'time-first' && '유료도로를 포함해 가장 빠른 경로. 통행료가 발생할 수 있습니다.'}
                   {roadOption === 'toll-saving' && '시간을 조금 양보하는 대신 통행료를 줄이는 절충안.'}
                   {roadOption === 'free-road-first' && '유료도로를 회피합니다. 시간은 더 걸릴 수 있습니다.'}
@@ -747,11 +747,11 @@ export default function RouteOptimizerPanel() {
 
               {/* 기타 옵션 (스위치) */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">기타 설정</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">기타 설정</span>
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                      <Shuffle className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="flex items-center justify-between p-2 bg-card rounded-lg border border-border">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Shuffle className="w-3.5 h-3.5 text-muted-foreground" />
                       자동 순서 최적화
                     </span>
                     <Switch
@@ -763,12 +763,12 @@ export default function RouteOptimizerPanel() {
                   </div>
                   <div
                     className={cn(
-                      'flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200',
+                      'flex items-center justify-between p-2 bg-card rounded-lg border border-border',
                       (!!originDepartureTime || hasAnyDeliveryTime) && 'opacity-60',
                     )}
                   >
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                      <Radio className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Radio className="w-3.5 h-3.5 text-muted-foreground" />
                       실시간 교통정보
                     </span>
                     <Switch
@@ -787,14 +787,14 @@ export default function RouteOptimizerPanel() {
 
         {/* 메시지 영역 */}
         {(hasHardFailure || hasWarning || (lastError?.details?.errors?.length ?? 0) > 0) && (
-          <div className={`rounded-xl p-4 border shadow-sm animate-in shake duration-300 ${hasHardFailure ? 'bg-rose-50 border-rose-100 text-rose-800' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
+          <div className={`rounded-xl p-4 border shadow-sm animate-in shake duration-300 ${hasHardFailure ? 'bg-error-muted border-error/20 text-error' : 'bg-warning-muted border-warning/20 text-warning'}`}>
             <div className="flex items-start gap-3">
               <div className="mt-0.5">{hasHardFailure ? <Ban className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}</div>
               <div className="space-y-1">
                 <div className="font-bold text-sm">{hasHardFailure ? '최적화 실패' : '주의 필요'}</div>
                 <div className="text-xs leading-relaxed opacity-90">{localError || error || lastError?.message || lastError?.error}</div>
                 {lastError?.details?.errors && (
-                  <ul className="mt-2 text-[11px] bg-white/50 p-2 rounded-lg space-y-1 list-disc list-inside">
+                  <ul className="mt-2 text-[11px] bg-background/40 p-2 rounded-lg space-y-1 list-disc list-inside">
                     {lastError.details.errors.map((err: string, idx: number) => (
                       <li key={idx}>{err}</li>
                     ))}
@@ -1161,13 +1161,13 @@ export default function RouteOptimizerPanel() {
           className={cn(
             'w-full h-14 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 transform active:scale-[0.98] flex items-center justify-center gap-2',
             isLoading || isMultiDriverLoading
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              ? 'bg-muted text-muted-foreground cursor-not-allowed'
               : 'bg-primary text-primary-foreground hover:brightness-110 hover:-translate-y-0.5',
           )}
         >
           {isLoading || isMultiDriverLoading ? (
             <>
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
@@ -1185,12 +1185,12 @@ export default function RouteOptimizerPanel() {
       {/* 다중 배송원 결과 표시 (Floating Modal처럼 표시하거나 별도 영역으로) */}
       {optimizationMode === 'multi' && multiDriverResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center glass-overlay p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
-              <h3 className="text-lg font-bold text-slate-800">다중 배송원 최적화 결과</h3>
+          <div className="bg-card rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-border flex justify-between items-center sticky top-0 bg-card z-10">
+              <h3 className="text-lg font-bold text-foreground">다중 배송원 최적화 결과</h3>
               <button
                 onClick={() => setMultiDriverResult(null)}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
               >
                 <ChevronDown className="rotate-180" />
               </button>
@@ -1206,7 +1206,7 @@ export default function RouteOptimizerPanel() {
       <div className="p-5 pt-2 text-center">
         <button
           onClick={openSavedRouteModal}
-          className="text-xs text-slate-400 hover:text-indigo-600 transition-colors underline decoration-slate-200 underline-offset-2"
+          className="text-xs text-muted-foreground hover:text-primary transition-colors underline decoration-border underline-offset-2"
         >
           최근 저장된 경로 불러오기
         </button>
@@ -1215,15 +1215,15 @@ export default function RouteOptimizerPanel() {
       {isHistoryModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center glass-overlay p-4">
           <div className="w-full max-w-2xl rounded-2xl glass-canvas overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div>
-                <h3 className="text-base font-bold text-slate-800">최근 저장된 경로</h3>
-                <p className="text-xs text-slate-500 mt-0.5">불러올 경로를 선택하세요</p>
+                <h3 className="text-base font-bold text-foreground">최근 저장된 경로</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">불러올 경로를 선택하세요</p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsHistoryModalOpen(false)}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                className="p-2 rounded-lg text-muted-foreground hover:text-muted-foreground hover:bg-muted transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1231,7 +1231,7 @@ export default function RouteOptimizerPanel() {
 
             <div className="p-4 max-h-[60vh] overflow-y-auto custom-scrollbar space-y-2">
               {isHistoryLoading && (
-                <div className="text-sm text-slate-500 bg-slate-50 border border-slate-100 rounded-xl p-4">
+                <div className="text-sm text-muted-foreground bg-muted border border-border rounded-xl p-4">
                   저장 경로를 불러오는 중입니다...
                 </div>
               )}
@@ -1260,13 +1260,13 @@ export default function RouteOptimizerPanel() {
                       applySavedRunToInputs(run);
                       setIsHistoryModalOpen(false);
                     }}
-                    className="w-full text-left rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-indigo-200 hover:bg-indigo-50/30 transition-colors"
+                    className="w-full text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/40 hover:bg-primary/5 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold text-slate-800">{idx + 1}. {modeText}</div>
-                      <div className="text-[11px] text-slate-500">{dateText}</div>
+                      <div className="text-sm font-semibold text-foreground">{idx + 1}. {modeText}</div>
+                      <div className="text-[11px] text-muted-foreground">{dateText}</div>
                     </div>
-                    <div className="mt-1 text-xs text-slate-600">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       {run.vehicle_type || '차량 미상'} · {distanceText}
                     </div>
                   </button>

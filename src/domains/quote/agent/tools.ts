@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
+import { resolveDeparturePresets } from '@/domains/dispatch/utils/departureMatrix';
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
 import { retrieveRagContext } from '@/domains/quote/services/ragRetriever';
 import {
