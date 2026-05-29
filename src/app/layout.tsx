@@ -1,8 +1,19 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
 import { RouteOptimizationProvider } from '@/hooks/useRouteOptimization.tsx'
 
+// 한국어 우선 폰트(self-host). 본문/숫자의 한국어 B2B 가독성·정밀함을 담당.
+// North Star §3 Phase 3 항목 — 자비스/토스/카카오모빌리티 어드민 톤.
+const pretendard = localFont({
+  src: '../../public/fonts/PretendardVariable.woff2',
+  variable: '--font-pretendard',
+  display: 'swap',
+  weight: '45 920',
+})
+
+// 라틴 폴백(특히 영문 보조). Pretendard 미커버 글리프 대비.
 const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
@@ -23,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={inter.variable}>
+    <html lang="ko" className={`${pretendard.variable} ${inter.variable}`}>
       <head>
         <link rel="preconnect" href="https://apis.openapi.sk.com" />
         <link rel="preconnect" href="https://topopentile3.tmap.co.kr" />

@@ -159,7 +159,13 @@ const config: Config = {
         xl: 'calc(var(--radius) + 4px)',
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        sans: [
+          'var(--font-pretendard)',
+          'var(--font-inter)',
+          'system-ui',
+          '-apple-system',
+          'sans-serif',
+        ],
       },
     },
   },

@@ -119,14 +119,17 @@
 | `GlassCard` tier 컴포넌트 (launcher/card/canvas) | ✓ |
 | `Badge`/`Skeleton`/`EmptyState`/`SummaryCard` | ✓ |
 | `.tabular` 유틸리티 (정밀 표현) | ✓ |
-| 다크모드 토글 UI | 미구현 |
+| 다크모드 토글 UI + FOUC 방지 + 전역 다크 커버리지 | ✓ |
+| 한국어 우선 폰트 (Pretendard Variable, self-host) | ✓ (`layout.tsx`, Phase 3에서 선행 도입) |
 | 마이크로 인터랙션 라이브러리 (focus 링/layoutId) | 부분 (framer-motion 의존 있음) |
+| 모달 공통 셸 통일 (포커스 트랩·ESC·스크롤락) | ✓ (`components/ui/Modal.tsx`) |
+| 접근성 WCAG AA (axe 점검) | ✓ 1차 (잔여: CTA 4.46:1 등 팔레트 미세 항목) |
 
 ### Phase 3 (확장) — 향후
 
 | 항목 | 계획 |
 |---|---|
-| 한국어 우선 폰트 (Pretendard Variable) | Phase 3 도입 |
+| 한국어 우선 폰트 (Pretendard Variable) | ✓ Phase 2에서 선행 도입 완료 |
 | 차트/지도 전용 토큰 (`chart-1~5`, `route-*`) | ✓ 부분 정의됨, 사용처 정착 시 추가 |
 | 다국어 카피 톤 가이드 (영어/일본어) | i18n 도입 시 확장 |
 | Cmd-K 전역 검색 | 인터랙션 정밀도 (§0 정체성 5축 활기) |
@@ -171,3 +174,4 @@
 | 날짜 | 변경 |
 |---|---|
 | 2026-05-29 | 초기 작성 (Phase 2 디자인 토큰 도입과 함께) |
+| 2026-05-29 | 재검토 패스: Pretendard Variable 선행 도입, 다크모드 전역 커버리지/토글, 모달 공통 셸, 접근성 1차(axe), 디자인 가드 0건, 미사용 의존성 정리 |
