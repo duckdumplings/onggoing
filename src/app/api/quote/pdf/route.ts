@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
         <div class="route-info">
             ${origins?.[0] ? `
             <div class="route-item">
-                <div class="route-icon">🚚</div>
+                <div class="route-icon"></div>
                 <div class="route-text">
                     <strong>출발지:</strong> ${origins[0].address || origins[0]}
                 </div>
@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
             ` : ''}
             ${destinations?.map((dest: any, index: number) => `
             <div class="route-item">
-                <div class="route-icon">📍</div>
+                <div class="route-icon"></div>
                 <div class="route-text">
                     <strong>경유지 ${index + 1}:</strong> ${dest.address || dest}
                 </div>

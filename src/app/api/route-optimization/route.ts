@@ -268,11 +268,11 @@ async function fetchSegmentTravel(
   const key = `${coordKey(from, to)}@${bucket}@${trafficMode}@${vehicleTypeCode}`;
   const hit = cache.get(key);
   if (hit) {
-    console.log(`🎯 [Tmap 캐시 히트] ${from.address} → ${to.address}`);
+    console.log(`[Tmap 캐시 히트] ${from.address} → ${to.address}`);
     return { ...hit, mode: 'prediction' };
   }
 
-  console.log(`🚗 [Tmap 예측 호출] ${from.address} → ${to.address} (${anchored.toISOString()})`);
+  console.log(`[Tmap 예측 호출] ${from.address} → ${to.address} (${anchored.toISOString()})`);
 
   // 1) Prediction 재시도
   const backoffs = [400, 900, 1600];
@@ -295,14 +295,14 @@ async function fetchSegmentTravel(
       }
       const val = { timeSec, distM };
       cache.set(key, val);
-      console.log(`✅ [Tmap 예측 완료] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
+      console.log(`[Tmap 예측 완료] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
       return { ...val, mode: 'prediction' };
     }
     await sleep(backoffs[i]);
   }
 
   // 2) 일반 routes 대체 (departureAt 없이 trafficInfo만)
-  console.warn(`⚠️ [Prediction 실패 → routes 대체 시도] ${from.address} → ${to.address}`);
+  console.warn(`[Prediction 실패 → routes 대체 시도] ${from.address} → ${to.address}`);
   for (let i = 0; i < 2; i++) {
     const result = await getTmapRoute(
       { x: from.longitude, y: from.latitude },
@@ -322,7 +322,7 @@ async function fetchSegmentTravel(
       }
       const val = { timeSec, distM };
       cache.set(key, val);
-      console.log(`✅ [routes 대체 성공] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
+      console.log(`[routes 대체 성공] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
       return { ...val, mode: 'routes-fallback' };
     }
     await sleep(600 + i * 900);
@@ -360,7 +360,7 @@ async function selectNextStop(
 
   // 2) 프리선정된 상위 후보 중 topK개를 Tmap 정밀 평가
   const sorted = preSorted.slice(0, Math.max(1, Math.min(topK, preSorted.length)));
-  console.log(`🎯 [후보 선택] 프리선정 ${preSorted.length}개 → 정밀평가 ${sorted.length}개:`, sorted.map(s => s.address));
+  console.log(`[후보 선택] 프리선정 ${preSorted.length}개 → 정밀평가 ${sorted.length}개:`, sorted.map(s => s.address));
 
   let best: { next: Waypoint; travel: { timeSec: number; distM: number }; score: number; latenessMin: number } | null = null;
 
@@ -373,7 +373,7 @@ async function selectNextStop(
     // 스코어: lateness 우선(분당 큰 가중치), 보조로 시간/거리
     const score = latenessMin * 100000 + travel.timeSec + travel.distM / 10;
 
-    console.log(`📊 [후보 평가] ${cand.address}: 지각 ${latenessMin}분, 점수 ${score}, 이동시간 ${travel.timeSec}초`);
+    console.log(`[후보 평가] ${cand.address}: 지각 ${latenessMin}분, 점수 ${score}, 이동시간 ${travel.timeSec}초`);
 
     if (!best || score < best.score) {
       best = { next: cand, travel, score, latenessMin };
@@ -387,7 +387,7 @@ async function selectNextStop(
     return { next: cand, travel, latenessMin: 0 };
   }
 
-  console.log(`✅ [최적 후보 선택] ${best.next.address}: 지각 ${best.latenessMin}분, 점수 ${best.score}`);
+  console.log(`[최적 후보 선택] ${best.next.address}: 지각 ${best.latenessMin}분, 점수 ${best.score}`);
   return { next: best.next, travel: best.travel, latenessMin: best.latenessMin };
 }
 
@@ -410,7 +410,7 @@ async function buildTimeWindowAwareRoute(
   let cur = start;
   let totalLatenessMin = 0;
 
-  console.log('🚀 [시간창 우선 최적화] 시작:', {
+  console.log('[시간창 우선 최적화] 시작:', {
     출발지: start.address,
     경유지수: waypoints.length,
     출발시간: now.toISOString(),
@@ -427,7 +427,7 @@ async function buildTimeWindowAwareRoute(
       const d = new Date(now);
       d.setHours(h, m, 0, 0);
       windows.set(waypoints[i].address, { due: d });
-      console.log(`⏰ [시간제약] ${waypoints[i].address}: ${d.toISOString()}`);
+      console.log(`[시간제약] ${waypoints[i].address}: ${d.toISOString()}`);
     } else {
       windows.set(waypoints[i].address, { due: null });
     }
@@ -440,7 +440,7 @@ async function buildTimeWindowAwareRoute(
 
     let candidates: Waypoint[] = constrained.length ? constrained : remaining;
 
-    console.log(`🔄 [경로 구성] 남은 경유지 ${remaining.length}개, 시간제약 ${constrained.length}개, 자유 ${unconstrained.length}개`);
+    console.log(`[경로 구성] 남은 경유지 ${remaining.length}개, 시간제약 ${constrained.length}개, 자유 ${unconstrained.length}개`);
 
     // 2) 후보 선택(최대 K개에 대해 Tmap 예측 사용)
     const { next, travel, latenessMin } = await selectNextStop(
@@ -453,7 +453,7 @@ async function buildTimeWindowAwareRoute(
     cur = next;
     totalLatenessMin += Math.max(0, latenessMin);
 
-    console.log(`📍 [경유지 방문] ${next.address}, 도착시간: ${now.toISOString()}, 체류: ${dwell}분`);
+    console.log(`[경유지 방문] ${next.address}, 도착시간: ${now.toISOString()}, 체류: ${dwell}분`);
 
     // 4) 방문 처리
     order.push(next);
@@ -461,7 +461,7 @@ async function buildTimeWindowAwareRoute(
     if (idx !== -1) remaining.splice(idx, 1);
   }
 
-  console.log('✅ [시간창 우선 최적화] 완료:', {
+  console.log('[시간창 우선 최적화] 완료:', {
     최종경로: order.map(w => w.address),
     총지각분: totalLatenessMin,
     Tmap캐시크기: tmapCache.size
@@ -548,7 +548,7 @@ function validateTimeConstraintsAndSuggest(
   waypoints: Array<{ latitude: number; longitude: number; address: string }>,
   timeConstraints: TimeConstraint[]
 ): ValidationResult {
-  console.log('🔍 [시간제약 검증] 시작');
+  console.log('[시간제약 검증] 시작');
   console.log('검증 파라미터:', {
     startTime,
     waypointsCount: waypoints.length,
@@ -593,7 +593,7 @@ function validateTimeConstraintsAndSuggest(
       );
     }
 
-    console.log(`🔍 [시간제약 검증] 경유지 ${waypointIndex + 1}:`, {
+    console.log(`[시간제약 검증] 경유지 ${waypointIndex + 1}:`, {
       요구시간: constraint.deliveryTime,
       예상도착시간: `${Math.floor(estimatedArrivalTime / 60).toString().padStart(2, '0')}:${(estimatedArrivalTime % 60).toString().padStart(2, '0')}`,
       위반분: violationMinutes,
@@ -606,7 +606,7 @@ function validateTimeConstraintsAndSuggest(
     suggestions.push(...generateSmartSuggestions(startTime, validations));
   }
 
-  console.log('✅ [시간제약 검증] 완료:', {
+  console.log('[시간제약 검증] 완료:', {
     검증결과: validations.length,
     오류수: errors.length,
     제안수: suggestions.length,
@@ -746,7 +746,7 @@ async function multiObjectiveRouteOptimization(
     coolingRate: 0.95
   }
 ): Promise<RouteSolution> {
-  console.log('🎯 [Multi-Objective 최적화] 시작');
+  console.log('[Multi-Objective 최적화] 시작');
   console.log('경유지 수:', waypoints.length);
   console.log('시간제약 수:', timeConstraints.length);
   console.log('최적화 파라미터:', params);
@@ -788,7 +788,7 @@ async function multiObjectiveRouteOptimization(
         bestRoute = [...currentRoute];
         bestScore = currentScore;
 
-        console.log(`🔄 [반복 ${iteration}] 새로운 최적해 발견:`, {
+        console.log(`[반복 ${iteration}] 새로운 최적해 발견:`, {
           목적함수값: bestScore.objectiveValue,
           거리: bestScore.totalDistance,
           시간패널티: bestScore.timePenalty
@@ -801,7 +801,7 @@ async function multiObjectiveRouteOptimization(
     iteration++;
   }
 
-  console.log('✅ [Multi-Objective 최적화] 완료:', {
+  console.log('[Multi-Objective 최적화] 완료:', {
     총반복횟수: iteration,
     최종온도: temperature,
     최적해: bestRoute.map(p => p.address),
@@ -868,7 +868,7 @@ function generateInitialRoute(
     }
   });
 
-  console.log('🧠 [스마트 초기해 생성] 정렬 결과:', allWaypoints.map(w => ({
+  console.log('[스마트 초기해 생성] 정렬 결과:', allWaypoints.map(w => ({
     주소: w.waypoint.address,
     거리: `${Math.round(w.distance)}m`,
     시간제약: w.constraint ? `${w.constraint.deliveryTime}${w.constraint.isNextDay ? '(다음날)' : ''}` : '없음',
@@ -918,10 +918,10 @@ function generateNeighborRoute(
 }
 
 export async function POST(request: NextRequest) {
-  console.log('🔥 [API] POST 요청 시작');
+  console.log('[API] POST 요청 시작');
   try {
     const body = await request.json();
-    console.log('📥 [API] 요청 body 파싱 완료');
+    console.log('[API] 요청 body 파싱 완료');
     const {
       origins,
       destinations,
@@ -1106,7 +1106,7 @@ export async function POST(request: NextRequest) {
 
     let orderedDestinations;
     if (optimizeOrder) {
-      console.log('🎯 [Multi-Objective 최적화] 함수 호출 시작');
+      console.log('[Multi-Objective 최적화] 함수 호출 시작');
 
       // 시간제약 데이터 준비 (인덱스 정합성 유지)
       const timeConstraints: TimeConstraint[] = [];
@@ -1130,14 +1130,14 @@ export async function POST(request: NextRequest) {
 
       // 1단계: 시간제약이 있는 경우에만 검증 수행
       if (timeConstraints.length > 0) {
-        console.log('🔍 [시간제약 검증] 시작 - 시간제약이 있음');
+        console.log('[시간제약 검증] 시작 - 시간제약이 있음');
 
         const startTime = departureAt ? new Date(departureAt).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '11:56';
         console.log('검증에 사용할 출발시간:', startTime);
 
         // 추가 검증: 출발시간이 설정되어 있는지 확인
         if (!departureAt) {
-          console.log('⚠️ [시간제약 검증] 출발시간이 설정되지 않음');
+          console.log('[시간제약 검증] 출발시간이 설정되지 않음');
           return NextResponse.json({
             success: false,
             error: 'MISSING_DEPARTURE_TIME',
@@ -1244,7 +1244,7 @@ export async function POST(request: NextRequest) {
         );
 
         if (!validationResult.isValid) {
-          console.log('⚠️ [시간제약 검증] 실패:', {
+          console.log('[시간제약 검증] 실패:', {
             오류수: validationResult.errors.length,
             제안수: validationResult.suggestions.length,
             오류내용: validationResult.errors,
@@ -1268,15 +1268,15 @@ export async function POST(request: NextRequest) {
           }, { status: 400 });
         }
 
-        console.log('✅ [시간제약 검증] 통과 - 모든 시간제약이 현실적으로 가능함');
+        console.log('[시간제약 검증] 통과 - 모든 시간제약이 현실적으로 가능함');
       } else {
-        console.log('📝 [시간제약 검증] 건너뜀 - 시간제약이 없음');
+        console.log('[시간제약 검증] 건너뜀 - 시간제약이 없음');
       }
 
       // 2단계: Tmap 기반 시간창 우선 최적화 실행
       if (timeConstraints.length > 0) {
         // 시간제약이 있는 경우: Tmap 기반 시간창 우선 최적화
-        console.log('🎯 [시간창 우선 최적화] 실행 - Tmap 예측 사용');
+        console.log('[시간창 우선 최적화] 실행 - Tmap 예측 사용');
 
         const depAtStr = departureAt as string;
         const { ordered, totalLatenessMin } = await buildRouteWithAnchors(
@@ -1294,23 +1294,23 @@ export async function POST(request: NextRequest) {
 
         orderedDestinations = ordered;
 
-        console.log('✅ [시간창 우선 최적화] 완료:', {
+        console.log('[시간창 우선 최적화] 완료:', {
           최적경로: orderedDestinations.map(p => p.address),
           총지각분: totalLatenessMin
         });
       } else {
         // 시간제약이 없는 경우: 단순 거리 기반 최적화
-        console.log('📏 [거리 기반 최적화] 실행 - 시간제약 없음');
+        console.log('[거리 기반 최적화] 실행 - 시간제약 없음');
 
         orderedDestinations = nearestNeighborOrder(startLocation, destinationCoords);
 
-        console.log('✅ [거리 기반 최적화] 완료:', {
+        console.log('[거리 기반 최적화] 완료:', {
           최적경로: orderedDestinations.map(p => p.address),
           전략: '최근접 이웃 알고리즘'
         });
       }
     } else {
-      console.log('📝 [순서 최적화] 비활성화됨');
+      console.log('[순서 최적화] 비활성화됨');
       orderedDestinations = destinationCoords;
     }
 
@@ -2247,7 +2247,7 @@ async function nearestNeighborOrderWithTimeConstraints(
   deliveryTimes: string[],
   isNextDayFlags: boolean[] = []
 ): Promise<Array<{ latitude: number; longitude: number; address: string }>> {
-  console.log('🚀 [고급 시간제약 최적화] 함수 호출:', {
+  console.log('[고급 시간제약 최적화] 함수 호출:', {
     points: points.map(p => p.address),
     deliveryTimes,
     isNextDayFlags
@@ -2263,7 +2263,7 @@ async function nearestNeighborOrderWithTimeConstraints(
     }))
     .filter(point => point.deliveryTime && point.deliveryTime.trim() !== '');
 
-  console.log('⏰ [시간제약 경유지] 원본:', timeConstrainedPoints.map(p => ({
+  console.log('[시간제약 경유지] 원본:', timeConstrainedPoints.map(p => ({
     address: p.address,
     deliveryTime: p.deliveryTime,
     isNextDay: p.isNextDay
@@ -2283,7 +2283,7 @@ async function nearestNeighborOrderWithTimeConstraints(
     return minutesA - minutesB; // 오름차순 정렬 (이른 시간이 먼저)
   });
 
-  console.log('📅 [시간제약 경유지] 정렬 후:', sortedTimeConstrainedPoints.map(p => ({
+  console.log('[시간제약 경유지] 정렬 후:', sortedTimeConstrainedPoints.map(p => ({
     address: p.address,
     deliveryTime: p.deliveryTime,
     isNextDay: p.isNextDay
@@ -2298,7 +2298,7 @@ async function nearestNeighborOrderWithTimeConstraints(
     }))
     .filter(point => !point.deliveryTime);
 
-  console.log('🔄 [시간제약 없는 경유지]:', unconstrainedPoints.map(p => p.address));
+  console.log('[시간제약 없는 경유지]:', unconstrainedPoints.map(p => p.address));
 
   // 3단계: 구간별 최적화 수행
   const ordered = await optimizeWithTimeSegments(
@@ -2307,7 +2307,7 @@ async function nearestNeighborOrderWithTimeConstraints(
     unconstrainedPoints
   );
 
-  console.log('✅ [고급 시간제약 최적화] 완료:', {
+  console.log('[고급 시간제약 최적화] 완료:', {
     원래순서: points.map(p => p.address),
     최적화순서: ordered.map(p => p.address),
     시간제약경유지: sortedTimeConstrainedPoints.map(p => p.address),
@@ -2324,7 +2324,7 @@ async function optimizeWithTimeSegments(
   timeConstrainedPoints: Array<{ latitude: number; longitude: number; address: string; deliveryTime: string; isNextDay: boolean; originalIndex: number }>,
   unconstrainedPoints: Array<{ latitude: number; longitude: number; address: string; originalIndex: number }>
 ): Promise<Array<{ latitude: number; longitude: number; address: string }>> {
-  console.log('🎯 [구간별 최적화] 시작');
+  console.log('[구간별 최적화] 시작');
 
   const ordered: Array<{ latitude: number; longitude: number; address: string }> = [];
   let currentPosition = { lat: start.latitude, lng: start.longitude };
@@ -2332,7 +2332,7 @@ async function optimizeWithTimeSegments(
 
   // 시간 제약이 있는 경유지가 없는 경우: 단순 최근접 이웃 알고리즘
   if (timeConstrainedPoints.length === 0) {
-    console.log('📝 [구간별 최적화] 시간제약 없음 - 단순 최적화');
+    console.log('[구간별 최적화] 시간제약 없음 - 단순 최적화');
     return nearestNeighborOrder({ latitude: currentPosition.lat, longitude: currentPosition.lng }, unconstrainedPoints);
   }
 
@@ -2341,7 +2341,7 @@ async function optimizeWithTimeSegments(
     const currentTimeConstraint = timeConstrainedPoints[i];
     const nextTimeConstraint = timeConstrainedPoints[i + 1];
 
-    console.log(`🔄 [구간 ${i + 1}] 처리 중:`, {
+    console.log(`[구간 ${i + 1}] 처리 중:`, {
       현재시간제약: currentTimeConstraint.address,
       다음시간제약: nextTimeConstraint?.address || '없음'
     });
@@ -2354,7 +2354,7 @@ async function optimizeWithTimeSegments(
       remainingUnconstrained
     );
 
-    console.log(`📍 [구간 ${i + 1}] 삽입 가능한 경유지:`, insertablePoints.map(p => p.address));
+    console.log(`[구간 ${i + 1}] 삽입 가능한 경유지:`, insertablePoints.map(p => p.address));
 
     // 시간제약 경유지를 먼저 추가 (시간제약이 있으므로 우선순위)
     ordered.push({
@@ -2387,12 +2387,12 @@ async function optimizeWithTimeSegments(
 
   // 남은 시간제약 없는 경유지들을 마지막에 추가
   if (remainingUnconstrained.length > 0) {
-    console.log('🔚 [구간별 최적화] 남은 경유지 처리:', remainingUnconstrained.map(p => p.address));
+    console.log('[구간별 최적화] 남은 경유지 처리:', remainingUnconstrained.map(p => p.address));
     const finalOptimized = nearestNeighborOrder({ latitude: currentPosition.lat, longitude: currentPosition.lng }, remainingUnconstrained);
     ordered.push(...finalOptimized);
   }
 
-  console.log('✅ [구간별 최적화] 완료:', ordered.map((p, index) => ({
+  console.log('[구간별 최적화] 완료:', ordered.map((p, index) => ({
     순서: index + 1,
     주소: p.address
   })));

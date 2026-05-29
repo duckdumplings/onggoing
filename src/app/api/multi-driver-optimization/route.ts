@@ -77,7 +77,7 @@ function calculateBalanceScore(distances: number[]): number {
 }
 
 export async function POST(request: NextRequest) {
-  console.log('🔥 [Multi-Driver API] POST 요청 시작');
+  console.log('[Multi-Driver API] POST 요청 시작');
   
   try {
     const body: MultiDriverOptimizationRequest = await request.json();
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       dwellMinutes = []
     } = body;
 
-    console.log('📥 [Multi-Driver API] 요청 데이터:', {
+    console.log('[Multi-Driver API] 요청 데이터:', {
       driverCount,
       destinationsCount: destinations.length,
       vehicleType
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
 
     // 1단계: 경유지 분배
     const distributedDestinations = distributeDestinations(destinations, driverCount);
-    console.log('📊 [Multi-Driver API] 경유지 분배 완료:', {
+    console.log('[Multi-Driver API] 경유지 분배 완료:', {
       배송원별경유지수: distributedDestinations.map((d, i) => `배송원${i + 1}: ${d.length}개`)
     });
 
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
       }
 
       const driverId = `driver-${driverIndex + 1}`;
-      console.log(`🚗 [배송원 ${driverId}] 경로 최적화 시작 (${driverDests.length}개 경유지)`);
+      console.log(`[배송원 ${driverId}] 경로 최적화 시작 (${driverDests.length}개 경유지)`);
 
       try {
         // 기존 route-optimization API 호출
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.error(`❌ [배송원 ${driverId}] 최적화 실패:`, errorData);
+          console.error(`[배송원 ${driverId}] 최적화 실패:`, errorData);
           throw new Error(`배송원 ${driverId} 최적화 실패: ${errorData.message || errorData.error || '알 수 없는 오류'}`);
         }
 
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
           dwellTime: summary.dwellTime || 0
         };
 
-        console.log(`✅ [배송원 ${driverId}] 최적화 완료:`, {
+        console.log(`[배송원 ${driverId}] 최적화 완료:`, {
           거리: `${(driverRoute.totalDistance / 1000).toFixed(1)}km`,
           시간: `${Math.round(driverRoute.totalTime / 60)}분`,
           경유지수: driverDests.length
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
 
         return driverRoute;
       } catch (error) {
-        console.error(`❌ [배송원 ${driverId}] 최적화 오류:`, error);
+        console.error(`[배송원 ${driverId}] 최적화 오류:`, error);
         throw error;
       }
     });
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    console.log('✅ [Multi-Driver API] 모든 배송원 최적화 완료:', {
+    console.log('[Multi-Driver API] 모든 배송원 최적화 완료:', {
       배송원수: validRoutes.length,
       총거리: `${(totalDistance / 1000).toFixed(1)}km`,
       총시간: `${Math.round(totalTime / 60)}분`,
@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error('❌ [Multi-Driver API] 오류:', error);
+    console.error('[Multi-Driver API] 오류:', error);
     return NextResponse.json(
       {
         error: '다중 배송원 최적화가 중단됐어요. 잠시 후 다시 시도해 주세요.',
