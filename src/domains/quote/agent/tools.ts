@@ -241,6 +241,134 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
       },
     }),
 
+    compare_departure_times: tool({
+      description:
+        '단일 경로(역할 태깅된 stops)를 평일/주말 × 시간대(한산/출근/퇴근) 프리셋별로 계산해, 출발시간에 따른 소요시간·시간당 견적 차이를 매트릭스로 돌려준다. 사용자가 "출발시간/요일에 따라 견적이 달라지냐", "주말 기준으로도 내줘" 등을 물으면 사용하라. 시간당 요금제 기준이며, 금액은 도구 결과만 사용하라.',
+      inputSchema: z.object({
+        stops: z.array(RouteStopSchema).min(2),
+        vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
+        scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
+        frequency: FrequencySchema.optional(),
+      }),
+      execute: async ({ stops, vehicleType, scheduleType, frequency }) => {
+        const domainStops = toDomainStops(stops);
+        const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
+        const toPoint = (address: string) => {
+          const hit = cache.get(address.trim());
+          if (hit?.resolved && hit.latitude != null && hit.longitude != null) {
+            return { name: hit.address || address, address: hit.address || address, latitude: hit.latitude, longitude: hit.longitude };
+          }
+          return address;
+        };
+        const pickups = domainStops.filter((s) => s.role === 'pickup');
+        const drops = domainStops.filter((s) => s.role === 'drop');
+        const originStop = pickups[0] ?? domainStops[0];
+        const finalDrop = drops[drops.length - 1];
+        const remaining = domainStops.filter((s) => s !== originStop);
+        const ordered = finalDrop ? [...remaining.filter((s) => s !== finalDrop), finalDrop] : remaining;
+        const dwellMinutesArr = ordered.map((s) => s.dwellMinutes ?? 0);
+        const stopsCount = Math.max(0, ordered.length - (finalDrop ? 1 : 0));
+        const freq = frequency as Frequency | undefined;
+
+        const presets = resolveDeparturePresets();
+
+        const rows = await Promise.all(
+          presets.map(async (preset) => {
+            const base = {
+              id: preset.id,
+              label: preset.label,
+              dayType: preset.dayType,
+              trafficLabel: preset.trafficLabel,
+              dateLabel: preset.dateLabel,
+              departureAt: preset.iso,
+            };
+            const payload = {
+              origins: [toPoint(originStop.address)],
+              destinations: ordered.map((s) => toPoint(s.address)),
+              finalDestinationAddress: finalDrop ? finalDrop.address : null,
+              useExplicitDestination: Boolean(finalDrop),
+              vehicleType,
+              optimizeOrder: true,
+              returnToOrigin: false,
+              roadOption: 'time-first' as const,
+              departureAt: preset.iso,
+              useRealtimeTraffic: true,
+              dwellMinutes: dwellMinutesArr,
+            };
+            try {
+              const routeRes = await fetch(new URL('/api/route-optimization', ctx.baseUrl), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              if (!routeRes.ok) {
+                const b = await routeRes.json().catch(() => ({}));
+                return { ...base, error: b?.error || b?.message || `경로 계산 실패 (HTTP ${routeRes.status})` };
+              }
+              const routeJson = await routeRes.json();
+              const summary = routeJson?.data?.summary;
+              const km = Number(summary?.totalDistance || 0) / 1000;
+              const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
+              const dwellMinutesTotal = Math.round(Number(summary?.dwellTime || 0) / 60);
+
+              const quoteRes = await fetch(new URL('/api/quote-calculation', ctx.baseUrl), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  distance: km * 1000,
+                  time: driveMinutes * 60,
+                  vehicleType,
+                  dwellMinutes: dwellMinutesArr,
+                  stopsCount,
+                  scheduleType,
+                }),
+              });
+              if (!quoteRes.ok) {
+                const b = await quoteRes.json().catch(() => ({}));
+                return { ...base, error: b?.error?.message || `견적 계산 실패 (HTTP ${quoteRes.status})` };
+              }
+              const quoteJson = await quoteRes.json();
+              const hourly = quoteJson?.plans?.hourly ?? {};
+              const oneTimePrice = Number(hourly.total ?? 0);
+              return {
+                ...base,
+                km: Number(km.toFixed(1)),
+                driveMinutes,
+                dwellMinutes: dwellMinutesTotal,
+                totalMinutes: driveMinutes + dwellMinutesTotal,
+                billMinutes: Number(hourly.billMinutes ?? 0),
+                ratePerHour: Number(hourly.ratePerHour ?? 0),
+                fuelSurcharge: Number(hourly.fuelSurcharge ?? 0),
+                oneTimePrice,
+                formattedOneTime: won(oneTimePrice),
+                annualPrice: annualizePrice(oneTimePrice, freq),
+                formattedAnnual: won(annualizePrice(oneTimePrice, freq)),
+              };
+            } catch (e) {
+              return { ...base, error: e instanceof Error ? e.message : '계산 중 오류' };
+            }
+          })
+        );
+
+        const valid = rows.filter((r) => !('error' in r) && Number((r as any).oneTimePrice) > 0) as Array<
+          Extract<(typeof rows)[number], { oneTimePrice: number }>
+        >;
+        const recommended = valid.reduce<(typeof valid)[number] | null>((best, cur) => {
+          if (!best) return cur;
+          return cur.oneTimePrice < best.oneTimePrice ? cur : best;
+        }, null);
+
+        const out = {
+          matrix: rows,
+          recommendedId: recommended?.id ?? null,
+          frequencyLabel: formatFrequency(freq),
+          basis: '시간당 요금제 기준 · 출발시간별 교통량(Tmap 예측) 반영 · 옹고잉 요금엔 심야/주말 할증 없음',
+        };
+        track('compare_departure_times', { stopCount: stops.length, presets: presets.length }, { recommendedId: out.recommendedId, valid: valid.length });
+        return out;
+      },
+    }),
+
     search_knowledge: tool({
       description:
         '옹고잉 요금정책/서비스/차종 정보를 검색한다. 요금제 규칙·차종 가중치·서비스 범위 등 사실 확인이 필요할 때 사용.',

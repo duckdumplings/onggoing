@@ -625,6 +625,19 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     try {
       const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
       const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
+      const comparison = latestResult?.scenarioComparison;
+      const scenarios = comparison?.results?.map((r: any) => ({
+        label: r.label,
+        recommendedPlan: r.recommendedPlan,
+        oneTimePrice: r.oneTimePrice,
+        annualPrice: r.annualPrice,
+        hourlyTotal: r.plans?.hourly?.total,
+        perJobTotal: r.plans?.perJob?.total,
+        km: r.metrics?.km,
+        totalMinutes:
+          r.metrics != null ? Number(r.metrics.driveMinutes || 0) + Number(r.metrics.dwellMinutes || 0) : undefined,
+      }));
+      const firstResult = comparison?.results?.[0];
       const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/quote/chat-sessions/${currentSessionId}/generated-files`, {
         method: 'POST',
@@ -640,6 +653,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             extracted: latestResult?.extracted,
             assumptions: latestResult?.assumptions || [],
             ragSources: latestResult?.rag?.sources || [],
+            vehicleType: firstResult?.vehicleType,
+            scheduleType: firstResult?.scheduleType,
+            frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
+            scenarios,
+            recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
           },
         }),
       });

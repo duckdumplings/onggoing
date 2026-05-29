@@ -4,6 +4,18 @@ import { Document, Packer, Paragraph, TextRun } from 'docx';
 
 export type GeneratedFileType = 'pdf' | 'xlsx' | 'md' | 'txt' | 'docx' | 'json';
 
+/** 견적서에 실을 시나리오 1건 요약(요금제 비교 포함). */
+export type ScenarioDocSummary = {
+  label: string;
+  recommendedPlan?: 'hourly' | 'perJob';
+  oneTimePrice?: number;
+  annualPrice?: number;
+  hourlyTotal?: number;
+  perJobTotal?: number;
+  km?: number;
+  totalMinutes?: number;
+};
+
 export type GenerationInput = {
   sessionTitle?: string;
   userRequest?: string;
@@ -14,7 +26,23 @@ export type GenerationInput = {
   assumptions?: string[];
   ragSources?: string[];
   ragSnippets?: string[];
+  /** 고객/서비스 메타(있으면 견적서 머리말에 노출). */
+  customerName?: string;
+  vehicleType?: string;
+  scheduleType?: string;
+  frequencyLabel?: string | null;
+  /** 다중 시나리오 비교(요금제별). */
+  scenarios?: ScenarioDocSummary[];
+  recommendedScenarioLabel?: string | null;
 };
+
+const won = (v: unknown): string => {
+  const n = Number(v);
+  return Number.isFinite(n) ? `₩${Math.round(n).toLocaleString('ko-KR')}` : '-';
+};
+
+const planLabel = (p?: 'hourly' | 'perJob'): string =>
+  p === 'hourly' ? '시간당' : p === 'perJob' ? '단건' : '-';
 
 export type GeneratedFile = {
   fileType: GeneratedFileType;
@@ -33,8 +61,30 @@ function defaultBaseName(input: GenerationInput): string {
 
 function buildMarkdown(input: GenerationInput): string {
   const lines: string[] = [];
-  lines.push('# AI 견적 결과');
+  lines.push('# 옹고잉 물류 견적서');
   lines.push('');
+  lines.push(`- 생성 시각: ${new Date().toLocaleString('ko-KR')}`);
+  if (input.customerName) lines.push(`- 고객: ${input.customerName}`);
+  if (input.vehicleType) lines.push(`- 차종: ${input.vehicleType}`);
+  if (input.scheduleType) lines.push(`- 운행 유형: ${input.scheduleType === 'regular' ? '정기' : '비정기'}`);
+  if (input.frequencyLabel) lines.push(`- 빈도: ${input.frequencyLabel}`);
+  lines.push('');
+
+  if (Array.isArray(input.scenarios) && input.scenarios.length) {
+    lines.push('## 시나리오 비교');
+    lines.push('> 1회 운임은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준이며, 두 요금제를 함께 표기합니다.');
+    lines.push('');
+    lines.push('| 시나리오 | 채택 요금제 | 거리 | 소요 | 1회 운임 | 연 운임 | 시간당 | 단건 |');
+    lines.push('|---|---|---|---|---|---|---|---|');
+    for (const s of input.scenarios) {
+      const star = s.label === input.recommendedScenarioLabel ? ' (추천)' : '';
+      lines.push(
+        `| ${s.label}${star} | ${planLabel(s.recommendedPlan)} | ${s.km != null ? `${s.km.toFixed(1)}km` : '-'} | ${s.totalMinutes != null ? `${s.totalMinutes}분` : '-'} | ${won(s.oneTimePrice)} | ${won(s.annualPrice)} | ${won(s.hourlyTotal)} | ${won(s.perJobTotal)} |`
+      );
+    }
+    lines.push('');
+  }
+
   if (input.userRequest) {
     lines.push('## 사용자 요청');
     lines.push(input.userRequest);
@@ -93,6 +143,18 @@ async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
       doc.fontSize(10).text(input.userRequest);
       doc.moveDown();
     }
+    if (Array.isArray(input.scenarios) && input.scenarios.length) {
+      doc.fontSize(13).text('시나리오 비교 (옹고잉 유리 기준)', { underline: true });
+      for (const s of input.scenarios) {
+        const star = s.label === input.recommendedScenarioLabel ? ' [추천]' : '';
+        doc
+          .fontSize(10)
+          .text(
+            `${s.label}${star} · ${planLabel(s.recommendedPlan)} · 1회 ${won(s.oneTimePrice)} · 연 ${won(s.annualPrice)} (시간당 ${won(s.hourlyTotal)} / 단건 ${won(s.perJobTotal)})`
+          );
+      }
+      doc.moveDown();
+    }
     if (input.quote) {
       doc.fontSize(13).text('견적 요약 (기준)', { underline: true });
       doc.fontSize(10).text(`기준 예상 운임: ${input.quote.totalPriceFormatted || input.quote.totalPrice || '-'}`);
@@ -135,6 +197,25 @@ function generateXlsx(input: GenerationInput): GeneratedFile {
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
   XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+  if (Array.isArray(input.scenarios) && input.scenarios.length) {
+    const scenarioRows: (string | number)[][] = [
+      ['시나리오', '채택 요금제', '거리(km)', '소요(분)', '1회 운임', '연 운임', '시간당', '단건', '추천'],
+      ...input.scenarios.map((s) => [
+        s.label,
+        planLabel(s.recommendedPlan),
+        s.km ?? '-',
+        s.totalMinutes ?? '-',
+        Number.isFinite(Number(s.oneTimePrice)) ? Math.round(Number(s.oneTimePrice)) : '-',
+        Number.isFinite(Number(s.annualPrice)) ? Math.round(Number(s.annualPrice)) : '-',
+        Number.isFinite(Number(s.hourlyTotal)) ? Math.round(Number(s.hourlyTotal)) : '-',
+        Number.isFinite(Number(s.perJobTotal)) ? Math.round(Number(s.perJobTotal)) : '-',
+        s.label === input.recommendedScenarioLabel ? '추천' : '',
+      ]),
+    ];
+    const scenarioSheet = XLSX.utils.aoa_to_sheet(scenarioRows);
+    XLSX.utils.book_append_sheet(wb, scenarioSheet, 'Scenarios');
+  }
 
   const noteText = buildMarkdown(input);
   const noteSheet = XLSX.utils.aoa_to_sheet(

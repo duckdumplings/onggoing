@@ -1,0 +1,79 @@
+/**
+ * 출발시간×요일 매트릭스 프리셋 해석 회귀 검증.
+ *
+ * - 평일 프리셋은 평일(월~금), 주말 프리셋은 주말(토/일)로 해석되어야 한다.
+ * - 해석된 시각은 모두 기준(now) 이후여야 한다(과거 시각으로 견적 금지).
+ * - 기본 프리셋은 4종(평일 한산/출근/퇴근 + 주말 한산).
+ */
+import {
+  DEFAULT_DEPARTURE_PRESETS,
+  resolveDeparturePresets,
+} from '@/domains/dispatch/utils/departureMatrix';
+
+interface MatrixCase {
+  name: string;
+  run: () => void;
+}
+
+function assert(condition: boolean, label: string) {
+  if (!condition) throw new Error(label);
+}
+
+function isWeekend(iso: string): boolean {
+  const day = new Date(iso).getDay();
+  return day === 0 || day === 6;
+}
+
+export const DEPARTURE_MATRIX_REGRESSION_CASES: MatrixCase[] = [
+  {
+    name: '기본 프리셋 4종(평일 한산/출근/퇴근 + 주말 한산)',
+    run: () => {
+      assert(DEFAULT_DEPARTURE_PRESETS.length === 4, 'presetCount');
+      const ids = DEFAULT_DEPARTURE_PRESETS.map((p) => p.id).sort();
+      assert(
+        JSON.stringify(ids) ===
+          JSON.stringify(['weekday-evening', 'weekday-morning', 'weekday-offpeak', 'weekend-offpeak']),
+        'presetIds'
+      );
+    },
+  },
+  {
+    name: '요일유형 일치: 평일 프리셋은 평일, 주말 프리셋은 주말로 해석',
+    run: () => {
+      // 일요일(2026-05-31 09:00) 기준으로 고정해 결정론적으로 검증.
+      const now = new Date('2026-05-31T09:00:00+09:00');
+      const resolved = resolveDeparturePresets(DEFAULT_DEPARTURE_PRESETS, now);
+      for (const r of resolved) {
+        if (r.dayType === 'weekend') assert(isWeekend(r.iso), `weekend:${r.id}`);
+        else assert(!isWeekend(r.iso), `weekday:${r.id}`);
+        assert(new Date(r.iso).getTime() > now.getTime(), `future:${r.id}`);
+      }
+    },
+  },
+  {
+    name: '모든 프리셋 시각은 기준(now) 이후',
+    run: () => {
+      const now = new Date();
+      const resolved = resolveDeparturePresets(DEFAULT_DEPARTURE_PRESETS, now);
+      for (const r of resolved) {
+        assert(new Date(r.iso).getTime() > now.getTime(), `future:${r.id}`);
+        assert(typeof r.dateLabel === 'string' && r.dateLabel.length > 0, `label:${r.id}`);
+      }
+    },
+  },
+];
+
+export function assertDepartureMatrixRegression() {
+  const failures: string[] = [];
+  for (const c of DEPARTURE_MATRIX_REGRESSION_CASES) {
+    try {
+      c.run();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failures.push(`✗ ${c.name}: ${msg}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Departure matrix regression failed:\n${failures.join('\n')}`);
+  }
+}

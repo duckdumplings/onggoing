@@ -16,6 +16,10 @@ import {
   SCENARIO_QUOTE_REGRESSION_CASES,
   assertScenarioQuoteRegression,
 } from '../src/domains/dispatch/evals/scenarioQuoteRegression';
+import {
+  DEPARTURE_MATRIX_REGRESSION_CASES,
+  assertDepartureMatrixRegression,
+} from '../src/domains/dispatch/evals/departureMatrixRegression';
 
 try {
   assertRoutePayloadRegression();
@@ -29,6 +33,10 @@ try {
   assertScenarioQuoteRegression();
   console.log('✓ scenario quote regression OK');
   console.log(`  - scenario quote cases: ${SCENARIO_QUOTE_REGRESSION_CASES.length}`);
+
+  assertDepartureMatrixRegression();
+  console.log('✓ departure matrix regression OK');
+  console.log(`  - departure matrix cases: ${DEPARTURE_MATRIX_REGRESSION_CASES.length}`);
 } catch (e) {
   console.error('✗ route payload/departure regression failed');
   if (e instanceof Error) {
