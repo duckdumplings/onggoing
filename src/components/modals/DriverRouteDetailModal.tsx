@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Navigation, MapPin, BarChart3 } from 'lucide-react';
+import { Modal } from '@/components/ui';
 
 interface DriverRoute {
   driverId: string;
@@ -36,16 +37,19 @@ const DRIVER_COLORS = [
 ];
 
 export default function DriverRouteDetailModal({ isOpen, onClose, driver, driverIndex }: Props) {
-  if (!isOpen) return null;
-
   const color = DRIVER_COLORS[driverIndex % DRIVER_COLORS.length];
   const summary = driver.routeData?.summary || {};
 
   return (
-    <div className="fixed inset-0 z-50 glass-overlay overflow-hidden">
-      <div className="bg-card w-full h-full overflow-hidden flex flex-col">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-border" style={{ backgroundColor: `${color}10` }}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      variant="fullscreen"
+      showCloseButton={false}
+      aria-label="배송원 상세 경로"
+    >
+      {/* 헤더 */}
+      <div className="flex items-center justify-between p-6 border-b border-border" style={{ backgroundColor: `${color}10` }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ backgroundColor: color }}>
               {driverIndex + 1}
@@ -268,17 +272,16 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
           )}
         </div>
 
-        {/* 푸터 */}
-        <div className="p-6 border-t border-border flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-muted hover:bg-gray-200 rounded-lg font-medium text-foreground transition-colors"
-          >
-            닫기
-          </button>
-        </div>
+      {/* 푸터 */}
+      <div className="p-6 border-t border-border flex justify-end">
+        <button
+          onClick={onClose}
+          className="px-6 py-2 bg-muted hover:bg-accent rounded-lg font-medium text-foreground transition-colors"
+        >
+          닫기
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
