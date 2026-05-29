@@ -106,28 +106,42 @@ export const SCENARIO_QUOTE_REGRESSION_CASES: ScenarioCase[] = [
     },
   },
   {
-    name: '레이 비정기 견적: 3수거+1하차, km20 → base33,000 + 경유비10,000, 분기1회→연 172,000',
+    name: '레이 비정기 견적: 단건 base33,000+경유비10,000 / 시간당 53,000 → 옹고잉 유리(시간당) 대표',
     run: () => {
       const s = makeCollectionScenario('3개 지점', 3, '레이', 'ad-hoc', KM20, { per: 'quarter', count: 1 });
       const r = calculateScenarioQuote(s);
-      const expectedBase = perJobBasePrice('ray', 20); // 33,000
-      const expectedStopFee = STOP_FEE.ray * 2; // 10,000
-      assertEqual(r.breakdown.base, expectedBase, 'base');
-      assertEqual(r.breakdown.stopFee, expectedStopFee, 'stopFee');
-      assertEqual(r.oneTimePrice, expectedBase + expectedStopFee, 'oneTime');
-      assertEqual(r.annualPrice, (expectedBase + expectedStopFee) * 4, 'annual');
+      const expectedPerJobBase = perJobBasePrice('ray', 20); // 33,000
+      const expectedPerJobStopFee = STOP_FEE.ray * 2; // 10,000
+      assertEqual(r.plans.perJob.base, expectedPerJobBase, 'perJobBase');
+      assertEqual(r.plans.perJob.stopFee, expectedPerJobStopFee, 'perJobStopFee');
+      assertEqual(r.plans.perJob.total, expectedPerJobBase + expectedPerJobStopFee, 'perJobTotal');
+      // 시간당: 90분(주행60+체류30) → 과금120분, 레이 26,500/h × 2h = 53,000, 유류할증 0(20km≤20km)
+      assertEqual(r.plans.hourly.billMinutes, 120, 'billMinutes');
+      assertEqual(r.plans.hourly.total, 53000, 'hourlyTotal');
+      // 옹고잉 유리 = 높은 쪽(시간당 53,000)
+      assertEqual(r.recommendedPlan, 'hourly', 'recommendedPlan');
+      assertEqual(r.oneTimePrice, 53000, 'oneTime');
+      assertEqual(r.annualPrice, 53000 * 4, 'annual');
       assertEqual(r.counts.pickup, 3, 'pickupCount');
       assertEqual(r.counts.drop, 1, 'dropCount');
       assertEqual(r.frequencyLabel, '연 4회 (분기 1회)', 'freqLabel');
     },
   },
   {
-    name: '스타렉스 정기 견적: 정기 가산 base×1.2 + 경유비×1.2',
+    name: '스타렉스 정기 견적: 단건 정기 가산(base×1.2+경유비×1.2) 산출 + 옹고잉 유리 대표값',
     run: () => {
       const s = makeCollectionScenario('3개 지점', 3, '스타렉스', 'regular', KM20);
       const r = calculateScenarioQuote(s);
-      assertEqual(r.breakdown.base, perJobRegularPrice('starex', 20), 'regularBase');
-      assertEqual(r.breakdown.stopFee, Math.round(STOP_FEE.starex * 2 * 1.2), 'regularStopFee');
+      // 단건 정기 요금은 plans.perJob에 그대로 보존된다.
+      assertEqual(r.plans.perJob.base, perJobRegularPrice('starex', 20), 'regularBase');
+      assertEqual(r.plans.perJob.stopFee, Math.round(STOP_FEE.starex * 2 * 1.2), 'regularStopFee');
+      // 대표값은 두 요금제 중 높은 쪽과 일치해야 한다.
+      const higher = Math.max(r.plans.hourly.total, r.plans.perJob.total);
+      assertEqual(r.oneTimePrice, higher, 'favorableRepresentative');
+      assert(
+        r.recommendedPlan === (r.plans.hourly.total >= r.plans.perJob.total ? 'hourly' : 'perJob'),
+        'recommendedPlanMatchesHigher'
+      );
     },
   },
   {

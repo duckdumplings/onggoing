@@ -60,7 +60,10 @@ export default function ScenarioComparisonCard({
           </span>
         )}
       </div>
-      {rationale && <div className="mb-3 text-xs text-muted-foreground">{rationale}</div>}
+      {rationale && <div className="mb-1 text-xs text-muted-foreground">{rationale}</div>}
+      <div className="mb-3 text-[11px] text-muted-foreground">
+        1회 운임은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준이며, 괄호로 대안 요금제도 함께 표기합니다.
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -105,7 +108,13 @@ export default function ScenarioComparisonCard({
                     <td className="py-2 px-3 text-foreground/80">{compositionLabel(r.counts)}</td>
                     <td className="py-2 px-3 text-right text-foreground/80">{r.metrics.km.toFixed(1)}km</td>
                     <td className="py-2 px-3 text-right text-foreground/80">{totalMin}분</td>
-                    <td className="py-2 px-3 text-right text-foreground/80">{won(r.oneTimePrice)}</td>
+                    <td className="py-2 px-3 text-right text-foreground/80">
+                      {won(r.oneTimePrice)}
+                      <div className="text-[11px] font-normal text-muted-foreground">
+                        {r.recommendedPlan === 'hourly' ? '시간당' : '단건'} · 대안{' '}
+                        {won(r.recommendedPlan === 'hourly' ? r.plans.perJob.total : r.plans.hourly.total)}
+                      </div>
+                    </td>
                     <td className="py-2 pl-3 text-right font-semibold text-foreground">
                       {won(r.annualPrice)}
                       {r.frequencyLabel && (

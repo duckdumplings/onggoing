@@ -78,12 +78,30 @@ export interface ScenarioQuoteResult {
     return: number;
     totalStops: number;
   };
-  /** 1회 운행 운임(원). */
+  /** 1회 운행 운임(원). 기본은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준. */
   oneTimePrice: number;
   /** 연 환산 운임(원). frequency 없으면 oneTimePrice와 동일. */
   annualPrice: number;
   /** 빈도를 사람이 읽는 라벨. 예: "연 4회 (분기 1회)". */
   frequencyLabel: string | null;
+  /** 대표값(oneTimePrice)으로 채택된 요금제. 기본은 옹고잉 유리(higher). */
+  recommendedPlan: 'hourly' | 'perJob';
+  /** 두 요금제 모두의 산출 결과. 화주 객관성/투명성 비교용. */
+  plans: {
+    hourly: {
+      total: number;
+      /** 30분 단위 과금 시간(분). */
+      billMinutes: number;
+      ratePerHour: number;
+      base: number;
+      fuelSurcharge: number;
+    };
+    perJob: {
+      total: number;
+      base: number;
+      stopFee: number;
+    };
+  };
   breakdown: {
     base: number;
     stopFee: number;

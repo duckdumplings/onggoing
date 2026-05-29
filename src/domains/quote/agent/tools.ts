@@ -178,9 +178,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const hourlyTotal = Number(json?.plans?.hourly?.total ?? 0);
         const rateOverride = Boolean(json?.plans?.hourly?.rateOverride);
         const freq = frequency as Frequency | undefined;
-        // 협의 단가가 적용되면 시간당 요금제를 추천/대표값으로 사용.
-        const recommendedPlan = rateOverride ? ('hourly' as const) : ('perJob' as const);
-        const representative = rateOverride ? hourlyTotal : perJobTotal;
+        // 추천/대표값 정책:
+        // - 협의 단가가 지정되면 시간당(협의가) 요금제를 대표값으로 사용.
+        // - 그 외 기본은 "옹고잉 유리" = 두 요금제 중 높은 쪽. (화주에게는 둘 다 제시)
+        const recommendedPlan: 'hourly' | 'perJob' = rateOverride
+          ? 'hourly'
+          : hourlyTotal >= perJobTotal
+            ? 'hourly'
+            : 'perJob';
+        const representative = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
         const out = {
           plans: json?.plans ?? null,
           recommendedPlan,

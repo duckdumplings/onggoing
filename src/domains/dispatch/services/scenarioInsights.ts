@@ -42,17 +42,22 @@ export interface PriceBreakdownRow {
  * base → +경유비 → (+유류할증) → 1회 운임 → ×연N회 → 연 운임.
  */
 export function buildPriceBreakdownRows(result: ScenarioQuoteResult): PriceBreakdownRow[] {
-  const { breakdown, oneTimePrice, annualPrice, metrics, counts } = result;
+  const { breakdown, oneTimePrice, annualPrice, metrics, counts, recommendedPlan, plans } = result;
   const rows: PriceBreakdownRow[] = [];
   let cumulative = 0;
+
+  const isHourly = recommendedPlan === 'hourly';
+  const baseHint = isHourly
+    ? `${result.vehicleType} 과금 ${(plans.hourly.billMinutes / 60).toFixed(1)}h × 시간당 ${won(plans.hourly.ratePerHour)}`
+    : `${result.vehicleType} ${metrics.km.toFixed(1)}km 거리 구간 요율`;
 
   cumulative += breakdown.base;
   rows.push({
     key: 'base',
-    label: '기본 운임',
+    label: isHourly ? '기본 시간 운임' : '기본 운임',
     amount: breakdown.base,
     cumulative,
-    hint: `${result.vehicleType} ${metrics.km.toFixed(1)}km 거리 구간 요율`,
+    hint: baseHint,
   });
 
   if (breakdown.stopFee > 0) {
@@ -167,6 +172,14 @@ export interface SavingsTip {
 export function buildScenarioSavingsTips(result: ScenarioQuoteResult): SavingsTip[] {
   const tips: SavingsTip[] = [];
   const vehicle = toVehicleKey(result.vehicleType);
+
+  // 시간당 요금제로 추천된 경우, 거리 구간 인사이트 대신 시간 단가 절감 제안을 쓴다.
+  if (result.recommendedPlan === 'hourly') {
+    const hourlyTip = buildHourlySavingsTip(vehicle, result.plans.hourly.billMinutes);
+    if (hourlyTip) tips.push(hourlyTip);
+    return tips;
+  }
+
   const tier = analyzeDistanceTier(vehicle, result.metrics.km);
 
   if (tier && tier.headroomKm != null && tier.nextTierDelta != null && tier.nextTierDelta > 0) {

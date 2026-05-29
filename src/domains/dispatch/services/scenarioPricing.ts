@@ -10,6 +10,9 @@
 import {
   perJobBasePrice,
   perJobRegularPrice,
+  pickHourlyRate,
+  roundUpTo30Minutes,
+  fuelSurchargeHourlyCorrect,
   STOP_FEE,
   type Vehicle as PricingVehicle,
 } from '@/domains/quote/pricing';
@@ -65,13 +68,32 @@ export function calculateScenarioQuote(
       ? resolved.stopsCount
       : deriveStopsCount(counts.totalStops);
 
-  const base = isRegular
+  // ── 단건(per-job) 요금제: 거리 구간표 + 중간 경유지 정액. 유류분은 구간표에 내재. ──
+  const perJobBase = isRegular
     ? perJobRegularPrice(vehicle, resolved.km)
     : perJobBasePrice(vehicle, resolved.km);
-  const stopFee = resolveStopFee(vehicle, stopsCount, isRegular);
+  const perJobStopFee = resolveStopFee(vehicle, stopsCount, isRegular);
+  const perJobTotal = perJobBase + perJobStopFee;
 
-  const oneTimePrice = base + stopFee;
+  // ── 시간당(hourly) 요금제: 30분 단위 과금 × 시간당 단가 + 유류할증(초과거리). ──
+  // quote-calculation(지도/패널)과 동일 공식을 써서 카드와 패널 금액이 일치하도록 한다.
+  const totalMinutes = resolved.driveMinutes + resolved.dwellMinutes;
+  const billMinutes = roundUpTo30Minutes(totalMinutes);
+  const ratePerHour = pickHourlyRate(vehicle, billMinutes);
+  const hourlyBase = Math.round(ratePerHour * (billMinutes / 60));
+  const hourlyFuel = fuelSurchargeHourlyCorrect(vehicle, resolved.km, billMinutes);
+  const hourlyTotal = hourlyBase + hourlyFuel;
+
+  // ── 기본 추천은 "옹고잉 유리" = 두 요금제 중 높은 쪽. (화주에게는 둘 다 제시) ──
+  const recommendedPlan: 'hourly' | 'perJob' = hourlyTotal >= perJobTotal ? 'hourly' : 'perJob';
+  const oneTimePrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
   const annualPrice = annualizePrice(oneTimePrice, scenario.frequency);
+  const annualVisitsCount = scenario.frequency ? annualVisits(scenario.frequency) : 1;
+
+  const breakdown =
+    recommendedPlan === 'hourly'
+      ? { base: hourlyBase, stopFee: 0, fuelSurcharge: hourlyFuel, annualVisits: annualVisitsCount }
+      : { base: perJobBase, stopFee: perJobStopFee, fuelSurcharge: 0, annualVisits: annualVisitsCount };
 
   return {
     label: scenario.label,
@@ -82,11 +104,21 @@ export function calculateScenarioQuote(
     oneTimePrice,
     annualPrice,
     frequencyLabel: formatFrequency(scenario.frequency),
-    breakdown: {
-      base,
-      stopFee,
-      fuelSurcharge: 0, // 단건 요금제는 거리 구간표에 유류분이 내재되어 별도 가산하지 않음
-      annualVisits: scenario.frequency ? annualVisits(scenario.frequency) : 1,
+    recommendedPlan,
+    plans: {
+      hourly: {
+        total: hourlyTotal,
+        billMinutes,
+        ratePerHour,
+        base: hourlyBase,
+        fuelSurcharge: hourlyFuel,
+      },
+      perJob: {
+        total: perJobTotal,
+        base: perJobBase,
+        stopFee: perJobStopFee,
+      },
     },
+    breakdown,
   };
 }
