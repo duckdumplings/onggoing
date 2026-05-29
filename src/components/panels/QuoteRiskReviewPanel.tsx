@@ -310,7 +310,7 @@ export default function QuoteRiskReviewPanel() {
       {/* 결과 표시 */}
       {reviewResult && currentStep === 'completed' && (
         <div className="space-y-4">
-          <div className="border border-gray-200 rounded-lg p-6 bg-gradient-to-br from-blue-50 to-indigo-50">
+          <div className="border border-gray-200 rounded-lg p-6 bg-muted">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900">검토 완료</h3>
               <div className={`px-4 py-2 rounded-lg font-bold ${

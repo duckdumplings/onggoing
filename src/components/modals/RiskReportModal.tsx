@@ -166,14 +166,14 @@ export default function RiskReportModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* 배경 오버레이 */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 glass-overlay"
         onClick={onClose}
       />
 
       {/* 모달 컨테이너 */}
       <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-muted">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">리스크 분석 리포트</h2>
             <div className="flex items-center gap-4 mt-2">

@@ -8,7 +8,7 @@ interface AIQuoteLauncherProps {
 
 export default function AIQuoteLauncher({ onOpen }: AIQuoteLauncherProps) {
   return (
-    <section className="glass-card border-b border-white/40 bg-gradient-to-br from-violet-50/30 to-indigo-50/30">
+    <section className="glass-card border-b border-border">
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div>

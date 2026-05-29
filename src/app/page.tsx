@@ -5,7 +5,8 @@ import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import AIQuoteLauncher from '@/components/panels/AIQuoteLauncher';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { Compass } from 'lucide-react';
 
 export default function Home() {
   const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
@@ -17,21 +18,20 @@ export default function Home() {
         initial={{ x: -300, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="hidden md:flex flex-col z-30 w-[28rem] bg-white/80 backdrop-blur-2xl border-r border-white/50 shadow-2xl shadow-indigo-500/5"
+        className="hidden md:flex flex-col z-30 w-[28rem] bg-card border-r border-border shadow-xl"
       >
-        <header className="px-6 py-5 flex-shrink-0 border-b border-slate-100/50 bg-white/40 backdrop-blur-sm">
+        <header className="px-6 py-5 flex-shrink-0 border-b border-border">
           <div className="flex items-center gap-3 select-none group cursor-default">
             <motion.div
               whileHover={{ rotate: 180 }}
               transition={{ duration: 0.6, ease: "easeInOut" }}
-              className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/30 text-white"
+              className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground shadow-lg"
             >
-              <div className="absolute inset-0 bg-white/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <span className="text-xl filter drop-shadow-md">🧭</span>
+              <Compass className="w-5 h-5" />
             </motion.div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-800 flex items-center gap-1">
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 animate-gradient-x">옹라우팅</span>
+                <span className="text-primary">옹라우팅</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-bold tracking-wide border border-indigo-100">BETA</span>
               </h1>
             </div>
