@@ -41,7 +41,7 @@ const DRIVER_COLORS = [
   { bg: 'bg-fuchsia-50', border: 'border-fuchsia-200', text: 'text-fuchsia-700', dot: 'bg-fuchsia-500', ring: 'ring-fuchsia-500' },
   { bg: 'bg-lime-50', border: 'border-lime-200', text: 'text-lime-700', dot: 'bg-lime-500', ring: 'ring-lime-500' },
   { bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-700', dot: 'bg-sky-500', ring: 'ring-sky-500' },
-  { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', dot: 'bg-slate-500', ring: 'ring-slate-500' },
+  { bg: 'bg-muted', border: 'border-border', text: 'text-foreground', dot: 'bg-slate-500', ring: 'ring-slate-500' },
 ];
 
 type Props = {
@@ -66,8 +66,8 @@ export default function MultiDriverResultsPanel({ result }: Props) {
       className="glass-card p-5 space-y-5"
     >
       <div className="flex items-center justify-between border-b border-border pb-4">
-        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-slate-500" />
+        <h3 className="text-sm font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-muted-foreground" />
           다중 배송원 최적화 결과
         </h3>
         <div className="flex items-center gap-2">
@@ -88,7 +88,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
             <button
               type="button"
               aria-label="균형도 설명"
-              className="w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-slate-600 transition-colors"
+              className="w-5 h-5 rounded-full bg-slate-200 hover:bg-slate-300 flex items-center justify-center text-muted-foreground transition-colors"
             >
               <HelpCircle className="w-3 h-3" />
             </button>
@@ -105,7 +105,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
 
       {/* 배송원별 상세 정보 */}
       <div className="space-y-3">
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">배송원별 경로</div>
+        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1">배송원별 경로</div>
         <div className="space-y-3">
           {drivers.map((driver, index) => {
             const color = DRIVER_COLORS[index % DRIVER_COLORS.length];
@@ -126,37 +126,37 @@ export default function MultiDriverResultsPanel({ result }: Props) {
                       <span className={`font-bold text-sm ${color.text}`}>
                         {driver.driverId.replace('driver-', '배송원 ')}
                       </span>
-                      <div className="text-[10px] text-slate-500 font-medium">
+                      <div className="text-[10px] text-muted-foreground font-medium">
                         {driver.destinations.length}개 경유지
                       </div>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
-                    <ChevronRight className="w-4 h-4 text-slate-500" />
+                  <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-4 gap-2 text-xs relative z-10 bg-white/50 p-2 rounded-lg border border-white/50">
                   <div>
-                    <div className="text-[10px] text-slate-400">거리</div>
+                    <div className="text-[10px] text-muted-foreground">거리</div>
                     <div className={`font-bold ${color.text}`}>
                       {(driver.totalDistance / 1000).toFixed(1)}km
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-400">이동</div>
+                    <div className="text-[10px] text-muted-foreground">이동</div>
                     <div className={`font-bold ${color.text}`}>
                       {Math.round(driver.travelTime / 60)}분
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-400">대기</div>
+                    <div className="text-[10px] text-muted-foreground">대기</div>
                     <div className={`font-bold ${color.text}`}>
                       {Math.round(driver.dwellTime / 60)}분
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-400">합계</div>
+                    <div className="text-[10px] text-muted-foreground">합계</div>
                     <div className={`font-bold ${color.text}`}>
                       {Math.round(driver.totalTime / 60)}분
                     </div>
@@ -166,13 +166,13 @@ export default function MultiDriverResultsPanel({ result }: Props) {
                 {/* 경유지 목록 (간단 버전) */}
                 {driver.destinations.length > 0 && (
                   <div className="pt-2 border-t border-slate-200/50 relative z-10">
-                    <div className="text-[10px] font-medium text-slate-400 mb-1.5 flex items-center gap-1">
+                    <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
                       <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                       경유지 순서
                     </div>
                     <div className="space-y-1">
                       {driver.destinations.slice(0, 2).map((dest, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs text-slate-600">
+                        <div key={idx} className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span className={`flex-none w-4 h-4 rounded-full ${color.bg} border ${color.border} flex items-center justify-center text-[9px] font-bold ${color.text}`}>
                             {idx + 1}
                           </span>
@@ -182,7 +182,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
                         </div>
                       ))}
                       {driver.destinations.length > 2 && (
-                        <div className="text-[10px] text-slate-400 pl-6">
+                        <div className="text-[10px] text-muted-foreground pl-6">
                           ... 외 {driver.destinations.length - 2}개 경유지
                         </div>
                       )}
@@ -224,7 +224,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
         <div className="pt-3 border-t border-indigo-100">
           <button
             type="button"
-            className="w-full text-xs font-bold px-3 py-2.5 bg-white border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm flex items-center justify-center gap-2"
+            className="w-full text-xs font-bold px-3 py-2.5 bg-card border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm flex items-center justify-center gap-2"
             onClick={() => {
               const suggestions: string[] = [];
               if (drivers.length < 10) {
@@ -244,7 +244,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
             대안 경로 제안 보기
           </button>
           {suggestion && (
-            <div className="mt-2 text-[11px] leading-relaxed text-indigo-700 bg-white border border-indigo-100 rounded-lg px-3 py-2">
+            <div className="mt-2 text-[11px] leading-relaxed text-indigo-700 bg-card border border-indigo-100 rounded-lg px-3 py-2">
               {suggestion}
             </div>
           )}

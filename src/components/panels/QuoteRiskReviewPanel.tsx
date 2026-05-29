@@ -204,11 +204,11 @@ export default function QuoteRiskReviewPanel() {
   return (
     <div className="glass-panel p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">견적안 리스크 검토</h2>
+        <h2 className="text-2xl font-bold text-foreground">견적안 리스크 검토</h2>
         {reviewResult && (
           <button
             onClick={resetReview}
-            className="text-sm text-gray-600 hover:text-gray-900 underline"
+            className="text-sm text-muted-foreground hover:text-foreground underline"
           >
             새로 검토하기
           </button>
@@ -220,7 +220,7 @@ export default function QuoteRiskReviewPanel() {
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
-          className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer bg-gray-50"
+          className="border-2 border-dashed border-input rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer bg-muted"
           onClick={() => fileInputRef.current?.click()}
         >
           <input
@@ -230,11 +230,11 @@ export default function QuoteRiskReviewPanel() {
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
-          <Upload className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-          <p className="text-lg font-medium text-gray-700 mb-2">
+          <Upload className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+          <p className="text-lg font-medium text-foreground mb-2">
             파일을 드래그하거나 클릭하여 업로드
           </p>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             PDF, Excel, Word, 이미지 파일 지원 (최대 50MB)
           </p>
         </div>
@@ -244,7 +244,7 @@ export default function QuoteRiskReviewPanel() {
       {(currentStep !== 'upload' || reviewResult) && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">검토 진행 상태</span>
+            <span className="text-sm font-medium text-foreground">검토 진행 상태</span>
             {currentStep !== 'completed' && (
               <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
             )}
@@ -263,9 +263,9 @@ export default function QuoteRiskReviewPanel() {
                   ) : isCurrent ? (
                     <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
                   ) : (
-                    <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
+                    <div className="w-5 h-5 rounded-full border-2 border-input" />
                   )}
-                  <span className={`text-sm ${isCompleted ? 'text-green-600 font-medium' : isCurrent ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
+                  <span className={`text-sm ${isCompleted ? 'text-green-600 font-medium' : isCurrent ? 'text-blue-600 font-medium' : 'text-muted-foreground'}`}>
                     {getStepLabel(step)}
                   </span>
                 </div>
@@ -277,12 +277,12 @@ export default function QuoteRiskReviewPanel() {
 
       {/* 업로드된 파일 정보 */}
       {uploadedFiles.length > 0 && (
-        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+        <div className="border border-border rounded-lg p-4 bg-muted">
           <div className="flex items-center gap-3">
-            <FileText className="w-5 h-5 text-gray-600" />
+            <FileText className="w-5 h-5 text-muted-foreground" />
             <div className="flex-1">
-              <p className="font-medium text-gray-900">{uploadedFiles[0].name}</p>
-              <p className="text-sm text-gray-500">
+              <p className="font-medium text-foreground">{uploadedFiles[0].name}</p>
+              <p className="text-sm text-muted-foreground">
                 {(uploadedFiles[0].size / 1024 / 1024).toFixed(2)}MB · {uploadedFiles[0].type.toUpperCase()}
               </p>
             </div>
@@ -310,9 +310,9 @@ export default function QuoteRiskReviewPanel() {
       {/* 결과 표시 */}
       {reviewResult && currentStep === 'completed' && (
         <div className="space-y-4">
-          <div className="border border-gray-200 rounded-lg p-6 bg-muted">
+          <div className="border border-border rounded-lg p-6 bg-muted">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">검토 완료</h3>
+              <h3 className="text-xl font-bold text-foreground">검토 완료</h3>
               <div className={`px-4 py-2 rounded-lg font-bold ${
                 reviewResult.riskScore >= 70 ? 'bg-red-100 text-red-700' :
                 reviewResult.riskScore >= 40 ? 'bg-yellow-100 text-yellow-700' :
@@ -324,20 +324,20 @@ export default function QuoteRiskReviewPanel() {
             {reviewResult.riskSummary && (
               <div className="grid grid-cols-4 gap-4 mt-4">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">{reviewResult.riskSummary.totalRisks}</p>
-                  <p className="text-sm text-gray-600">전체 리스크</p>
+                  <p className="text-2xl font-bold text-foreground">{reviewResult.riskSummary.totalRisks}</p>
+                  <p className="text-sm text-muted-foreground">전체 리스크</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-red-600">{reviewResult.riskSummary.highRisks}</p>
-                  <p className="text-sm text-gray-600">높은 위험</p>
+                  <p className="text-sm text-muted-foreground">높은 위험</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-yellow-600">{reviewResult.riskSummary.mediumRisks}</p>
-                  <p className="text-sm text-gray-600">보통 위험</p>
+                  <p className="text-sm text-muted-foreground">보통 위험</p>
                 </div>
                 <div className="text-center">
                   <p className="text-2xl font-bold text-green-600">{reviewResult.riskSummary.lowRisks}</p>
-                  <p className="text-sm text-gray-600">낮은 위험</p>
+                  <p className="text-sm text-muted-foreground">낮은 위험</p>
                 </div>
               </div>
             )}

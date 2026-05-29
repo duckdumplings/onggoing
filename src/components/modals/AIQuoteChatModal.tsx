@@ -289,7 +289,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           remarkPlugins={[remarkGfm]}
           components={{
             p: ({ children }) => <p className="leading-7 [&:not(:first-child)]:mt-2">{children}</p>,
-            strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
             em: ({ children }) => <em className="italic">{children}</em>,
             ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 my-1">{children}</ul>,
             ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 my-1">{children}</ol>,
@@ -299,16 +299,16 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 {children}
               </a>
             ),
-            h1: ({ children }) => <h3 className="text-base font-bold text-gray-900 mt-3 mb-1">{children}</h3>,
-            h2: ({ children }) => <h3 className="text-base font-bold text-gray-900 mt-3 mb-1">{children}</h3>,
-            h3: ({ children }) => <h4 className="text-sm font-semibold text-gray-900 mt-2 mb-0.5">{children}</h4>,
-            h4: ({ children }) => <h4 className="text-sm font-semibold text-gray-700 mt-2 mb-0.5">{children}</h4>,
-            hr: () => <hr className="my-3 border-gray-200" />,
+            h1: ({ children }) => <h3 className="text-base font-bold text-foreground mt-3 mb-1">{children}</h3>,
+            h2: ({ children }) => <h3 className="text-base font-bold text-foreground mt-3 mb-1">{children}</h3>,
+            h3: ({ children }) => <h4 className="text-sm font-semibold text-foreground mt-2 mb-0.5">{children}</h4>,
+            h4: ({ children }) => <h4 className="text-sm font-semibold text-foreground mt-2 mb-0.5">{children}</h4>,
+            hr: () => <hr className="my-3 border-border" />,
             blockquote: ({ children }) => (
-              <blockquote className="border-l-2 border-gray-200 pl-3 text-gray-600 my-1">{children}</blockquote>
+              <blockquote className="border-l-2 border-border pl-3 text-muted-foreground my-1">{children}</blockquote>
             ),
             code: ({ children }) => (
-              <code className="px-1 py-0.5 rounded bg-gray-100 text-[13px] font-mono text-gray-800">{children}</code>
+              <code className="px-1 py-0.5 rounded bg-muted text-[13px] font-mono text-foreground">{children}</code>
             ),
             pre: ({ children }) => (
               <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto text-[13px] my-2">{children}</pre>
@@ -320,9 +320,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             ),
             thead: ({ children }) => <thead>{children}</thead>,
             th: ({ children }) => (
-              <th className="text-left font-medium text-gray-500 border-b border-gray-200 py-1.5 px-2 whitespace-nowrap">{children}</th>
+              <th className="text-left font-medium text-muted-foreground border-b border-border py-1.5 px-2 whitespace-nowrap">{children}</th>
             ),
-            td: ({ children }) => <td className="py-1.5 px-2 border-b border-gray-100 align-top">{children}</td>,
+            td: ({ children }) => <td className="py-1.5 px-2 border-b border-border align-top">{children}</td>,
           }}
         >
           {raw}
@@ -1174,39 +1174,39 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
     return (
       <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-            <h3 className="text-base font-bold text-gray-900">운임 시나리오 상세</h3>
+        <div className="w-full max-w-2xl rounded-2xl bg-card shadow-2xl border border-border overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+            <h3 className="text-base font-bold text-foreground">운임 시나리오 상세</h3>
             <button
               onClick={() => setIsQuoteDetailOpen(false)}
-              className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-muted-foreground"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
           <div className="p-5 overflow-y-auto space-y-6 text-sm flex-1 custom-scrollbar">
             {/* 기초 정보 요약 */}
-            <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-4 bg-muted p-4 rounded-xl border border-border">
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
-                <div className="text-base font-black text-slate-800">{q.basis?.distanceKm ?? '-'} km</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 주행 거리</div>
+                <div className="text-base font-black text-foreground">{q.basis?.distanceKm ?? '-'} km</div>
               </div>
               <div className="w-px h-8 bg-slate-200"></div>
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">예상 소요 시간</div>
-                <div className="text-base font-black text-slate-800">{q.basis?.totalBillMinutes ?? '-'} 분</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">예상 소요 시간</div>
+                <div className="text-base font-black text-foreground">{q.basis?.totalBillMinutes ?? '-'} 분</div>
               </div>
               <div className="w-px h-8 bg-slate-200"></div>
               <div className="flex-1">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">경유지</div>
-                <div className="text-base font-black text-slate-800">{q.basis?.destinationCount ?? '-'} 곳</div>
+                <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">경유지</div>
+                <div className="text-base font-black text-foreground">{q.basis?.destinationCount ?? '-'} 곳</div>
               </div>
             </div>
 
             {/* 시나리오 매트릭스 */}
             {q.scenarios && (
               <div className="space-y-4">
-                <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                <h4 className="font-bold text-foreground flex items-center gap-2">
                   <Calculator className="w-4 h-4 text-indigo-500" />
                   전체 운임 비교 테이블
                 </h4>
@@ -1215,58 +1215,58 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   <table className="w-full text-left border-collapse min-w-[500px]">
                     <thead>
                       <tr>
-                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 rounded-tl-xl">차량/스케줄</th>
-                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500">시간당 요금제</th>
-                        <th className="py-3 px-4 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-500 rounded-tr-xl">단건 요금제</th>
+                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tl-xl">차량/스케줄</th>
+                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground">시간당 요금제</th>
+                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tr-xl">단건 요금제</th>
                       </tr>
                     </thead>
                     <tbody className="text-sm">
                       {/* 레이 / 비정기 */}
-                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-700">
-                          레이 <span className="text-slate-400 font-medium text-[11px] ml-1">비정기</span>
+                      <tr className="border-b border-border hover:bg-muted transition-colors">
+                        <td className="py-3 px-4 font-semibold text-foreground">
+                          레이 <span className="text-muted-foreground font-medium text-[11px] ml-1">비정기</span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</div>
                         </td>
                       </tr>
                       {/* 레이 / 정기 */}
-                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-700">
-                          레이 <span className="text-slate-400 font-medium text-[11px] ml-1">정기</span>
+                      <tr className="border-b border-border hover:bg-muted transition-colors">
+                        <td className="py-3 px-4 font-semibold text-foreground">
+                          레이 <span className="text-muted-foreground font-medium text-[11px] ml-1">정기</span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.regular?.hourlyTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.hourlyTotal || 0)}</div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.ray?.regular?.perJobTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.perJobTotal || 0)}</div>
                         </td>
                       </tr>
                       {/* 스타렉스 / 비정기 */}
-                      <tr className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-700">
-                          스타렉스 <span className="text-slate-400 font-medium text-[11px] ml-1">비정기</span>
+                      <tr className="border-b border-border hover:bg-muted transition-colors">
+                        <td className="py-3 px-4 font-semibold text-foreground">
+                          스타렉스 <span className="text-muted-foreground font-medium text-[11px] ml-1">비정기</span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</div>
                         </td>
                       </tr>
                       {/* 스타렉스 / 정기 */}
-                      <tr className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-slate-700 rounded-bl-xl">
-                          스타렉스 <span className="text-slate-400 font-medium text-[11px] ml-1">정기</span>
+                      <tr className="hover:bg-muted transition-colors">
+                        <td className="py-3 px-4 font-semibold text-foreground rounded-bl-xl">
+                          스타렉스 <span className="text-muted-foreground font-medium text-[11px] ml-1">정기</span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.regular?.hourlyTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.hourlyTotal || 0)}</div>
                         </td>
                         <td className="py-3 px-4 rounded-br-xl">
-                          <div className="font-bold text-slate-900">{formatWonStr(q.scenarios.starex?.regular?.perJobTotal || 0)}</div>
+                          <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.perJobTotal || 0)}</div>
                         </td>
                       </tr>
                     </tbody>
@@ -1275,7 +1275,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               </div>
             )}
 
-            <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
+            <div className="text-[11px] text-muted-foreground leading-relaxed bg-muted p-3 rounded-lg border border-border">
               * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br />
               * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br />
               * 정기 배송의 단건 운임은 별도 정기 요금표가 적용되며, 시간당 운임은 동일한 단가를 기초로 계산됩니다.
@@ -1290,20 +1290,20 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
   return (
     <div className="fixed inset-0 z-[4000] flex items-center justify-center glass-overlay p-4 md:p-6 transition-opacity duration-300">
-      <div className="flex h-full w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
+      <div className="flex h-full w-full max-w-6xl overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
 
         {/* Main Chat Area */}
-        <div className="flex flex-1 flex-col h-full min-w-0 bg-white relative">
+        <div className="flex flex-1 flex-col h-full min-w-0 bg-card relative">
 
           {/* Header */}
-          <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4 bg-card z-10">
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-6 py-4 bg-card z-10">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-gray-900 leading-tight">AI 텍스트 견적챗</h2>
-                <p className="text-xs text-gray-500 font-medium">GPT-4o & Tmap 기반 실시간 계산</p>
+                <h2 className="text-lg font-bold text-foreground leading-tight">AI 텍스트 견적챗</h2>
+                <p className="text-xs text-muted-foreground font-medium">GPT-4o & Tmap 기반 실시간 계산</p>
               </div>
             </div>
 
@@ -1316,7 +1316,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${authUserEmail
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
                   }`}
               >
                 {authUserEmail ? '로그인됨' : '로그인'}
@@ -1333,7 +1333,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               )}
               <button
                 onClick={handleReset}
-                className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden md:block"
+                className="p-2 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden md:block"
                 title="새 대화 시작"
               >
                 <RefreshCw className="h-5 w-5" />
@@ -1342,7 +1342,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               {/* Mobile Close Button */}
               <button
                 onClick={onClose}
-                className="md:hidden p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                className="md:hidden p-2 text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-full transition-colors"
               >
                 <X className="h-6 w-6" />
               </button>
@@ -1350,13 +1350,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           </div>
 
           {(showAuthForm || authError) && (
-            <div className="px-4 md:px-8 py-3 border-b border-slate-100 bg-slate-50/80">
+            <div className="px-4 md:px-8 py-3 border-b border-border bg-slate-50/80">
               {authUserEmail ? (
                 <div className="flex flex-wrap items-center gap-2 text-[12px]">
                   <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
                     로그인 계정: {authUserEmail}
                   </span>
-                  <span className="text-slate-500">채팅 저장, 파일 업로드/생성, 피드백 기능이 활성화됩니다.</span>
+                  <span className="text-muted-foreground">채팅 저장, 파일 업로드/생성, 피드백 기능이 활성화됩니다.</span>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1366,7 +1366,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="이메일"
-                      className="w-full md:w-[240px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      className="w-full md:w-[240px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     />
                     <input
                       type="password"
@@ -1379,7 +1379,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                         }
                       }}
                       placeholder="비밀번호"
-                      className="w-full md:w-[220px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      className="w-full md:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     />
                     <button
                       type="button"
@@ -1431,7 +1431,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
                   {/* Avatar */}
                   <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
-                    ? 'bg-slate-200 text-slate-600'
+                    ? 'bg-slate-200 text-muted-foreground'
                     : 'bg-indigo-100 text-indigo-600'
                     }`}>
                     {msg.role === 'user' ? <span className="text-xs font-bold">나</span> : <Sparkles className="h-4 w-4" />}
@@ -1443,8 +1443,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user'
                         ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm'
                         : msg.kind === 'system'
-                          ? 'bg-amber-50 text-amber-900 border border-amber-100 rounded-xl'
-                          : 'bg-white text-slate-800 border border-gray-100 rounded-2xl rounded-tl-sm'
+                          ? 'bg-warning-muted text-warning border border-warning/20 rounded-xl'
+                          : 'bg-card text-foreground border border-border rounded-2xl rounded-tl-sm'
                         }`}
                     >
                       {renderMessageBody(msg)}
@@ -1459,19 +1459,19 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                               [msg.id]: !prev[msg.id],
                             }))
                           }
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
                         >
                           <Sparkles className="w-3 h-3 text-indigo-500" />
                           근거/출처 보기
-                          <span className="text-slate-400">
+                          <span className="text-muted-foreground">
                             ({(msg.evidence?.sources || []).length})
                           </span>
                         </button>
                         {expandedEvidenceByMessageId[msg.id] && (
-                          <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-sm">
+                          <div className="mt-2 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-sm">
                             {!!msg.evidence?.basis?.length && (
                               <div className="mb-2">
-                                <div className="mb-1 text-[11px] font-semibold text-slate-500">근거 요약</div>
+                                <div className="mb-1 text-[11px] font-semibold text-muted-foreground">근거 요약</div>
                                 <div className="space-y-1">
                                   {msg.evidence.basis.slice(0, 3).map((basis, basisIdx) => (
                                     <div key={`${msg.id}-basis-${basisIdx}`} className="leading-relaxed">
@@ -1483,14 +1483,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                             )}
                             {!!msg.evidence?.sources?.length && (
                               <div>
-                                <div className="mb-1 text-[11px] font-semibold text-slate-500">출처</div>
+                                <div className="mb-1 text-[11px] font-semibold text-muted-foreground">출처</div>
                                 <div className="space-y-1.5">
                                   {msg.evidence.sources.slice(0, 5).map((src, srcIdx) => (
                                     <div
                                       key={`${msg.id}-src-${srcIdx}`}
-                                      className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5"
+                                      className="flex items-start gap-2 rounded-lg border border-border bg-muted px-2 py-1.5"
                                     >
-                                      <span className="mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-slate-700">
+                                      <span className="mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-foreground">
                                         {src.type === 'web' ? '웹' : src.type === 'attachment' ? '첨부' : '내부'}
                                       </span>
                                       <div className="min-w-0">
@@ -1504,10 +1504,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                                             {src.label}
                                           </a>
                                         ) : (
-                                          <div className="truncate text-slate-700">{src.label}</div>
+                                          <div className="truncate text-foreground">{src.label}</div>
                                         )}
                                         {src.url && (
-                                          <div className="text-[10px] text-slate-400 mt-0.5">
+                                          <div className="text-[10px] text-muted-foreground mt-0.5">
                                             {getDomainFromUrl(src.url)}
                                           </div>
                                         )}
@@ -1518,7 +1518,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                               </div>
                             )}
                             {!!msg.evidence?.fetchedAt && (
-                              <div className="mt-2 text-[10px] text-slate-400">
+                              <div className="mt-2 text-[10px] text-muted-foreground">
                                 확인 시각: {new Date(msg.evidence.fetchedAt).toLocaleString('ko-KR')}
                               </div>
                             )}
@@ -1526,7 +1526,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                         )}
                       </div>
                     )}
-                    <span className="text-[10px] text-gray-400 mt-1 px-1">
+                    <span className="text-[10px] text-muted-foreground mt-1 px-1">
                       {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     {msg.role === 'assistant' && msg.kind !== 'system' && (
@@ -1535,16 +1535,16 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                           type="button"
                           onClick={() => void submitFeedback(msg, 'positive')}
                           disabled={!!feedbackSentByMessageId[msg.id]}
-                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-indigo-600 font-bold' : 'text-slate-400 hover:text-indigo-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
+                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-indigo-600 font-bold' : 'text-muted-foreground hover:text-indigo-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
                         >
                           <ThumbsUp className="w-3 h-3" /> 도움이 됐어요
                         </button>
-                        {!feedbackSentByMessageId[msg.id] && <span className="text-slate-300 text-[8px]">|</span>}
+                        {!feedbackSentByMessageId[msg.id] && <span className="text-muted-foreground text-[8px]">|</span>}
                         <button
                           type="button"
                           onClick={() => void submitFeedback(msg, 'negative')}
                           disabled={!!feedbackSentByMessageId[msg.id]}
-                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'negative' ? 'text-rose-600 font-bold' : 'text-slate-400 hover:text-rose-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'negative' ? 'hidden' : ''}`}
+                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'negative' ? 'text-rose-600 font-bold' : 'text-muted-foreground hover:text-rose-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'negative' ? 'hidden' : ''}`}
                         >
                           <ThumbsDown className="w-3 h-3" /> 아쉬워요
                         </button>
@@ -1561,10 +1561,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
                     <Loader2 className="h-4 w-4 animate-spin" />
                   </div>
-                  <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-sm border border-gray-100 shadow-sm">
+                  <div className="bg-card px-4 py-3 rounded-2xl rounded-tl-sm border border-border shadow-sm">
                     {agentSteps.length === 0 ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500">분석 중입니다...</span>
+                        <span className="text-sm text-muted-foreground">분석 중입니다...</span>
                         <span className="flex space-x-1">
                           <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                           <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
@@ -1582,7 +1582,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                             ) : (
                               <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500 flex-shrink-0" />
                             )}
-                            <span className={s.phase === 'done' ? 'text-gray-400' : 'text-gray-700'}>{s.label}</span>
+                            <span className={s.phase === 'done' ? 'text-muted-foreground' : 'text-foreground'}>{s.label}</span>
                           </li>
                         ))}
                       </ul>
@@ -1601,7 +1601,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <button
                   type="button"
                   onClick={handleRegenerate}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-indigo-600 transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
                   다시 생성
@@ -1639,7 +1639,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       requestAnimationFrame(autoResize);
                     }
                   }}
-                  className="flex-shrink-0 inline-flex items-center px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-600 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-sm transition-all whitespace-nowrap"
+                  className="flex-shrink-0 inline-flex items-center px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:border-indigo-300 hover:text-indigo-600 hover:shadow-sm transition-all whitespace-nowrap"
                 >
                   <Sparkles className="w-3 h-3 mr-1.5 text-indigo-400" />
                   {template.length > 24 ? template.slice(0, 24) + '...' : template}
@@ -1648,7 +1648,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             </div>
 
             <div className="relative group">
-              <div className="relative flex items-end bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden focus-within:ring-2 focus-within:ring-indigo-100 transition-shadow">
+              <div className="relative flex items-end bg-card rounded-xl shadow-lg border border-border overflow-hidden focus-within:ring-2 focus-within:ring-indigo-100 transition-shadow">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1661,7 +1661,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading || loading}
-                  className="mb-2 ml-2 p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                  className="mb-2 ml-2 p-2 rounded-lg text-muted-foreground hover:bg-muted disabled:opacity-50"
                   title="파일 첨부"
                 >
                   {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
@@ -1690,7 +1690,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   }}
                   placeholder={loading ? '답변을 생성하고 있어요…' : '무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)'}
                   disabled={loading}
-                  className="w-full max-h-[200px] min-h-[56px] py-4 pl-5 pr-14 bg-transparent text-[15px] text-gray-800 placeholder:text-gray-400 resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
+                  className="w-full max-h-[200px] min-h-[56px] py-4 pl-5 pr-14 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
                   rows={1}
                 />
                 {loading ? (
@@ -1719,7 +1719,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 {attachments.slice(-4).map((attachment) => (
                   <div
                     key={attachment.id}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-200 bg-slate-50 text-[11px] text-slate-600"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-muted text-[11px] text-muted-foreground"
                     title={attachment.file_name}
                   >
                     <FileText className="w-3 h-3" />
@@ -1732,7 +1732,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               </div>
             )}
             <div className="text-center mt-2">
-              <p className="text-[10px] text-gray-400">
+              <p className="text-[10px] text-muted-foreground">
                 AI는 실수를 할 수 있습니다. 중요한 정보는 확인해 주세요.
               </p>
             </div>
@@ -1740,17 +1740,17 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         </div>
 
         {/* Info Sidebar (Right Panel) */}
-        <div className="hidden md:flex w-[340px] flex-col border-l border-gray-100 bg-slate-50/50">
+        <div className="hidden md:flex w-[340px] flex-col border-l border-border bg-slate-50/50">
 
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-white/50">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-gray-500" />
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-white/50">
+            <h3 className="font-bold text-foreground flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-muted-foreground" />
               실시간 견적 현황
             </h3>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-muted-foreground transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -1759,7 +1759,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">대화방</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">대화방</div>
                 <button
                   onClick={async () => {
                     const created = await createNewSession();
@@ -1789,13 +1789,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   + 새 대화
                 </button>
               </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-2 shadow-sm max-h-48 overflow-y-auto space-y-1">
+              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-48 overflow-y-auto space-y-1">
                 {sessions.map((session) => (
                   <div
                     key={session.id}
                     className={`w-full text-left px-2 py-2 rounded-lg transition-colors ${currentSessionId === session.id
                       ? 'bg-indigo-50 text-indigo-800'
-                      : 'hover:bg-gray-50 text-gray-700'
+                      : 'hover:bg-muted text-foreground'
                       }`}
                   >
                     <button
@@ -1803,7 +1803,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                       className="w-full text-left px-1"
                     >
                       <div className="text-xs font-semibold truncate">{session.title}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
                         {new Date(session.updated_at).toLocaleString('ko-KR', {
                           month: '2-digit',
                           day: '2-digit',
@@ -1828,11 +1828,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   </div>
                 ))}
                 {!sessions.length && (
-                  <div className="px-2 py-2 text-[11px] text-gray-400">저장된 대화가 없습니다.</div>
+                  <div className="px-2 py-2 text-[11px] text-muted-foreground">저장된 대화가 없습니다.</div>
                 )}
               </div>
               {isSessionLoading && (
-                <div className="text-[11px] text-gray-400">대화를 불러오는 중...</div>
+                <div className="text-[11px] text-muted-foreground">대화를 불러오는 중...</div>
               )}
               {!sessionPersistenceEnabled && (
                 <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
@@ -1842,25 +1842,25 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             </div>
 
             <div className="space-y-3">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">첨부 파일</div>
-              <div className="bg-white rounded-xl border border-gray-100 p-2 shadow-sm max-h-40 overflow-y-auto space-y-1">
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">첨부 파일</div>
+              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-40 overflow-y-auto space-y-1">
                 {attachments.map((attachment) => (
-                  <div key={attachment.id} className="px-2 py-1.5 rounded-lg border border-slate-100 bg-slate-50">
-                    <div className="text-[11px] font-semibold text-slate-700 truncate">{attachment.file_name}</div>
-                    <div className="text-[10px] text-slate-500">
+                  <div key={attachment.id} className="px-2 py-1.5 rounded-lg border border-border bg-muted">
+                    <div className="text-[11px] font-semibold text-foreground truncate">{attachment.file_name}</div>
+                    <div className="text-[10px] text-muted-foreground">
                       {attachment.file_type} · {(attachment.file_size / 1024).toFixed(1)}KB · {attachment.parse_status}
                     </div>
                   </div>
                 ))}
                 {!attachments.length && (
-                  <div className="px-2 py-2 text-[11px] text-gray-400">첨부된 파일이 없습니다.</div>
+                  <div className="px-2 py-2 text-[11px] text-muted-foreground">첨부된 파일이 없습니다.</div>
                 )}
               </div>
             </div>
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">생성 파일</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">생성 파일</div>
                 <div className="flex items-center gap-1">
                   {(['pdf', 'xlsx', 'md', 'docx', 'json'] as const).map((type) => (
                     <button
@@ -1875,59 +1875,59 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   ))}
                 </div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-2 shadow-sm max-h-44 overflow-y-auto space-y-1">
+              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-44 overflow-y-auto space-y-1">
                 {generatedFiles.map((file) => (
                   <a
                     key={file.id}
                     href={file.file_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full flex items-center justify-between px-2 py-2 rounded-lg border border-slate-100 hover:bg-slate-50"
+                    className="w-full flex items-center justify-between px-2 py-2 rounded-lg border border-border hover:bg-muted"
                   >
                     <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-slate-700 truncate">{file.file_name}</div>
-                      <div className="text-[10px] text-slate-500">{file.file_type.toUpperCase()} · {(file.file_size / 1024).toFixed(1)}KB</div>
+                      <div className="text-[11px] font-semibold text-foreground truncate">{file.file_name}</div>
+                      <div className="text-[10px] text-muted-foreground">{file.file_type.toUpperCase()} · {(file.file_size / 1024).toFixed(1)}KB</div>
                     </div>
-                    <Download className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                    <Download className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                   </a>
                 ))}
                 {!generatedFiles.length && (
-                  <div className="px-2 py-2 text-[11px] text-gray-400">생성된 파일이 없습니다.</div>
+                  <div className="px-2 py-2 text-[11px] text-muted-foreground">생성된 파일이 없습니다.</div>
                 )}
               </div>
             </div>
 
             {/* Status Status */}
             <div className="space-y-3">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">진행 상태</div>
-              <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm space-y-3">
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">진행 상태</div>
+              <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.extracted ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>입력 정보 분석</span>
+                  <span className={`text-sm ${latestResult?.extracted ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>입력 정보 분석</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.routeSummary ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>경로 최적화 (Tmap)</span>
+                  <span className={`text-sm ${latestResult?.routeSummary ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>경로 최적화 (Tmap)</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.quote ? 'text-gray-900 font-medium' : 'text-gray-400'}`}>최종 견적 산출</span>
+                  <span className={`text-sm ${latestResult?.quote ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>최종 견적 산출</span>
                 </div>
               </div>
             </div>
 
             {/* Extracted Info Card */}
             <div className="space-y-3">
-              <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">추출 정보</div>
-              <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm space-y-4">
+              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">추출 정보</div>
+              <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-4">
                 <div className="flex items-start gap-3">
                   <MapPin className="w-4 h-4 text-indigo-500 mt-0.5" />
                   <div className="w-full min-w-0">
-                    <div className="text-xs text-gray-500 mb-0.5">경유지 정보</div>
+                    <div className="text-xs text-muted-foreground mb-0.5">경유지 정보</div>
                     <div className="space-y-1.5 mt-1">
                       <div className="flex items-center gap-2">
                         <span className="shrink-0 text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">출발</span>
-                        <span className="text-sm font-medium text-gray-900 truncate">{latestResult?.extracted?.origin?.address || '-'}</span>
+                        <span className="text-sm font-medium text-foreground truncate">{latestResult?.extracted?.origin?.address || '-'}</span>
                       </div>
                       {latestResult?.extracted?.destinations?.map((d: any, idx: number) => (
                         <div key={idx} className="flex items-center gap-2 relative">
@@ -1938,7 +1938,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                             }`}>
                             {idx === (latestResult.extracted.destinations.length - 1) ? '도착' : `경유 ${idx + 1}`}
                           </span>
-                          <span className="text-sm font-medium text-gray-900 truncate">{d.address || '-'}</span>
+                          <span className="text-sm font-medium text-foreground truncate">{d.address || '-'}</span>
                         </div>
                       ))}
                     </div>
@@ -1947,8 +1947,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <div className="flex items-start gap-3">
                   <Truck className="w-4 h-4 text-indigo-500 mt-0.5" />
                   <div>
-                    <div className="text-xs text-gray-500 mb-0.5">차량 정보</div>
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="text-xs text-muted-foreground mb-0.5">차량 정보</div>
+                    <div className="text-sm font-medium text-foreground">
                       {latestResult?.extracted?.vehicleType || '-'}
                     </div>
                   </div>
@@ -1956,8 +1956,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <div className="flex items-start gap-3">
                   <Clock className="w-4 h-4 text-indigo-500 mt-0.5" />
                   <div>
-                    <div className="text-xs text-gray-500 mb-0.5">일정</div>
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="text-xs text-muted-foreground mb-0.5">일정</div>
+                    <div className="text-sm font-medium text-foreground">
                       {latestResult?.extracted?.departureTime || '-'} 출발 · {latestResult?.extracted?.scheduleType === 'regular' ? '정기' : '비정기'}
                     </div>
                   </div>
@@ -1968,7 +1968,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             {/* Scenario Comparison (다중 시나리오: 3/5/10개 지점) */}
             {latestResult?.scenarioComparison && (
               <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">시나리오 비교</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">시나리오 비교</div>
                 <ScenarioComparisonCard
                   comparison={latestResult.scenarioComparison}
                   routeErrors={latestResult.scenarioRouteErrors}
@@ -1983,7 +1983,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <button
                   type="button"
                   onClick={() => handleSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors"
                 >
                   <Truck className="w-3.5 h-3.5" />
                   다른 차종으로 비교
@@ -1991,7 +1991,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <button
                   type="button"
                   onClick={() => handleSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors"
                 >
                   <Calculator className="w-3.5 h-3.5" />
                   다른 요금제로 보기
@@ -2001,7 +2001,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   onClick={() => handleGenerateFile('pdf')}
                   disabled={isGeneratingFile || !currentSessionId || currentSessionId.startsWith('local-')}
                   title={!currentSessionId || currentSessionId.startsWith('local-') ? '로그인 후 저장된 세션에서 사용할 수 있어요' : undefined}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-medium text-gray-700 hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
                 >
                   {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                   PDF 견적서
@@ -2025,7 +2025,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                           requestAnimationFrame(autoResize);
                         }
                       }}
-                      className="px-2.5 py-1 rounded-full border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 transition-colors"
+                      className="px-2.5 py-1 rounded-full border border-amber-300 bg-card text-amber-800 hover:bg-amber-100 transition-colors"
                     >
                       {e.label} 주소 직접 지정
                     </button>
@@ -2037,9 +2037,9 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             {/* Quote Result Card (Highlight) */}
             {latestResult?.quote && (
               <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                   <span>예상 견적</span>
-                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium normal-case">
+                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium normal-case">
                     기준: {latestResult.quote.basis?.vehicleType} · {latestResult.quote.basis?.scheduleType === 'regular' ? '정기' : '비정기'}
                   </span>
                 </div>
@@ -2103,7 +2103,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                         type="button"
                         onClick={() => setPreviewMode('input-order')}
                         className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'input-order'
-                            ? 'bg-white text-indigo-700 border-indigo-300'
+                            ? 'bg-card text-indigo-700 border-indigo-300'
                             : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
                           }`}
                       >
@@ -2113,7 +2113,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                         type="button"
                         onClick={() => setPreviewMode('optimized-order')}
                         className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'optimized-order'
-                            ? 'bg-white text-indigo-700 border-indigo-300'
+                            ? 'bg-card text-indigo-700 border-indigo-300'
                             : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
                           }`}
                       >
@@ -2123,7 +2123,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     <button
                       onClick={() => void handlePreviewOnMap(false)}
                       disabled={isPreviewLoading}
-                      className="w-full bg-white text-indigo-700 py-3 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="w-full bg-card text-indigo-700 py-3 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                       {isPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapIcon className="w-4 h-4" />}
                       {isPreviewLoading ? '지도 반영 중...' : '지도에서 경로 확인하기'}
@@ -2135,7 +2135,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                           type="button"
                           onClick={() => void handlePreviewOnMap(true)}
                           disabled={isPreviewLoading}
-                          className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                          className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-card px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
                         >
                           <RefreshCw className={`w-3 h-3 ${isPreviewLoading ? 'animate-spin' : ''}`} />
                           자동 수정으로 재시도

@@ -84,7 +84,7 @@ export default function QuoteFromCustomerDataPanel() {
 
   return (
     <div className="glass-panel p-6 space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">화주사 배송정보 기반 견적 생성</h2>
+      <h2 className="text-2xl font-bold text-foreground">화주사 배송정보 기반 견적 생성</h2>
 
       {/* 입력 폼 */}
       <div className="space-y-4">
@@ -105,14 +105,14 @@ export default function QuoteFromCustomerDataPanel() {
 
         {/* 차량 타입 */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">차량 타입</label>
+          <label className="text-sm font-medium text-foreground">차량 타입</label>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setVehicleType('레이')}
               className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${vehicleType === '레이'
                   ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  : 'border-border bg-card text-foreground hover:border-input'
                 }`}
             >
               레이
@@ -122,7 +122,7 @@ export default function QuoteFromCustomerDataPanel() {
               onClick={() => setVehicleType('스타렉스')}
               className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${vehicleType === '스타렉스'
                   ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  : 'border-border bg-card text-foreground hover:border-input'
                 }`}
             >
               스타렉스
@@ -132,14 +132,14 @@ export default function QuoteFromCustomerDataPanel() {
 
         {/* 스케줄 타입 */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">스케줄 타입</label>
+          <label className="text-sm font-medium text-foreground">스케줄 타입</label>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setScheduleType('ad-hoc')}
               className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${scheduleType === 'ad-hoc'
                   ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  : 'border-border bg-card text-foreground hover:border-input'
                 }`}
             >
               비정기
@@ -149,7 +149,7 @@ export default function QuoteFromCustomerDataPanel() {
               onClick={() => setScheduleType('regular')}
               className={`flex-1 px-4 py-2 rounded-lg border-2 transition-all ${scheduleType === 'regular'
                   ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  : 'border-border bg-card text-foreground hover:border-input'
                 }`}
             >
               정기
@@ -186,11 +186,11 @@ export default function QuoteFromCustomerDataPanel() {
 
       {/* 견적 결과 */}
       {quoteResult && (
-        <div className="border border-gray-200 rounded-lg p-6 bg-gradient-to-br from-green-50 to-emerald-50">
+        <div className="border border-border rounded-lg p-6 bg-gradient-to-br from-green-50 to-emerald-50">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <CheckCircle className="w-6 h-6 text-green-600" />
-              <h3 className="text-xl font-bold text-gray-900">견적 생성 완료</h3>
+              <h3 className="text-xl font-bold text-foreground">견적 생성 완료</h3>
             </div>
             {quoteResult.pdfUrl && (
               <button
@@ -206,11 +206,11 @@ export default function QuoteFromCustomerDataPanel() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-600">견적 번호</p>
-                <p className="text-lg font-semibold text-gray-900">{quoteResult.quoteNumber}</p>
+                <p className="text-sm text-muted-foreground">견적 번호</p>
+                <p className="text-lg font-semibold text-foreground">{quoteResult.quoteNumber}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">총 견적 금액</p>
+                <p className="text-sm text-muted-foreground">총 견적 금액</p>
                 <p className="text-2xl font-bold text-blue-600">
                   ₩{quoteResult.totalPrice?.toLocaleString('ko-KR')}
                 </p>
@@ -218,9 +218,9 @@ export default function QuoteFromCustomerDataPanel() {
             </div>
 
             {quoteResult.breakdown && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <p className="text-sm font-medium text-gray-700 mb-2">상세 내역</p>
-                <div className="space-y-1 text-sm text-gray-600">
+              <div className="mt-4 pt-4 border-t border-border">
+                <p className="text-sm font-medium text-foreground mb-2">상세 내역</p>
+                <div className="space-y-1 text-sm text-muted-foreground">
                   {quoteResult.breakdown.baseRate && (
                     <div className="flex justify-between">
                       <span>기본 요금:</span>
@@ -244,7 +244,7 @@ export default function QuoteFromCustomerDataPanel() {
             )}
 
             {quoteResult.distance && (
-              <div className="mt-2 text-sm text-gray-600">
+              <div className="mt-2 text-sm text-muted-foreground">
                 총 거리: {(quoteResult.distance / 1000).toFixed(2)}km ·
                 총 시간: {Math.round(quoteResult.time / 60)}분
               </div>

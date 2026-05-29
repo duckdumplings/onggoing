@@ -191,24 +191,24 @@ export function OptimizationHistoryPanel() {
           <h3 className="text-lg font-semibold mb-3">최적화 통계</h3>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-gray-600">총 실행 횟수:</span>
+              <span className="text-muted-foreground">총 실행 횟수:</span>
               <span className="ml-2 font-medium">{data.stats.total_runs}회</span>
             </div>
             <div>
-              <span className="text-gray-600">평균 거리:</span>
+              <span className="text-muted-foreground">평균 거리:</span>
               <span className="ml-2 font-medium">{formatDistance(data.stats.avg_distance)}</span>
             </div>
             <div>
-              <span className="text-gray-600">평균 시간:</span>
+              <span className="text-muted-foreground">평균 시간:</span>
               <span className="ml-2 font-medium">{formatTime(data.stats.avg_time)}</span>
             </div>
             <div>
-              <span className="text-gray-600">최적화율:</span>
+              <span className="text-muted-foreground">최적화율:</span>
               <span className="ml-2 font-medium">{data.stats.optimization_rate}%</span>
             </div>
             {data.stats.total_distance_saved > 0 && (
               <div className="col-span-2">
-                <span className="text-gray-600">총 절약 거리:</span>
+                <span className="text-muted-foreground">총 절약 거리:</span>
                 <span className="ml-2 font-medium text-green-600">
                   {formatDistance(data.stats.total_distance_saved)}
                 </span>
@@ -236,7 +236,7 @@ export function OptimizationHistoryPanel() {
             {data.runs.map((run) => (
               <div
                 key={run.id}
-                className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                className="border rounded-lg p-3 hover:bg-muted cursor-pointer transition-colors"
                 onClick={() => handleShowDetails(run)}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -256,24 +256,24 @@ export function OptimizationHistoryPanel() {
                       </span>
                     )}
                   </div>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-muted-foreground">
                     {formatDate(run.created_at)}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <span className="text-gray-600">거리:</span>
+                    <span className="text-muted-foreground">거리:</span>
                     <span className="ml-2 font-medium">{formatDistance(run.total_distance)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">시간:</span>
+                    <span className="text-muted-foreground">시간:</span>
                     <span className="ml-2 font-medium">{formatTime(run.total_time)}</span>
                   </div>
                 </div>
 
                 {run.departure_at && (
-                  <div className="mt-2 text-xs text-gray-500">
+                  <div className="mt-2 text-xs text-muted-foreground">
                     출발시간: {formatDate(run.departure_at)}
                   </div>
                 )}
@@ -292,7 +292,7 @@ export function OptimizationHistoryPanel() {
       {/* 상세 정보 모달 */}
       {showDetails && selectedRun && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-lg w-full mx-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">최적화 실행 상세 정보</h3>
               <Button
@@ -306,29 +306,29 @@ export function OptimizationHistoryPanel() {
 
             <div className="space-y-4">
               {/* 기본 정보 */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium mb-3 text-gray-800">기본 정보</h4>
+              <div className="bg-muted p-4 rounded-lg">
+                <h4 className="font-medium mb-3 text-foreground">기본 정보</h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-600">차량 타입:</span>
+                    <span className="text-muted-foreground">차량 타입:</span>
                     <span className="ml-2 font-medium">{selectedRun.vehicle_type}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">총 거리:</span>
+                    <span className="text-muted-foreground">총 거리:</span>
                     <span className="ml-2 font-medium">{formatDistance(selectedRun.total_distance)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">총 시간:</span>
+                    <span className="text-muted-foreground">총 시간:</span>
                     <span className="ml-2 font-medium">{formatTime(selectedRun.total_time)}</span>
                     {selectedRun.result_data?.summary?.dwellTime && (
-                      <span className="text-xs text-gray-500 ml-1">
+                      <span className="text-xs text-muted-foreground ml-1">
                         (이동: {formatTime(selectedRun.result_data.summary.travelTime || selectedRun.total_time)},
                         체류: {formatTime(selectedRun.result_data.summary.dwellTime)})
                       </span>
                     )}
                   </div>
                   <div>
-                    <span className="text-gray-600">실행 시간:</span>
+                    <span className="text-muted-foreground">실행 시간:</span>
                     <span className="ml-2 font-medium">{formatDate(selectedRun.created_at)}</span>
                   </div>
                 </div>

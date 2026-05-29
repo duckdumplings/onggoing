@@ -43,23 +43,23 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
 
   return (
     <div className="fixed inset-0 z-50 glass-overlay overflow-hidden">
-      <div className="bg-white w-full h-full overflow-hidden flex flex-col">
+      <div className="bg-card w-full h-full overflow-hidden flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200" style={{ backgroundColor: `${color}10` }}>
+        <div className="flex items-center justify-between p-6 border-b border-border" style={{ backgroundColor: `${color}10` }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ backgroundColor: color }}>
               {driverIndex + 1}
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{driver.driverId.replace('driver-', '배송원 ')} 상세 경로</h2>
-              <p className="text-sm text-gray-600">{driver.destinations.length}개 경유지</p>
+              <h2 className="text-2xl font-bold text-foreground">{driver.driverId.replace('driver-', '배송원 ')} 상세 경로</h2>
+              <p className="text-sm text-muted-foreground">{driver.destinations.length}개 경유지</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors"
+            className="w-10 h-10 rounded-full hover:bg-muted flex items-center justify-center transition-colors"
           >
-            <X className="w-6 h-6 text-gray-600" />
+            <X className="w-6 h-6 text-muted-foreground" />
           </button>
         </div>
 
@@ -67,9 +67,9 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* 통계 카드 */}
           <div className="grid grid-cols-4 gap-4">
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="text-xs text-gray-600 mb-1">총 거리</div>
-              <div className="text-2xl font-bold text-gray-900">{(driver.totalDistance / 1000).toFixed(1)}km</div>
+            <div className="p-4 bg-muted rounded-lg border border-border">
+              <div className="text-xs text-muted-foreground mb-1">총 거리</div>
+              <div className="text-2xl font-bold text-foreground">{(driver.totalDistance / 1000).toFixed(1)}km</div>
             </div>
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="text-xs text-blue-600 mb-1">이동시간</div>
@@ -90,13 +90,13 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
 
           {/* 출발지 */}
           <div className="space-y-2">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
               <Navigation className="w-5 h-5" />
               출발지
             </h3>
-            <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="font-medium text-gray-900">{driver.origin.address}</div>
-              <div className="text-xs text-gray-500 mt-1">
+            <div className="p-4 bg-muted rounded-lg border border-border">
+              <div className="font-medium text-foreground">{driver.origin.address}</div>
+              <div className="text-xs text-muted-foreground mt-1">
                 위도: {driver.origin.latitude.toFixed(6)}, 경도: {driver.origin.longitude.toFixed(6)}
               </div>
             </div>
@@ -104,7 +104,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
 
           {/* 경유지 목록 */}
           <div className="space-y-2">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <h3 className="font-semibold text-foreground flex items-center gap-2">
               <MapPin className="w-5 h-5" />
               경유지 순서 ({driver.destinations.length}개)
             </h3>
@@ -156,7 +156,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                 return (
                   <div
                     key={idx}
-                    className="p-5 bg-white rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-all hover:shadow-md"
+                    className="p-5 bg-card rounded-lg border-2 border-border hover:border-blue-300 transition-all hover:shadow-md"
                     style={{ borderLeftColor: color, borderLeftWidth: '5px' }}
                   >
                     <div className="flex items-start justify-between">
@@ -169,11 +169,11 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                             {idx + 1}
                           </div>
                           <div className="flex-1">
-                            <div className="font-semibold text-gray-900 text-base">
+                            <div className="font-semibold text-foreground text-base">
                               {dest.address || `경유지 ${idx + 1}`}
                             </div>
                             {deliveryTime && (
-                              <div className="text-xs text-gray-500 mt-1">
+                              <div className="text-xs text-muted-foreground mt-1">
                                 목표 배송시간: {deliveryTime} {isNextDay ? '(다음날)' : ''}
                               </div>
                             )}
@@ -184,8 +184,8 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                         <div className="ml-11 space-y-2 mt-3">
                           {arrivalTime && (
                             <div className="flex items-center gap-2 text-sm">
-                              <span className="text-gray-600">예상 도착:</span>
-                              <span className="font-medium text-gray-900">
+                              <span className="text-muted-foreground">예상 도착:</span>
+                              <span className="font-medium text-foreground">
                                 {arrivalTime.toLocaleTimeString('ko-KR', { 
                                   hour: '2-digit', 
                                   minute: '2-digit',
@@ -196,8 +196,8 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                           )}
                           {departureTime && (
                             <div className="flex items-center gap-2 text-sm">
-                              <span className="text-gray-600">예상 출발:</span>
-                              <span className="font-medium text-gray-900">
+                              <span className="text-muted-foreground">예상 출발:</span>
+                              <span className="font-medium text-foreground">
                                 {departureTime.toLocaleTimeString('ko-KR', { 
                                   hour: '2-digit', 
                                   minute: '2-digit',
@@ -205,7 +205,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                                 })}
                               </span>
                               {dwellTime > 0 && (
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-muted-foreground">
                                   (체류 {dwellTime}분)
                                 </span>
                               )}
@@ -222,7 +222,7 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
                           )}
                         </div>
                         
-                        <div className="text-xs text-gray-500 ml-11 mt-2">
+                        <div className="text-xs text-muted-foreground ml-11 mt-2">
                           위도: {dest.latitude.toFixed(6)}, 경도: {dest.longitude.toFixed(6)}
                         </div>
                       </div>
@@ -236,29 +236,29 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
           {/* 경로 상세 정보 */}
           {summary && (
             <div className="space-y-2">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <BarChart3 className="w-5 h-5" />
                 경로 상세 정보
               </h3>
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-2 text-sm">
+              <div className="p-4 bg-muted rounded-lg border border-border space-y-2 text-sm">
                 {summary.optimizeOrder && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">순서 최적화:</span>
-                    <span className="font-medium text-gray-900">적용됨</span>
+                    <span className="text-muted-foreground">순서 최적화:</span>
+                    <span className="font-medium text-foreground">적용됨</span>
                   </div>
                 )}
                 {summary.usedTraffic && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">교통정보:</span>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-muted-foreground">교통정보:</span>
+                    <span className="font-medium text-foreground">
                       {summary.usedTraffic === 'realtime' ? '실시간 반영' : '타임머신 모드'}
                     </span>
                   </div>
                 )}
                 {summary.vehicleTypeCode && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">차량 타입:</span>
-                    <span className="font-medium text-gray-900">
+                    <span className="text-muted-foreground">차량 타입:</span>
+                    <span className="font-medium text-foreground">
                       {summary.vehicleTypeCode === '2' ? '스타렉스' : '레이'}
                     </span>
                   </div>
@@ -269,10 +269,10 @@ export default function DriverRouteDetailModal({ isOpen, onClose, driver, driver
         </div>
 
         {/* 푸터 */}
-        <div className="p-6 border-t border-gray-200 flex justify-end">
+        <div className="p-6 border-t border-border flex justify-end">
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium text-gray-700 transition-colors"
+            className="px-6 py-2 bg-muted hover:bg-gray-200 rounded-lg font-medium text-foreground transition-colors"
           >
             닫기
           </button>

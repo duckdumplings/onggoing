@@ -127,10 +127,10 @@ export default function QuoteReviewHistoryPanel() {
   return (
     <div className="glass-panel p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">검토 이력</h2>
+        <h2 className="text-2xl font-bold text-foreground">검토 이력</h2>
         <button
           onClick={fetchReviews}
-          className="text-sm text-gray-600 hover:text-gray-900 underline"
+          className="text-sm text-muted-foreground hover:text-foreground underline"
         >
           새로고침
         </button>
@@ -138,7 +138,7 @@ export default function QuoteReviewHistoryPanel() {
 
       {/* 로딩 상태 */}
       {loading && (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-muted-foreground">
           검토 이력을 불러오는 중...
         </div>
       )}
@@ -173,15 +173,15 @@ export default function QuoteReviewHistoryPanel() {
             reviews.map((review) => (
               <div
                 key={review.id}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                className="border border-border rounded-lg p-4 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <span className="text-muted-foreground">{getFileTypeIcon(review.fileType)}</span>
                       <div>
-                        <p className="font-medium text-gray-900">{review.fileName}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="font-medium text-foreground">{review.fileName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {new Date(review.generatedAt).toLocaleString('ko-KR')}
                         </p>
                       </div>
@@ -192,14 +192,14 @@ export default function QuoteReviewHistoryPanel() {
                         리스크: {review.riskScore}/100
                       </div>
                       {review.riskSummary && (
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>높음: {review.riskSummary.highRisks}</span>
                           <span>보통: {review.riskSummary.mediumRisks}</span>
                           <span>낮음: {review.riskSummary.lowRisks}</span>
                         </div>
                       )}
                       {review.totalDistance && (
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-muted-foreground">
                           거리: {review.totalDistance.toFixed(2)}km
                         </div>
                       )}
@@ -209,10 +209,10 @@ export default function QuoteReviewHistoryPanel() {
                   <div className="flex items-center gap-2 ml-4">
                     <button
                       onClick={() => handleViewReport(review.id)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                      className="p-2 hover:bg-muted rounded-lg transition-colors"
                       title="리포트 보기"
                     >
-                      <Eye className="w-5 h-5 text-gray-600" />
+                      <Eye className="w-5 h-5 text-muted-foreground" />
                     </button>
                     <button
                       onClick={() => handleDeleteReview(review.id)}
