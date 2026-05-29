@@ -18,7 +18,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Interactive: Story = {
   args: { size: 'md', checked: true, onCheckedChange: () => {}, 'aria-label': '실시간 교통정보' },
-  render: (args) => {
+  render: function InteractiveSwitch(args) {
     const [checked, setChecked] = useState(true);
     return <Switch {...args} checked={checked} onCheckedChange={setChecked} />;
   },
