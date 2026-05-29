@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef, useState } from 'react';
 import { reportActionFailure } from '@/libs/errorReporting';
 
 export interface Coordinate { lat: number; lng: number; address?: string }
@@ -149,10 +149,67 @@ function pickFirstRouteCoordinate(routeData: any): { lat: number; lng: number } 
   return null;
 }
 
+/**
+ * 경로 최적화 요청의 수명주기를 단일 상태 머신으로 관리한다.
+ * isLoading/error/lastError/routeData가 개별 useState로 흩어져 서로 어긋나던 문제를
+ * 하나의 상태 전이 규칙으로 통합한다.
+ */
+export type RouteRequestStatus = 'idle' | 'loading' | 'success' | 'error';
+
+interface RouteRequestState {
+  status: RouteRequestStatus;
+  routeData: RouteData | null;
+  error: string | null;
+  lastError: any | null;
+}
+
+type RouteRequestAction =
+  | { type: 'START' }
+  | { type: 'SUCCESS'; routeData: RouteData }
+  | { type: 'ERROR'; error: string; lastError?: any }
+  | { type: 'VALIDATION_ERROR'; error: string }
+  | { type: 'CANCEL' }
+  | { type: 'RESET' }
+  | { type: 'SET_ROUTE_DATA'; routeData: RouteData | null };
+
+const initialRequestState: RouteRequestState = {
+  status: 'idle',
+  routeData: null,
+  error: null,
+  lastError: null,
+};
+
+function routeRequestReducer(state: RouteRequestState, action: RouteRequestAction): RouteRequestState {
+  switch (action.type) {
+    case 'START':
+      return { ...state, status: 'loading', error: null };
+    case 'SUCCESS':
+      return { status: 'success', routeData: action.routeData, error: null, lastError: null };
+    case 'ERROR':
+      return {
+        ...state,
+        status: 'error',
+        error: action.error,
+        lastError: action.lastError !== undefined ? action.lastError : state.lastError,
+      };
+    case 'VALIDATION_ERROR':
+      return { ...state, status: 'error', error: action.error };
+    case 'CANCEL':
+      return { ...state, status: state.status === 'loading' ? 'idle' : state.status };
+    case 'RESET':
+      return { ...initialRequestState };
+    case 'SET_ROUTE_DATA':
+      return { ...state, routeData: action.routeData };
+    default:
+      return state;
+  }
+}
+
 export interface RouteOptimizationState {
   origins: Coordinate | null;
   destinations: Coordinate[];
   routeData: RouteData | null;
+  status: RouteRequestStatus;
   isLoading: boolean;
   error: string | null;
   vehicleType: '레이' | '스타렉스' | string;
@@ -202,10 +259,13 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     returnToOrigin: true,
     deliveryTimes: []
   });
-  const [routeData, setRouteData] = useState<RouteData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<any | null>(null);
+  const [request, dispatch] = useReducer(routeRequestReducer, initialRequestState);
+  const { routeData, error, lastError } = request;
+  const isLoading = request.status === 'loading';
+  const setRouteData = useCallback(
+    (d: RouteData | null) => dispatch({ type: 'SET_ROUTE_DATA', routeData: d }),
+    []
+  );
   const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
@@ -255,15 +315,14 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
     if (!payload.origins?.length || !payload.destinations?.length) {
       console.log('[useRouteOptimization] 유효하지 않은 payload:', { origins: payload.origins, destinations: payload.destinations });
-      setError('출발지와 목적지를 입력하세요.');
+      dispatch({ type: 'VALIDATION_ERROR', error: '출발지와 목적지를 입력하세요.' });
       return { success: false, error: '출발지와 목적지를 입력하세요.' };
     }
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    setIsLoading(true);
-    setError(null);
+    dispatch({ type: 'START' });
 
     try {
       console.log('[useRouteOptimization] API 호출 시작:', '/api/route-optimization');
@@ -279,8 +338,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         console.warn('[useRouteOptimization] 서버 오류 응답:', err);
-        setLastError(err);
-        setError(err?.message || err?.error || `HTTP_${res.status}`);
+        dispatch({ type: 'ERROR', error: err?.message || err?.error || `HTTP_${res.status}`, lastError: err });
         // UI에서 배너와 인라인 가이드를 띄우기 위해 throw 대신 상태로 전달하고 조용히 종료
         try { (window as any).lastOptimizationError = err; } catch { }
         reportActionFailure({
@@ -315,10 +373,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
       if (data?.success && data?.data) {
         console.log('[useRouteOptimization] routeData 설정:', data.data);
-        setRouteData(data.data as RouteData);
-        // 성공 시 에러 상태 초기화
-        setLastError(null);
-        setError(null);
+        // 성공 시 routeData 설정 + 에러 상태 초기화를 단일 전이로 처리
+        dispatch({ type: 'SUCCESS', routeData: data.data as RouteData });
         try { (window as any).lastOptimizationError = null; } catch { }
 
         const isInvalidCoord = (lat: number, lng: number) =>
@@ -383,11 +439,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       return { success: true, data: data.data };
     } catch (e: any) {
       if (e?.name === 'AbortError') {
+        // 취소는 cancel()이 CANCEL 전이를 담당하거나, 더 새 요청의 START가 상태를 가져간다.
         return { success: false, error: '요청이 취소되었습니다.' };
       }
       console.error('[useRouteOptimization] API 호출 오류:', e);
-      if (!lastError) setError(e?.message || '경로 최적화 실패');
-      try { if (lastError) (window as any).lastOptimizationError = lastError; } catch { }
+      dispatch({ type: 'ERROR', error: e?.message || '경로 최적화 실패' });
       reportActionFailure({
         source: 'route_optimization',
         action: 'optimize_route_exception',
@@ -404,8 +460,6 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
         error: e?.message || '경로 최적화 실패',
         details: e,
       };
-    } finally {
-      setIsLoading(false);
     }
   }, [buildPayload]);
 
@@ -422,14 +476,14 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
 
   const cancel = useCallback(() => {
     abortRef.current?.abort();
+    dispatch({ type: 'CANCEL' });
   }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setOrigins(null);
     setDestinations([]);
-    setRouteData(null);
-    setError(null);
+    dispatch({ type: 'RESET' });
   }, []);
 
   const waypoints = useMemo(() => [origins, ...destinations].filter(Boolean) as Coordinate[], [origins, destinations]);
@@ -440,6 +494,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     origins,
     destinations,
     routeData,
+    status: request.status,
     isLoading,
     error,
     vehicleType,
