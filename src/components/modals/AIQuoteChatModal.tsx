@@ -1290,7 +1290,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
   return (
     <div className="fixed inset-0 z-[4000] flex items-center justify-center glass-overlay p-4 md:p-6 transition-opacity duration-300">
-      <div className="flex h-full w-full max-w-6xl overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
+      <div className="flex h-full w-full max-w-6xl lg:max-w-[1280px] xl:max-w-[1500px] 2xl:max-w-[1720px] overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
 
         {/* Main Chat Area */}
         <div className="flex flex-1 flex-col h-full min-w-0 bg-card relative">
@@ -1740,7 +1740,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         </div>
 
         {/* Info Sidebar (Right Panel) */}
-        <div className="hidden md:flex w-[340px] flex-col border-l border-border bg-slate-50/50">
+        <div className="hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-slate-50/50">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-white/50">

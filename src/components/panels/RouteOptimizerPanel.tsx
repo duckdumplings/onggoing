@@ -73,14 +73,29 @@ export default function RouteOptimizerPanel() {
   const setInputFromHistory = useCallback((requestData: any) => {
     console.log('setInputFromHistory 호출됨:', requestData);
 
+    // 경로 지점은 문자열(주소) 또는 좌표 객체({name,address,latitude,longitude}) 둘 다 올 수 있다.
+    // 둘 다 안전하게 selection으로 정규화한다(좌표가 있으면 보존).
+    const toSelection = (p: any) => {
+      if (p && typeof p === 'object') {
+        const lat = Number(p.latitude);
+        const lng = Number(p.longitude);
+        const address = String(p.address ?? p.name ?? '');
+        return {
+          latitude: Number.isFinite(lat) ? lat : 0,
+          longitude: Number.isFinite(lng) ? lng : 0,
+          address,
+          name: String(p.name ?? p.address ?? address),
+        };
+      }
+      const s = String(p ?? '');
+      return { latitude: 0, longitude: 0, address: s, name: s };
+    };
+    const toAddress = (p: any) =>
+      p && typeof p === 'object' ? String(p.address ?? p.name ?? '') : String(p ?? '');
+
     // 출발지 설정
     if (requestData.origins?.[0]) {
-      setOriginSelection({
-        latitude: 0,
-        longitude: 0,
-        address: requestData.origins[0],
-        name: requestData.origins[0]
-      });
+      setOriginSelection(toSelection(requestData.origins[0]));
     }
 
     // 차량 타입 설정
@@ -118,29 +133,31 @@ export default function RouteOptimizerPanel() {
 
     // 경유지 설정 (destinations를 waypoints로 변환)
     if (requestData.destinations && requestData.destinations.length > 0) {
-      const allDestinations = requestData.destinations as string[];
+      const allPoints = requestData.destinations as any[];
       const explicitDestinationAddress =
         typeof requestData.finalDestinationAddress === 'string' && requestData.finalDestinationAddress.trim()
           ? requestData.finalDestinationAddress.trim()
           : hasExplicitDestination
-            ? allDestinations[allDestinations.length - 1]
+            ? toAddress(allPoints[allPoints.length - 1])
             : null;
-      const waypointAddresses = explicitDestinationAddress
-        ? allDestinations.filter((address, index) => index < allDestinations.length - 1)
-        : allDestinations;
+      const waypointPoints = explicitDestinationAddress
+        ? allPoints.filter((_, index) => index < allPoints.length - 1)
+        : allPoints;
 
-      const newWaypoints = waypointAddresses.map((dest: string, index: number) => ({
+      const newWaypoints = waypointPoints.map((p: any, index: number) => ({
         id: `waypoint-${index + 1}`,
-        selection: { latitude: 0, longitude: 0, address: dest, name: dest },
+        selection: toSelection(p),
         dwellTime: 10,
         deliveryTime: undefined
       }));
       setWaypoints(newWaypoints);
 
       if (explicitDestinationAddress) {
+        // 마지막 지점의 좌표가 있으면 보존(없으면 0,0).
+        const lastSel = toSelection(allPoints[allPoints.length - 1]);
         setDestinationSelection({
-          latitude: 0,
-          longitude: 0,
+          latitude: lastSel.latitude,
+          longitude: lastSel.longitude,
           address: explicitDestinationAddress,
           name: explicitDestinationAddress,
         });
