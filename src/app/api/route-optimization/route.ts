@@ -1679,6 +1679,7 @@ export async function POST(request: NextRequest) {
         dwellTime: totalDwellTime, // 체류시간
         optimizeOrder,
         usedTraffic,
+        departureAt: departureAt ?? null,
         vehicleTypeCode,
         optimizationInfo,
         roadOptionApplied: roadOption,
@@ -2014,10 +2015,12 @@ async function getTmapRoute(
       // 실시간 교통정보 사용 시 기존 API
       const url = 'https://apis.openapi.sk.com/tmap/routes';
       const roadOption = opts?.roadOption || 'time-first';
+      // Tmap routes API의 searchOption은 한 자리 값에 leading zero를 붙이면 400을 반환한다.
+      // (검증: '0'/'1'/'2'/'4' → 200, '00'/'01'/'02'/'04' → 400, '10'/'12'는 두 자리라 정상)
       const searchOptionByRoadOption: Record<string, string> = {
-        'time-first': opts?.trafficInfo === 'N' ? '02' : '00',
+        'time-first': opts?.trafficInfo === 'N' ? '2' : '0',
         'toll-saving': '10',
-        'free-road-first': '01',
+        'free-road-first': '1',
       };
       const selectedSearchOption = searchOptionByRoadOption[roadOption] || searchOptionByRoadOption['time-first'];
       const tollgateCarTypeByVehicleCode: Record<string, string> = {

@@ -11,6 +11,7 @@ export interface RouteSummary {
   vehicleTypeCode?: string;
   optimizeOrder?: boolean;
   usedTraffic?: 'realtime' | 'standard';
+  departureAt?: string | null;
   roadOptionApplied?: 'time-first' | 'toll-saving' | 'free-road-first';
   roadComparisons?: Array<{
     option: 'time-first' | 'toll-saving' | 'free-road-first';

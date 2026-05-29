@@ -900,14 +900,36 @@ export default function TmapMainMap() {
               </div>
             </div>
 
-            {/* 교통정보 상태 */}
-            <div className="mt-4 pt-3 border-t border-slate-100">
+            {/* 교통정보 상태 + 계산 기준 시각 */}
+            <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
               <div className="text-[10px] font-medium text-slate-400 text-center bg-slate-50/50 rounded-lg py-2 flex items-center justify-center gap-1.5">
                 {(routeData.summary as any)?.usedTraffic === 'realtime'
-                  ? <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 교통정보 반영됨</>
-                  : <><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 과거 데이터 기반 예측</>
+                  ? <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> 실시간 교통정보 반영됨 (지금 출발 기준)</>
+                  : <><span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> 예측 교통 기반 (미래 출발 시각 설정됨)</>
                 }
               </div>
+              {(() => {
+                const depAt = (routeData.summary as any)?.departureAt as string | null | undefined;
+                if (!depAt) return null;
+                const d = new Date(depAt);
+                if (Number.isNaN(d.getTime())) return null;
+                const label = d.toLocaleString('ko-KR', {
+                  month: 'long',
+                  day: 'numeric',
+                  weekday: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                });
+                return (
+                  <div
+                    className="text-[10px] text-slate-500 text-center"
+                    title="Tmap이 이 시각의 예측 교통 패턴으로 소요시간을 산출했습니다."
+                  >
+                    계산 기준 <span className="font-bold text-slate-700">{label}</span> 출발
+                  </div>
+                );
+              })()}
             </div>
             {routeQuoteDetail && (
               <button

@@ -7,6 +7,7 @@ import WaypointList, { type Waypoint } from './WaypointList';
 import MultiDriverResultsPanel from './MultiDriverResultsPanel';
 import { ChevronDown, ChevronUp, Settings, X } from 'lucide-react';
 import { reportActionFailure } from '@/libs/errorReporting';
+import { resolveDepartureDateTime, formatDepartureLabel, describeRelativeDay } from '@/domains/dispatch/utils/departureTime';
 
 type OptimizationMode = 'single' | 'multi';
 type SavedOptimizationRun = {
@@ -330,34 +331,18 @@ export default function RouteOptimizerPanel() {
     }
   }, [originDepartureTime, useRealtimeTraffic]);
 
-  // 주말인 경우 다음주 월요일로 조정하는 헬퍼 함수
-  const getNextWeekday = (date: Date): Date => {
-    const day = date.getDay(); // 0 = 일요일, 6 = 토요일
-    if (day === 0) { // 일요일인 경우 월요일로
-      date.setDate(date.getDate() + 1);
-    } else if (day === 6) { // 토요일인 경우 월요일로
-      date.setDate(date.getDate() + 2);
-    }
-    return date;
-  };
+  // 출발지 배송출발시간이 설정되면 계산 기준 시각을 자동 해석한다.
+  // 입력 시각이 미래이면 오늘, 이미 지났으면 다음날(주말이면 다음 평일)로 판정한다.
+  const resolvedDeparture = useMemo(
+    () => (originDepartureTime ? resolveDepartureDateTime(originDepartureTime) : null),
+    [originDepartureTime]
+  );
 
-  // 출발지 배송출발시간을 설정하면 타임머신 출발시각을 자동 동기화(다음날 동일 HH:mm)
   useEffect(() => {
-    if (!originDepartureTime) return;
-    try {
-      const [h, m] = originDepartureTime.split(':').map(Number);
-      let target = new Date();
-      target.setDate(target.getDate() + 1); // 시간제약 존재 시 내일 앵커에 맞춤
-      target = getNextWeekday(target);
-      target.setHours(h, m, 0, 0);
-      const year = target.getFullYear();
-      const month = String(target.getMonth() + 1).padStart(2, '0');
-      const day = String(target.getDate()).padStart(2, '0');
-      const hh = String(target.getHours()).padStart(2, '0');
-      const mm = String(target.getMinutes()).padStart(2, '0');
-      setDepartureDateTime(`${year}-${month}-${day}T${hh}:${mm}`);
-    } catch { }
-  }, [originDepartureTime]);
+    if (resolvedDeparture) {
+      setDepartureDateTime(resolvedDeparture.isoLocal);
+    }
+  }, [resolvedDeparture]);
 
   const coordEqual = (a: { lat: number; lng: number; address?: string }, b: { lat: number; lng: number; address?: string }, eps = 1e-6) =>
     Math.abs(a.lat - b.lat) <= eps && Math.abs(a.lng - b.lng) <= eps;
@@ -580,30 +565,53 @@ export default function RouteOptimizerPanel() {
 
             {/* 출발지 시간 설정 (인라인 배치) */}
             {originSelection && (
-              <div className="flex gap-2 ml-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="flex-1 flex items-center gap-2 bg-white shadow-sm px-3 py-2 rounded-lg border border-slate-200/60">
-                  <span className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">체류</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="5"
-                    value={originDwellTime}
-                    onChange={(e) => setOriginDwellTime(Math.max(0, parseInt(e.target.value || '0')))}
-                    className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none border-b border-transparent focus:border-indigo-500"
-                  />
-                  <span className="text-[10px] text-slate-400">분</span>
+              <div className="ml-4 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="flex gap-2">
+                  <div className="flex-1 flex items-center gap-2 bg-white shadow-sm px-3 py-2 rounded-lg border border-slate-200/60">
+                    <span className="text-[10px] font-semibold text-slate-500 whitespace-nowrap">체류</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="5"
+                      value={originDwellTime}
+                      onChange={(e) => setOriginDwellTime(Math.max(0, parseInt(e.target.value || '0')))}
+                      className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none border-b border-transparent focus:border-indigo-500"
+                    />
+                    <span className="text-[10px] text-slate-400">분</span>
+                  </div>
+                  <div className={`flex-[1.5] shadow-sm flex items-center gap-2 bg-white px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-300 bg-rose-50' : 'border-slate-200/60'}`}>
+                    <span className={`text-[10px] font-semibold whitespace-nowrap ${isOriginDepartureTimeRequired ? 'text-rose-600' : 'text-slate-500'}`}>
+                      출발 {isOriginDepartureTimeRequired && '*'}
+                    </span>
+                    <input
+                      type="time"
+                      value={originDepartureTime}
+                      onChange={(e) => setOriginDepartureTime(e.target.value)}
+                      className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none"
+                    />
+                  </div>
                 </div>
-                <div className={`flex-[1.5] shadow-sm flex items-center gap-2 bg-white px-3 py-2 rounded-lg border transition-colors ${isOriginDepartureTimeRequired && !originDepartureTime ? 'border-rose-300 bg-rose-50' : 'border-slate-200/60'}`}>
-                  <span className={`text-[10px] font-semibold whitespace-nowrap ${isOriginDepartureTimeRequired ? 'text-rose-600' : 'text-slate-500'}`}>
-                    출발 {isOriginDepartureTimeRequired && '*'}
-                  </span>
-                  <input
-                    type="time"
-                    value={originDepartureTime}
-                    onChange={(e) => setOriginDepartureTime(e.target.value)}
-                    className="w-full bg-transparent text-xs text-center font-bold text-slate-700 focus:outline-none"
-                  />
-                </div>
+
+                {/* 계산 기준 날짜 안내: 입력 시각의 today/tomorrow/주말보정 결과를 투명하게 노출 */}
+                {resolvedDeparture && (
+                  <div className="flex items-center gap-1.5 px-1 text-[10px] text-slate-500">
+                    <span className="text-indigo-500">📅</span>
+                    <span>
+                      계산 기준{' '}
+                      <span className="font-bold text-slate-700">
+                        {describeRelativeDay(resolvedDeparture.date)
+                          ? `${describeRelativeDay(resolvedDeparture.date)} · `
+                          : ''}
+                        {formatDepartureLabel(resolvedDeparture.date)}
+                      </span>
+                      {' '}출발
+                    </span>
+                    {resolvedDeparture.adjustedForWeekend && (
+                      <span className="text-amber-600 font-semibold">(주말→평일 보정)</span>
+                    )}
+                    <span className="ml-auto text-slate-400">예측 교통</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

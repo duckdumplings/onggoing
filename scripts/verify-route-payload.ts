@@ -8,13 +8,21 @@ import {
   PAYLOAD_REGRESSION_CASES,
   assertRoutePayloadRegression,
 } from '../src/domains/dispatch/evals/routePayloadRegression';
+import {
+  DEPARTURE_TIME_REGRESSION_CASES,
+  assertDepartureTimeRegression,
+} from '../src/domains/dispatch/evals/departureTimeRegression';
 
 try {
   assertRoutePayloadRegression();
   console.log('✓ route payload regression OK');
   console.log(`  - payload cases: ${PAYLOAD_REGRESSION_CASES.length}`);
+
+  assertDepartureTimeRegression();
+  console.log('✓ departure time regression OK');
+  console.log(`  - departure time cases: ${DEPARTURE_TIME_REGRESSION_CASES.length}`);
 } catch (e) {
-  console.error('✗ route payload regression failed');
+  console.error('✗ route payload/departure regression failed');
   if (e instanceof Error) {
     console.error(e.message);
   }
