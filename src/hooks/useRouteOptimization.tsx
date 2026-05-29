@@ -165,7 +165,7 @@ export interface RouteOptimizationState {
   setOptions: (o: Partial<OptimizationOptions>) => void;
   setRouteData: (d: RouteData | null) => void;
   setDwellMinutes: (list: number[]) => void;
-  optimizeRoute: () => Promise<{ success: boolean; error?: string; details?: any }>;
+  optimizeRoute: () => Promise<{ success: boolean; error?: string; details?: any; data?: any }>;
   optimizeRouteWith: (override?: Partial<{
     origins: Coordinate | null;
     destinations: Coordinate[];
@@ -174,8 +174,8 @@ export interface RouteOptimizationState {
     vehicleType: RouteOptimizationState['vehicleType'];
     options: Partial<OptimizationOptions>;
     dwellMinutes: number[];
-  }>) => Promise<{ success: boolean; error?: string; details?: any }>;
-  retry: () => Promise<{ success: boolean; error?: string; details?: any }>;
+  }>) => Promise<{ success: boolean; error?: string; details?: any; data?: any }>;
+  retry: () => Promise<{ success: boolean; error?: string; details?: any; data?: any }>;
   cancel: () => void;
   reset: () => void;
   lastError: any | null;
@@ -366,7 +366,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       } else {
         throw new Error('INVALID_RESPONSE');
       }
-      return { success: true };
+      return { success: true, data: data.data };
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         return { success: false, error: '요청이 취소되었습니다.' };

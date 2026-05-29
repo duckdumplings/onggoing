@@ -12,6 +12,10 @@ import {
   DEPARTURE_TIME_REGRESSION_CASES,
   assertDepartureTimeRegression,
 } from '../src/domains/dispatch/evals/departureTimeRegression';
+import {
+  SCENARIO_QUOTE_REGRESSION_CASES,
+  assertScenarioQuoteRegression,
+} from '../src/domains/dispatch/evals/scenarioQuoteRegression';
 
 try {
   assertRoutePayloadRegression();
@@ -21,6 +25,10 @@ try {
   assertDepartureTimeRegression();
   console.log('✓ departure time regression OK');
   console.log(`  - departure time cases: ${DEPARTURE_TIME_REGRESSION_CASES.length}`);
+
+  assertScenarioQuoteRegression();
+  console.log('✓ scenario quote regression OK');
+  console.log(`  - scenario quote cases: ${SCENARIO_QUOTE_REGRESSION_CASES.length}`);
 } catch (e) {
   console.error('✗ route payload/departure regression failed');
   if (e instanceof Error) {

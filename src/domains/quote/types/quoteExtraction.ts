@@ -1,5 +1,7 @@
 // 견적안 정보 추출 관련 타입 정의
 
+import type { Frequency, StopRole } from '@/domains/dispatch/types/routePlan';
+
 export type ExtractionMethod = 'llm' | 'heuristic';
 
 export interface ExtractedQuoteInfo {
@@ -19,6 +21,10 @@ export interface ExtractedQuoteInfo {
     isNextDay?: boolean; // deliveryTime이 익일 기준인지 여부
     dwellMinutes?: number; // 체류 시간 (분)
     priority?: 'high' | 'medium' | 'low';
+    /** 물류 역할(수거/하차/반납). 다중 수거→단일 하차 구분에 사용. */
+    role?: StopRole;
+    /** 지점별 물량(kg). */
+    weightKg?: number;
     memo?: string;
   }>;
 
@@ -37,6 +43,8 @@ export interface ExtractedQuoteInfo {
 
   // 스케줄 정보
   scheduleType?: 'regular' | 'ad-hoc';
+  /** 정기 수거 빈도(연 N회). schedule='regular'일 때 정량화에 사용. */
+  frequency?: Frequency;
   departureTime?: string; // HH:mm 형식
   estimatedDuration?: number; // 분 단위
 

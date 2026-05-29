@@ -21,8 +21,9 @@ type SavedOptimizationRun = {
 };
 
 export default function RouteOptimizerPanel() {
-  const shouldPersistOptimizationRun =
-    typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+  // 최적화 실행 결과는 환경(localhost 포함)과 무관하게 항상 저장한다.
+  // (이전엔 localhost에서 저장이 비활성화되어 "저장된 경로 불러오기"가 항상 비어 있었음)
+  const shouldPersistOptimizationRun = true;
   const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>('single');
   const [driverCount, setDriverCount] = useState(2);
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
@@ -1064,7 +1065,7 @@ export default function RouteOptimizerPanel() {
               console.log('🚀 [RouteOptimizerPanel] 단일 차량 최적화 시작');
 
               try {
-                await optimizeRouteWith({
+                const optimizeResult = await optimizeRouteWith({
                   origins: originSelection ? {
                     lat: originSelection.latitude,
                     lng: originSelection.longitude,
@@ -1077,46 +1078,46 @@ export default function RouteOptimizerPanel() {
                 console.log('✅ [RouteOptimizerPanel] optimizeRouteWith 호출 완료');
                 setFieldErrors({});
 
-                setTimeout(async () => {
-                  try {
-                    const currentRouteData = routeData;
-                    if (shouldPersistOptimizationRun && currentRouteData && currentRouteData.summary) {
-                      const saveResponse = await fetch('/api/optimization-runs', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          requestData: {
-                            origins: originSelection ? {
-                              lat: originSelection.latitude,
-                              lng: originSelection.longitude,
-                              address: originSelection.address || originSelection.name
-                            } : null,
-                            destinations: finalDest,
-                            vehicleType,
-                            optimizeOrder,
-                            useRealtimeTraffic: finalUseRealtimeTraffic,
-                            roadOption,
-                            returnToOrigin,
-                            departureAt: finalUseRealtimeTraffic ? null : new Date(departureDateTime).toISOString(),
-                            deliveryTimes: deliveryTimes.map(t => t || ''),
-                            isNextDayFlags: isNextDayFlags,
-                            dwellMinutes: allDwellTimes
-                          },
-                          resultData: currentRouteData,
-                          mode: 'single'
-                        })
-                      });
+                // optimizeRouteWith가 반환한 최신 결과로 저장한다.
+                // (이전엔 stale 클로저의 routeData를 읽어 항상 저장이 누락됐음)
+                const savedRouteData = optimizeResult?.data;
+                try {
+                  if (shouldPersistOptimizationRun && optimizeResult?.success && savedRouteData?.summary) {
+                    const saveResponse = await fetch('/api/optimization-runs', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        requestData: {
+                          origins: originSelection ? {
+                            lat: originSelection.latitude,
+                            lng: originSelection.longitude,
+                            address: originSelection.address || originSelection.name
+                          } : null,
+                          destinations: finalDest,
+                          vehicleType,
+                          optimizeOrder,
+                          useRealtimeTraffic: finalUseRealtimeTraffic,
+                          roadOption,
+                          returnToOrigin,
+                          departureAt: finalUseRealtimeTraffic ? null : new Date(departureDateTime).toISOString(),
+                          deliveryTimes: deliveryTimes.map(t => t || ''),
+                          isNextDayFlags: isNextDayFlags,
+                          dwellMinutes: allDwellTimes
+                        },
+                        resultData: savedRouteData,
+                        mode: 'single'
+                      })
+                    });
 
-                      if (saveResponse.ok) {
-                        const saveData = await saveResponse.json();
-                        setSavedRouteId(saveData.data?.id || saveData.id);
-                        console.log('✅ [RouteOptimizerPanel] 단일 차량 최적화 결과 저장 완료');
-                      }
+                    if (saveResponse.ok) {
+                      const saveData = await saveResponse.json();
+                      setSavedRouteId(saveData.data?.id || saveData.id);
+                      console.log('✅ [RouteOptimizerPanel] 단일 차량 최적화 결과 저장 완료');
                     }
-                  } catch (saveError) {
-                    console.warn('단일 차량 최적화 결과 저장 실패:', saveError);
                   }
-                }, 1000);
+                } catch (saveError) {
+                  console.warn('단일 차량 최적화 결과 저장 실패:', saveError);
+                }
               } catch (error) {
                 console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
                 setLocalError('경로 최적화가 중단됐어요: ' + (error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요'));

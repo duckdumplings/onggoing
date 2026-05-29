@@ -4,6 +4,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2 } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
+import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
+import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
+import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
 
 type ChatMessage = {
   id: string;
@@ -29,6 +32,8 @@ type AIQuoteResponse = {
   followUpQuestions?: Array<{ field: string; question: string }>;
   quote?: any;
   routeSummary?: any;
+  scenarioComparison?: ScenarioComparison;
+  scenarioRouteErrors?: Array<{ label: string; message: string }>;
   assumptions?: string[];
   routeRequest?: any;
   routeRequestMeta?: {
@@ -747,7 +752,8 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         }));
       const sessionSummary = sessions.find((s) => s.id === sessionId)?.last_summary || null;
 
-      const res = await fetch('/api/quote/ai-chat-generate', {
+      // 추론 기반 견적 에이전트(tool-calling)로 단일화. 구 규칙 파이프라인은 제거됨.
+      const res = await fetch('/api/quote/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1755,6 +1761,17 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               </div>
             </div>
 
+            {/* Scenario Comparison (다중 시나리오: 3/5/10개 지점) */}
+            {latestResult?.scenarioComparison && (
+              <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">시나리오 비교</div>
+                <ScenarioComparisonCard
+                  comparison={latestResult.scenarioComparison}
+                  routeErrors={latestResult.scenarioRouteErrors}
+                />
+              </div>
+            )}
+
             {/* Quote Result Card (Highlight) */}
             {latestResult?.quote && (
               <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1871,6 +1888,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     </button>
                   </div>
                 </div>
+
+                <SingleQuoteInsights
+                  vehicleType={latestResult.quote.basis?.vehicleType}
+                  distanceKm={latestResult.quote.basis?.distanceKm}
+                  driveMinutes={latestResult.quote.basis?.driveMinutes}
+                  dwellMinutes={latestResult.quote.basis?.dwellTotalMinutes}
+                />
               </div>
             )}
 
