@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square } from 'lucide-react';
+import { X, Send, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, ChevronRight, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
@@ -1146,7 +1146,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         return;
       }
 
-      pushAssistantMessage('✅ 좌측 패널과 지도에 견적 조건을 반영했습니다.', 'system');
+      pushAssistantMessage('좌측 패널과 지도에 견적 조건을 반영했어요.', 'system');
       onClose(); // 성공 시에만 닫기
     } finally {
       setIsPreviewLoading(false);
@@ -1289,14 +1289,14 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 md:p-6 transition-opacity duration-300">
+    <div className="fixed inset-0 z-[4000] flex items-center justify-center glass-overlay p-4 md:p-6 transition-opacity duration-300">
       <div className="flex h-full w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
 
         {/* Main Chat Area */}
         <div className="flex flex-1 flex-col h-full min-w-0 bg-white relative">
 
           {/* Header */}
-          <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4 bg-white/80 backdrop-blur-md z-10">
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4 bg-card z-10">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
                 <Sparkles className="h-5 w-5" />
@@ -1537,7 +1537,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                           disabled={!!feedbackSentByMessageId[msg.id]}
                           className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-indigo-600 font-bold' : 'text-slate-400 hover:text-indigo-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
                         >
-                          👍 도움이 됐어요
+                          <ThumbsUp className="w-3 h-3" /> 도움이 됐어요
                         </button>
                         {!feedbackSentByMessageId[msg.id] && <span className="text-slate-300 text-[8px]">|</span>}
                         <button
@@ -1546,7 +1546,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                           disabled={!!feedbackSentByMessageId[msg.id]}
                           className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'negative' ? 'text-rose-600 font-bold' : 'text-slate-400 hover:text-rose-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'negative' ? 'hidden' : ''}`}
                         >
-                          👎 아쉬워요
+                          <ThumbsDown className="w-3 h-3" /> 아쉬워요
                         </button>
                       </div>
                     )}
@@ -1648,7 +1648,6 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
             </div>
 
             <div className="relative group">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl opacity-20 group-hover:opacity-40 transition duration-200 blur"></div>
               <div className="relative flex items-end bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden focus-within:ring-2 focus-within:ring-indigo-100 transition-shadow">
                 <input
                   ref={fileInputRef}
@@ -2044,7 +2043,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     기준: {latestResult.quote.basis?.vehicleType} · {latestResult.quote.basis?.scheduleType === 'regular' ? '정기' : '비정기'}
                   </span>
                 </div>
-                <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-5 text-white shadow-xl shadow-indigo-200">
+                <div className="bg-primary rounded-2xl p-5 text-white shadow-xl">
 
                   <div className="flex items-start justify-between mb-4">
                     <div>
@@ -2074,11 +2073,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-white/10 rounded-lg p-2 backdrop-blur-sm">
+                    <div className="bg-white/10 rounded-lg p-2">
                       <div className="text-[10px] text-indigo-200">운행 거리</div>
                       <div className="text-sm font-bold">{latestResult.quote.basis?.distanceKm}km</div>
                     </div>
-                    <div className="bg-white/10 rounded-lg p-2 backdrop-blur-sm">
+                    <div className="bg-white/10 rounded-lg p-2">
                       <div className="text-[10px] text-indigo-200">총 소요 시간</div>
                       <div className="text-sm font-bold">
                         {latestResult.quote.basis?.totalBillMinutes}분
@@ -2093,7 +2092,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     <div className="mb-4 rounded-lg bg-amber-50/95 border border-amber-200 px-3 py-2 text-[11px] leading-snug text-amber-900 shadow-sm">
                       <span className="font-semibold">단가 인하 구간 안내</span>
                       <span className="block mt-0.5 text-amber-800">
-                        {latestResult.quote.hourly.advisor.message.replace(/^💡\s*/, '')}
+                        {latestResult.quote.hourly.advisor.message.replace(/^\u{1F4A1}\s*/u, '')}
                       </span>
                     </div>
                   )}
