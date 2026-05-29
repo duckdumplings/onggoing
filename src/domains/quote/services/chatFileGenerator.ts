@@ -1,6 +1,25 @@
+import path from 'path';
+import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
+
+/**
+ * pdfkit 기본 폰트(Helvetica)는 한글 글리프가 없어 PDF에서 한글이 깨진다.
+ * public/fonts에 번들한 Pretendard(OTF/CFF)를 임베드해 한글을 정상 렌더한다.
+ * 폰트 파일이 없으면(번들 누락 등) 예외 대신 기본 폰트로 graceful degrade.
+ */
+const KOREAN_FONT_PATH = path.join(process.cwd(), 'public', 'fonts', 'Pretendard-Regular.otf');
+let cachedKoreanFont: Buffer | null | undefined;
+function loadKoreanFont(): Buffer | null {
+  if (cachedKoreanFont !== undefined) return cachedKoreanFont;
+  try {
+    cachedKoreanFont = fs.readFileSync(KOREAN_FONT_PATH);
+  } catch {
+    cachedKoreanFont = null;
+  }
+  return cachedKoreanFont;
+}
 
 export type GeneratedFileType = 'pdf' | 'xlsx' | 'md' | 'txt' | 'docx' | 'json';
 
@@ -133,6 +152,13 @@ async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
     doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     doc.on('end', () => resolve());
     doc.on('error', reject);
+
+    // 한글 폰트 임베드(없으면 기본 폰트 유지). 등록 후 기본 폰트로 지정해 모든 text에 적용.
+    const koreanFont = loadKoreanFont();
+    if (koreanFont) {
+      doc.registerFont('Pretendard', koreanFont);
+      doc.font('Pretendard');
+    }
 
     doc.fontSize(18).text('AI 견적 상세 리포트');
     doc.moveDown();

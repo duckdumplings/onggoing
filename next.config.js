@@ -5,6 +5,11 @@ const nextConfig = {
   // 상위 디렉터리(예: ~/package-lock.json)가 있을 때 워크스페이스 루트 추론이 틀어지면
   // dev 청크 경로·트레이싱이 꼬일 수 있어 이 앱 폴더를 명시한다.
   outputFileTracingRoot: path.join(__dirname),
+  // public/ 정적 자산은 서버리스 함수 파일시스템에 자동 포함되지 않으므로,
+  // PDF 견적서가 한글 폰트(Pretendard OTF)를 fs로 읽도록 해당 라우트에 명시 포함한다.
+  outputFileTracingIncludes: {
+    '/api/quote/chat-sessions/[id]/generated-files': ['./public/fonts/Pretendard-Regular.otf'],
+  },
   serverExternalPackages: ['pdf-parse'],
   experimental: {
     serverActions: {
