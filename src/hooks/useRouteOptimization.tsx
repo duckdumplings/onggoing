@@ -179,7 +179,7 @@ export interface RouteOptimizationState {
   cancel: () => void;
   reset: () => void;
   lastError: any | null;
-  // 다중 배송원 결과 — RouteOptimizerPanel ↔ TmapMainMap ↔ AIQuoteChat 공유 (window 전역 대체)
+  // 다중 배송원 결과 — RouteOptimizerPanel, TmapMainMap, AIQuoteChat 간 공유 (window 전역 대체)
   multiDriverResult: any;
   setMultiDriverResult: (result: any) => void;
   // 외부(견적챗/이력)에서 RouteOptimizerPanel 입력을 채우는 요청 (window 전역 대체)

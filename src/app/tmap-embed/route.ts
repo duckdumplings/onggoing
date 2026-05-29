@@ -295,7 +295,6 @@ export async function GET() {
                     
                     const wpColor = wp.color || '#3B82F6';
                     const wpLabel = wp.label || '';
-                    const wpIcon = wp.icon || '📍';
                     const driverIndex = wp.driverIndex !== undefined ? wp.driverIndex : -1;
                     const wpAddress = wp.address || '';
                     
@@ -304,9 +303,8 @@ export async function GET() {
                       const marker = new Tmapv2.Marker({
                         position: new Tmapv2.LatLng(wp.lat, wp.lng),
                         map: map,
-                        icon: wpIcon,
-                        iconSize: new Tmapv2.Size(32, 32),
-                        label: wpLabel,
+                        icon: createPinIcon(wpLabel || String(wpIndex + 1), wp.etaLabel, wp.riskColor || wpColor, wpColor),
+                        iconSize: new Tmapv2.Size(70, 56),
                         title: wpAddress || wpLabel
                       });
                       
@@ -1272,7 +1270,7 @@ export async function GET() {
             }
             try { installGlobalInteraction(false); } catch (e) { console.warn('[TmapEmbed] installGlobalInteraction failed at module tail', e); }
             
-            function createPinIcon(label, etaLabel, riskColor) {
+            function createPinIcon(label, etaLabel, riskColor, circleColor) {
               const canvas = document.createElement('canvas');
               canvas.width = 70;
               canvas.height = 56;
@@ -1294,7 +1292,7 @@ export async function GET() {
               }
               
               // 원형 배경
-              ctx.fillStyle = '#3B82F6';
+              ctx.fillStyle = circleColor || '#3B82F6';
               ctx.beginPath();
               ctx.arc(35, 36, 16, 0, 2 * Math.PI);
               ctx.fill();

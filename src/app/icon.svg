@@ -7,6 +7,9 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" ry="112" fill="url(#g)"/>
-  <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="360" aria-label="compass emoji" style="font-family: 'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Twemoji Mozilla',sans-serif">🧭</text>
+  <!-- Lucide "compass" 아이콘 (24x24)을 중앙 정렬·확대. 이모지 대체 -->
+  <g transform="translate(116 116) scale(11.667)" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/>
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
+  </g>
 </svg>
-

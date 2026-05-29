@@ -144,7 +144,6 @@ export default function TmapMainMap() {
             lat: driver.origin.latitude,
             lng: driver.origin.longitude,
             label: '출발',
-            icon: '🚀',
             color: '#10B981',
             priority: 1,
             address: driver.origin.address || '',
@@ -167,7 +166,6 @@ export default function TmapMainMap() {
             lat: dest.latitude,
             lng: dest.longitude,
             label: `${driverIndex + 1}-${index + 1}`, // 배송원번호-경유지번호
-            icon: isLast ? '🎯' : '📍',
             color: color,
             priority: 2,
             address: dest.address || waypoint?.address || '',
@@ -194,7 +192,6 @@ export default function TmapMainMap() {
           lat: origins.lat,
           lng: origins.lng,
           label: '출발',
-          icon: '🚀', // 출발 아이콘
           color: '#10B981', // 초록색
           priority: 1,
           address: (origins as any).address || ''
@@ -225,18 +222,16 @@ export default function TmapMainMap() {
           Math.abs(wp.longitude - dest.lng) < 0.0001
         ) || routeWaypoints[index];
 
-        let label, icon, color, priority;
+        let label, color, priority;
 
         if (isDestinationNode) {
           // 최종 도착지
           label = '도착';
-          icon = '🎯';
           color = '#EF4444'; // 빨간색
           priority = 3;
         } else {
           // 경유지들 (최적화된 순서 번호 표시)
           label = String(index + 1);
-          icon = '📍';
           color = '#3B82F6'; // 파란색
           priority = 2;
         }
@@ -245,7 +240,6 @@ export default function TmapMainMap() {
           lat: dest.lat,
           lng: dest.lng,
           label,
-          icon,
           color,
           priority,
           address: (dest as any).address || matched?.address || '',
@@ -274,7 +268,6 @@ export default function TmapMainMap() {
           lat: origins.lat,
           lng: origins.lng,
           label: '출발',
-          icon: '🚀',
           color: '#10B981',
           priority: 1,
           address: (origins as any).address || ''
@@ -287,7 +280,6 @@ export default function TmapMainMap() {
           lat: dest.lat,
           lng: dest.lng,
           label: isExplicitDestination ? '도착' : String(index + 1),
-          icon: isExplicitDestination ? '🎯' : '📍',
           color: isExplicitDestination ? '#EF4444' : '#3B82F6',
           priority: 2,
           address: (dest as any).address || ''
