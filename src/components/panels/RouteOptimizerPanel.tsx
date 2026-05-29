@@ -5,7 +5,29 @@ import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 import WaypointList, { type Waypoint } from './WaypointList';
 import MultiDriverResultsPanel from './MultiDriverResultsPanel';
-import { ChevronDown, ChevronUp, Settings, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Settings,
+  X,
+  Map,
+  Car,
+  Truck,
+  Calendar,
+  CornerUpLeft,
+  Flag,
+  MapPin,
+  Clock,
+  Coins,
+  Route,
+  Shuffle,
+  Radio,
+  Navigation,
+  Ban,
+  AlertTriangle,
+} from 'lucide-react';
+import { Tabs, RadioGroup, Switch, ThemeToggle } from '@/components/ui';
+import { cn } from '@/utils/cn';
 import { reportActionFailure } from '@/libs/errorReporting';
 import { resolveDepartureDateTime, formatDepartureLabel, describeRelativeDay } from '@/domains/dispatch/utils/departureTime';
 
@@ -319,7 +341,7 @@ export default function RouteOptimizerPanel() {
   useEffect(() => {
     const hasTimeSettings = originDepartureTime || hasAnyDeliveryTime;
     if (hasTimeSettings && useRealtimeTraffic) {
-      console.log('⏰ [useEffect] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
+      console.log('[useEffect] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
       setUseRealtimeTraffic(false);
     }
   }, [originDepartureTime, hasAnyDeliveryTime, useRealtimeTraffic]);
@@ -327,7 +349,7 @@ export default function RouteOptimizerPanel() {
   // 출발지 배송출발시간이 설정되면 실시간 교통정보 자동 비활성화 (다음날 기준 계산)
   useEffect(() => {
     if (originDepartureTime && useRealtimeTraffic) {
-      console.log('🚀 [useEffect] 출발지 배송출발시간 설정 - 실시간 교통정보 자동 비활성화 (다음날 기준)');
+      console.log('[useEffect] 출발지 배송출발시간 설정 - 실시간 교통정보 자동 비활성화 (다음날 기준)');
       setUseRealtimeTraffic(false);
     }
   }, [originDepartureTime, useRealtimeTraffic]);
@@ -449,80 +471,58 @@ export default function RouteOptimizerPanel() {
   };
 
   return (
-    <section className="flex flex-col bg-white/90 backdrop-blur-xl border-r border-slate-200/60 shadow-2xl shadow-indigo-500/5 font-sans transition-all duration-300">
+    <section className="flex flex-col glass-card rounded-none border-0 border-r border-border font-sans transition-all duration-300">
       {/* Header */}
-      <div className="flex-none px-5 py-5 border-b border-slate-100 bg-white/60 backdrop-blur-md">
+      <div className="flex-none px-5 py-5 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-xl shadow-lg shadow-indigo-200 text-white flex items-center justify-center">
-              <span className="text-lg">🗺️</span>
+            <div className="p-2.5 bg-primary rounded-xl text-primary-foreground flex items-center justify-center">
+              <Map className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-800 tracking-tight leading-tight">경로 최적화</h2>
             </div>
           </div>
+          <ThemeToggle />
         </div>
       </div>
 
       {/* Main Content (Scrollable) */}
       <div className="p-5 space-y-6 pb-6">
         {/* 1. Resource Section (Mode & Vehicle) */}
-        <div className="bg-slate-50/80 rounded-xl border border-slate-200 p-4 space-y-4">
+        <div className="bg-muted rounded-xl border border-border p-4 space-y-4">
           {/* 모드 선택 */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setOptimizationMode('single');
-                setMultiDriverResult(null);
-              }}
-              className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all ${optimizationMode === 'single'
-                ? 'bg-white border-indigo-200 text-indigo-700 shadow-sm ring-1 ring-indigo-500/20'
-                : 'bg-transparent border-transparent text-slate-500 hover:bg-white hover:text-slate-700'
-                }`}
-            >
-              <span className="text-lg mb-1">🚗</span>
-              <span className="text-xs font-bold">단일 차량</span>
-            </button>
-            <button
-              onClick={() => {
-                setOptimizationMode('multi');
-                setMultiDriverResult(null);
-              }}
-              className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-lg border transition-all ${optimizationMode === 'multi'
-                ? 'bg-white border-indigo-200 text-indigo-700 shadow-sm ring-1 ring-indigo-500/20'
-                : 'bg-transparent border-transparent text-slate-500 hover:bg-white hover:text-slate-700'
-                }`}
-            >
-              <span className="text-lg mb-1">🚛</span>
-              <span className="text-xs font-bold">다중 배송원</span>
-            </button>
-          </div>
+          <RadioGroup
+            value={optimizationMode}
+            onValueChange={(value) => {
+              setOptimizationMode(value);
+              setMultiDriverResult(null);
+            }}
+            variant="cards"
+            columns={2}
+            aria-label="최적화 모드"
+            options={[
+              { value: 'single', label: '단일 차량', icon: <Car className="w-4 h-4" /> },
+              { value: 'multi', label: '다중 배송원', icon: <Truck className="w-4 h-4" /> },
+            ]}
+          />
 
-          {/* 차량 타입 선택 (탭 스타일) */}
-          <div className="flex bg-slate-200/50 p-1 rounded-lg">
-            <button
-              onClick={() => setVehicleType('레이')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${vehicleType === '레이'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-                }`}
-            >
-              레이 (승용)
-            </button>
-            <button
-              onClick={() => setVehicleType('스타렉스')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${vehicleType === '스타렉스'
-                ? 'bg-white text-slate-800 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-                }`}
-            >
-              스타렉스 (화물)
-            </button>
-          </div>
+          {/* 차량 타입 선택 */}
+          <Tabs
+            value={vehicleType}
+            onValueChange={(value) => setVehicleType(value)}
+            size="sm"
+            aria-label="차량 타입"
+            className="flex w-full"
+            items={[
+              { value: '레이', label: '레이 (승용)' },
+              { value: '스타렉스', label: '스타렉스 (화물)' },
+            ]}
+          />
 
           {/* 다중 배송원 모드일 때만 표시: 배송원 수 */}
           {optimizationMode === 'multi' && (
-            <div className="flex items-center justify-between pt-2 border-t border-slate-200/50">
+            <div className="flex items-center justify-between pt-2 border-t border-border">
               <span className="text-xs font-medium text-slate-600">배송원 수</span>
               <div className="flex items-center gap-2">
                 <input
@@ -551,8 +551,7 @@ export default function RouteOptimizerPanel() {
               출발지 정보
             </label>
             <div className="relative group ml-4">
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl opacity-0 group-hover:opacity-10 transition duration-500 blur"></div>
-              <div className="relative bg-white rounded-xl shadow-sm border border-slate-200/60">
+              <div className="relative bg-white rounded-xl shadow-sm border border-slate-200/60 transition-colors group-focus-within:border-primary/40">
                 <AddressAutocomplete
                   label=""
                   placeholder="출발지를 검색하세요"
@@ -596,7 +595,7 @@ export default function RouteOptimizerPanel() {
                 {/* 계산 기준 날짜 안내: 입력 시각의 today/tomorrow/주말보정 결과를 투명하게 노출 */}
                 {resolvedDeparture && (
                   <div className="flex items-center gap-1.5 px-1 text-[10px] text-slate-500">
-                    <span className="text-indigo-500">📅</span>
+                    <Calendar className="w-3 h-3 text-indigo-500" />
                     <span>
                       계산 기준{' '}
                       <span className="font-bold text-slate-700">
@@ -677,41 +676,32 @@ export default function RouteOptimizerPanel() {
               {/* 종료 정책 */}
               <div className="space-y-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">종료 정책</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'return-origin', label: '출발지 복귀', icon: '↩️' },
-                    { id: 'explicit', label: '별도 도착지', icon: '🏁' },
-                    { id: null, label: '마지막 종료', icon: '🛑' }
-                  ].map((option) => (
-                    <button
-                      key={String(option.id)}
-                      onClick={() => {
-                        if (option.id === 'return-origin') {
-                          setDestinationPolicy('return-origin');
-                          setUseExplicitDestination(false);
-                          setReturnToOrigin(true);
-                        } else if (option.id === 'explicit') {
-                          setDestinationPolicy('explicit');
-                          setUseExplicitDestination(true);
-                          setReturnToOrigin(false);
-                        } else {
-                          setDestinationPolicy(null);
-                          setUseExplicitDestination(false);
-                          setReturnToOrigin(false);
-                        }
-                      }}
-                      className={`flex flex-col items-center justify-center py-2 rounded-lg border transition-all ${(option.id === 'return-origin' && destinationPolicy === 'return-origin') ||
-                          (option.id === 'explicit' && destinationPolicy === 'explicit') ||
-                          (option.id === null && destinationPolicy === null)
-                          ? 'bg-white border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500/20'
-                          : 'bg-white border-slate-200 text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      <span className="text-sm mb-0.5">{option.icon}</span>
-                      <span className="text-[10px] font-bold">{option.label}</span>
-                    </button>
-                  ))}
-                </div>
+                <RadioGroup
+                  value={destinationPolicy ?? 'last-stop'}
+                  onValueChange={(value) => {
+                    if (value === 'return-origin') {
+                      setDestinationPolicy('return-origin');
+                      setUseExplicitDestination(false);
+                      setReturnToOrigin(true);
+                    } else if (value === 'explicit') {
+                      setDestinationPolicy('explicit');
+                      setUseExplicitDestination(true);
+                      setReturnToOrigin(false);
+                    } else {
+                      setDestinationPolicy(null);
+                      setUseExplicitDestination(false);
+                      setReturnToOrigin(false);
+                    }
+                  }}
+                  variant="cards"
+                  columns={3}
+                  aria-label="종료 정책"
+                  options={[
+                    { value: 'return-origin', label: '출발지 복귀', icon: <CornerUpLeft className="w-4 h-4" /> },
+                    { value: 'explicit', label: '별도 도착지', icon: <Flag className="w-4 h-4" /> },
+                    { value: 'last-stop', label: '마지막 종료', icon: <MapPin className="w-4 h-4" /> },
+                  ]}
+                />
 
                 {/* 별도 도착지 입력창 */}
                 {useExplicitDestination && (
@@ -729,25 +719,17 @@ export default function RouteOptimizerPanel() {
               {/* 도로 옵션 */}
               <div className="space-y-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">도로 옵션</span>
-                <div className="flex bg-white rounded-lg border border-slate-200 p-1">
-                  {[
-                    { id: 'time-first', label: '⏱️ 시간우선', desc: '유료도로 포함, 최단 소요시간' },
-                    { id: 'toll-saving', label: '💰 요금절약', desc: '시간 일부 양보, 통행료 최소화' },
-                    { id: 'free-road-first', label: '🛣️ 무료우선', desc: '유료도로 회피, 시간 무관' }
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => setRoadOption(opt.id as any)}
-                      title={opt.desc}
-                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all ${roadOption === opt.id
-                          ? 'bg-indigo-50 text-indigo-700 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                <RadioGroup
+                  value={roadOption}
+                  onValueChange={(value) => setRoadOption(value)}
+                  variant="segmented"
+                  aria-label="도로 옵션"
+                  options={[
+                    { value: 'time-first', label: '시간우선', icon: <Clock className="w-3 h-3" />, description: '유료도로 포함, 최단 소요시간' },
+                    { value: 'toll-saving', label: '요금절약', icon: <Coins className="w-3 h-3" />, description: '시간 일부 양보, 통행료 최소화' },
+                    { value: 'free-road-first', label: '무료우선', icon: <Route className="w-3 h-3" />, description: '유료도로 회피, 시간 무관' },
+                  ]}
+                />
                 <p className="text-[10px] text-slate-500 leading-snug px-1">
                   {roadOption === 'time-first' && '유료도로를 포함해 가장 빠른 경로. 통행료가 발생할 수 있습니다.'}
                   {roadOption === 'toll-saving' && '시간을 조금 양보하는 대신 통행료를 줄이는 절충안.'}
@@ -759,20 +741,36 @@ export default function RouteOptimizerPanel() {
               <div className="space-y-2">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">기타 설정</span>
                 <div className="flex flex-col gap-2">
-                  <label className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer">
-                    <span className="text-xs font-medium text-slate-700">🔄 자동 순서 최적화</span>
-                    <div className="relative flex items-center">
-                      <input type="checkbox" className="peer sr-only" checked={optimizeOrder} onChange={(e) => setOptimizeOrder(e.target.checked)} />
-                      <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </div>
-                  </label>
-                  <label className={`flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200 cursor-pointer ${!!originDepartureTime || hasAnyDeliveryTime ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                    <span className="text-xs font-medium text-slate-700">📡 실시간 교통정보</span>
-                    <div className="relative flex items-center">
-                      <input type="checkbox" className="peer sr-only" checked={useRealtimeTraffic} onChange={(e) => setUseRealtimeTraffic(e.target.checked)} disabled={!!originDepartureTime || hasAnyDeliveryTime} />
-                      <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
-                    </div>
-                  </label>
+                  <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                      <Shuffle className="w-3.5 h-3.5 text-slate-400" />
+                      자동 순서 최적화
+                    </span>
+                    <Switch
+                      checked={optimizeOrder}
+                      onCheckedChange={setOptimizeOrder}
+                      size="sm"
+                      aria-label="자동 순서 최적화"
+                    />
+                  </div>
+                  <div
+                    className={cn(
+                      'flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200',
+                      (!!originDepartureTime || hasAnyDeliveryTime) && 'opacity-60',
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                      <Radio className="w-3.5 h-3.5 text-slate-400" />
+                      실시간 교통정보
+                    </span>
+                    <Switch
+                      checked={useRealtimeTraffic}
+                      onCheckedChange={setUseRealtimeTraffic}
+                      disabled={!!originDepartureTime || hasAnyDeliveryTime}
+                      size="sm"
+                      aria-label="실시간 교통정보"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -783,7 +781,7 @@ export default function RouteOptimizerPanel() {
         {(hasHardFailure || hasWarning || (lastError?.details?.errors?.length ?? 0) > 0) && (
           <div className={`rounded-xl p-4 border shadow-sm animate-in shake duration-300 ${hasHardFailure ? 'bg-rose-50 border-rose-100 text-rose-800' : 'bg-amber-50 border-amber-100 text-amber-800'}`}>
             <div className="flex items-start gap-3">
-              <div className="text-xl mt-0.5">{hasHardFailure ? '🚫' : '⚠️'}</div>
+              <div className="mt-0.5">{hasHardFailure ? <Ban className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}</div>
               <div className="space-y-1">
                 <div className="font-bold text-sm">{hasHardFailure ? '최적화 실패' : '주의 필요'}</div>
                 <div className="text-xs leading-relaxed opacity-90">{localError || error || lastError?.message || lastError?.error}</div>
@@ -801,12 +799,12 @@ export default function RouteOptimizerPanel() {
       </div>
 
       {/* Sticky Footer Action Button */}
-      <div className="sticky bottom-0 p-5 bg-white/80 backdrop-blur-md border-t border-slate-200 z-30">
+      <div className="sticky bottom-0 p-5 bg-card border-t border-border z-30">
         <button
           ref={optimizeButtonRef}
           onClick={async () => {
-            console.log('🎯 [RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
-            console.log('🔍 [RouteOptimizerPanel] 현재 상태:', {
+            console.log('[RouteOptimizerPanel] 최적 경로 계산 버튼 클릭됨');
+            console.log('[RouteOptimizerPanel] 현재 상태:', {
               optimizationMode,
               driverCount,
               originSelection,
@@ -819,7 +817,7 @@ export default function RouteOptimizerPanel() {
             setFieldErrors({});
 
             if (!originSelection) {
-              console.log('❌ [RouteOptimizerPanel] 출발지가 선택되지 않음');
+              console.log('[RouteOptimizerPanel] 출발지가 선택되지 않음');
               setLocalError('출발지를 먼저 선택하세요.');
               return;
             }
@@ -828,7 +826,7 @@ export default function RouteOptimizerPanel() {
             const unconfirmedIdx: number[] = [];
             waypoints.forEach((w, i) => { if (!w.selection) unconfirmedIdx.push(i + 1); });
             if (unconfirmedIdx.length > 0) {
-              console.log('❌ [RouteOptimizerPanel] 미확정 경유지 존재:', unconfirmedIdx);
+              console.log('[RouteOptimizerPanel] 미확정 경유지 존재:', unconfirmedIdx);
               setLocalError(`주소가 확정되지 않은 경유지(${unconfirmedIdx.join(', ')})가 있습니다. 각 경유지에서 검색 후 Enter로 자동 확정하거나 목록에서 선택해 "확정됨" 상태로 만들어주세요.`);
               const fe: Record<number, string> = {};
               unconfirmedIdx.forEach((idx) => { fe[idx - 1] = '주소 미확정: 검색 후 Enter로 확정하거나 제안 목록에서 선택해주세요.'; });
@@ -838,10 +836,10 @@ export default function RouteOptimizerPanel() {
 
             // waypoints에서 유효한 목적지 추출
             const validWaypoints: Waypoint[] = waypoints.filter(w => w.selection);
-            console.log('📍 [RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
+            console.log('[RouteOptimizerPanel] 유효한 waypoints:', validWaypoints);
 
             if (validWaypoints.length === 0) {
-              console.log('❌ [RouteOptimizerPanel] 유효한 목적지가 없음');
+              console.log('[RouteOptimizerPanel] 유효한 목적지가 없음');
               setLocalError('목적지를 하나 이상 추가하세요.');
               return;
             }
@@ -860,7 +858,7 @@ export default function RouteOptimizerPanel() {
 
             // 시간제약 기반 최적화를 위한 출발지 배송출발시간 필수 검증
             if (isOriginDepartureTimeRequired && !originDepartureTime) {
-              console.log('❌ [RouteOptimizerPanel] 출발지 배송출발시간이 필수인데 비어있음');
+              console.log('[RouteOptimizerPanel] 출발지 배송출발시간이 필수인데 비어있음');
               setLocalError('시간제약 기반 최적화를 위해 출발지 배송출발시간을 입력해주세요.');
               return;
             }
@@ -922,7 +920,7 @@ export default function RouteOptimizerPanel() {
             let finalUseRealtimeTraffic = useRealtimeTraffic;
 
             if (hasTimeSettings && useRealtimeTraffic) {
-              console.log('⏰ [RouteOptimizerPanel] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
+              console.log('[RouteOptimizerPanel] 시간 설정 감지 - 실시간 교통정보 자동 비활성화');
               setUseRealtimeTraffic(false);
               finalUseRealtimeTraffic = false;
             }
@@ -956,7 +954,7 @@ export default function RouteOptimizerPanel() {
 
             if (optimizationMode === 'multi') {
               // 다중 배송원 최적화
-              console.log('🚛 [RouteOptimizerPanel] 다중 배송원 최적화 시작');
+              console.log('[RouteOptimizerPanel] 다중 배송원 최적화 시작');
               setIsMultiDriverLoading(true);
               setMultiDriverResult(null);
 
@@ -998,7 +996,7 @@ export default function RouteOptimizerPanel() {
                 }
 
                 const result = await response.json();
-                console.log('✅ [RouteOptimizerPanel] 다중 배송원 최적화 완료:', result);
+                console.log('[RouteOptimizerPanel] 다중 배송원 최적화 완료:', result);
                 setMultiDriverResult(result);
                 setFieldErrors({});
 
@@ -1036,14 +1034,14 @@ export default function RouteOptimizerPanel() {
                     if (saveResponse.ok) {
                       const saveData = await saveResponse.json();
                       setSavedRouteId(saveData.data?.id || saveData.id);
-                      console.log('✅ [RouteOptimizerPanel] 최적화 결과 저장 완료');
+                      console.log('[RouteOptimizerPanel] 최적화 결과 저장 완료');
                     }
                   } catch (saveError) {
                     console.warn('최적화 결과 저장 실패:', saveError);
                   }
                 }
               } catch (error) {
-                console.error('❌ [RouteOptimizerPanel] 다중 배송원 최적화 오류:', error);
+                console.error('[RouteOptimizerPanel] 다중 배송원 최적화 오류:', error);
                 setLocalError('다중 배송원 최적화가 중단됐어요: ' + (error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요'));
                 reportActionFailure({
                   source: 'route_optimization',
@@ -1062,7 +1060,7 @@ export default function RouteOptimizerPanel() {
               }
             } else {
               // 단일 차량 최적화
-              console.log('🚀 [RouteOptimizerPanel] 단일 차량 최적화 시작');
+              console.log('[RouteOptimizerPanel] 단일 차량 최적화 시작');
 
               try {
                 const optimizeResult = await optimizeRouteWith({
@@ -1075,7 +1073,7 @@ export default function RouteOptimizerPanel() {
                   options: optionsWithDeliveryTimes,
                   dwellMinutes: allDwellTimes
                 });
-                console.log('✅ [RouteOptimizerPanel] optimizeRouteWith 호출 완료');
+                console.log('[RouteOptimizerPanel] optimizeRouteWith 호출 완료');
                 setFieldErrors({});
 
                 // optimizeRouteWith가 반환한 최신 결과로 저장한다.
@@ -1112,14 +1110,14 @@ export default function RouteOptimizerPanel() {
                     if (saveResponse.ok) {
                       const saveData = await saveResponse.json();
                       setSavedRouteId(saveData.data?.id || saveData.id);
-                      console.log('✅ [RouteOptimizerPanel] 단일 차량 최적화 결과 저장 완료');
+                      console.log('[RouteOptimizerPanel] 단일 차량 최적화 결과 저장 완료');
                     }
                   }
                 } catch (saveError) {
                   console.warn('단일 차량 최적화 결과 저장 실패:', saveError);
                 }
               } catch (error) {
-                console.error('❌ [RouteOptimizerPanel] optimizeRouteWith 오류:', error);
+                console.error('[RouteOptimizerPanel] optimizeRouteWith 오류:', error);
                 setLocalError('경로 최적화가 중단됐어요: ' + (error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요'));
                 reportActionFailure({
                   source: 'route_optimization',
@@ -1158,10 +1156,12 @@ export default function RouteOptimizerPanel() {
             }, 500);
           }}
           disabled={isLoading || isMultiDriverLoading}
-          className={`w-full h-14 rounded-xl font-bold text-lg shadow-lg shadow-indigo-200 transition-all duration-300 transform active:scale-[0.98] flex items-center justify-center gap-2 ${isLoading || isMultiDriverLoading
-            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-            : 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white hover:shadow-indigo-300 hover:-translate-y-0.5'
-            }`}
+          className={cn(
+            'w-full h-14 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 transform active:scale-[0.98] flex items-center justify-center gap-2',
+            isLoading || isMultiDriverLoading
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-primary text-primary-foreground hover:brightness-110 hover:-translate-y-0.5',
+          )}
         >
           {isLoading || isMultiDriverLoading ? (
             <>
@@ -1173,7 +1173,7 @@ export default function RouteOptimizerPanel() {
             </>
           ) : (
             <>
-              <span>🚀</span>
+              <Navigation className="w-5 h-5" />
               {optimizationMode === 'multi' ? `${driverCount}명 배송원 경로 계산` : '최적 경로 계산'}
             </>
           )}
@@ -1182,7 +1182,7 @@ export default function RouteOptimizerPanel() {
 
       {/* 다중 배송원 결과 표시 (Floating Modal처럼 표시하거나 별도 영역으로) */}
       {optimizationMode === 'multi' && multiDriverResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center glass-overlay p-4">
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
               <h3 className="text-lg font-bold text-slate-800">다중 배송원 최적화 결과</h3>
@@ -1211,8 +1211,8 @@ export default function RouteOptimizerPanel() {
       </div>
 
       {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/60 bg-white/95 backdrop-blur-xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center glass-overlay p-4">
+          <div className="w-full max-w-2xl rounded-2xl glass-canvas overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-bold text-slate-800">최근 저장된 경로</h3>

@@ -274,6 +274,19 @@
   }
 }
 
+/* Tooltip 등장 — 절제된 페이드 (prefers-reduced-motion에서 자동 비활성) */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-tooltip-in {
+  animation: tooltip-in 0.15s ease-out;
+}
+
 /* Touch device: always show hover-reveal actions + tap feedback */
 @media (hover: none) {
   .group:hover .group-hover\:opacity-100,

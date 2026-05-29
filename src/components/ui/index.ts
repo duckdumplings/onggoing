@@ -12,6 +12,12 @@ export { default as Skeleton } from './Skeleton';
 export { default as EmptyState } from './EmptyState';
 export { default as SummaryCard } from './SummaryCard';
 
+export { default as Switch } from './Switch';
+export { default as RadioGroup } from './RadioGroup';
+export { default as Tabs } from './Tabs';
+export { default as Tooltip } from './Tooltip';
+export { default as ThemeToggle } from './ThemeToggle';
+
 export type { ButtonProps } from './Button';
 export type { InputProps } from './Input';
 export type { SelectProps, SelectOption } from './Select';
@@ -24,3 +30,8 @@ export type { BadgeProps, BadgeVariant } from './Badge';
 export type { SkeletonProps } from './Skeleton';
 export type { EmptyStateProps } from './EmptyState';
 export type { SummaryCardProps, Trend } from './SummaryCard';
+
+export type { SwitchProps } from './Switch';
+export type { RadioGroupProps, RadioOption } from './RadioGroup';
+export type { TabsProps, TabItem } from './Tabs';
+export type { TooltipProps } from './Tooltip';
