@@ -12,6 +12,7 @@ export { default as Skeleton } from './Skeleton';
 export { default as EmptyState } from './EmptyState';
 export { default as SummaryCard } from './SummaryCard';
 
+export { default as BottomSheet } from './BottomSheet';
 export { default as Switch } from './Switch';
 export { default as RadioGroup } from './RadioGroup';
 export { default as Tabs } from './Tabs';
@@ -31,6 +32,7 @@ export type { SkeletonProps } from './Skeleton';
 export type { EmptyStateProps } from './EmptyState';
 export type { SummaryCardProps, Trend } from './SummaryCard';
 
+export type { BottomSheetProps, BottomSheetSnap } from './BottomSheet';
 export type { SwitchProps } from './Switch';
 export type { RadioGroupProps, RadioOption } from './RadioGroup';
 export type { TabsProps, TabItem } from './Tabs';

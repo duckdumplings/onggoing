@@ -4,6 +4,7 @@ import TmapMainMap from '@/components/map/TmapMainMap';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import AIQuoteLauncher from '@/components/panels/AIQuoteLauncher';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
+import BottomSheet from '@/components/ui/BottomSheet';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Compass } from 'lucide-react';
@@ -50,17 +51,19 @@ export default function Home() {
 
       </motion.aside>
 
-      {/* 모바일 상단 패널 */}
-      <div className="md:hidden w-full p-4 space-y-3 bg-background">
-        <RouteOptimizerPanel />
-        <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
-
-      </div>
-
-      {/* 우측 지도 - 전체 화면 차지 */}
+      {/* 우측 지도 - 모바일에서는 전체 화면, 데스크톱에서는 잔여 영역 */}
       <main className="relative flex-1 h-full bg-muted">
         <TmapMainMap />
       </main>
+
+      {/* 모바일 하단 시트 — 지도를 가리지 않고 제어판을 띄운다 */}
+      <BottomSheet aria-label="경로·견적 제어판">
+        <div className="space-y-3 pt-1">
+          <AIQuoteLauncher onOpen={() => setIsAiQuoteModalOpen(true)} />
+          <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent" />
+          <RouteOptimizerPanel />
+        </div>
+      </BottomSheet>
 
       <AIQuoteChatModal isOpen={isAiQuoteModalOpen} onClose={() => setIsAiQuoteModalOpen(false)} />
     </div>
