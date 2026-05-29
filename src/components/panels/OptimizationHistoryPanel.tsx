@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Loading } from '@/components/ui';
+import { Card, Button, Loading, EmptyState } from '@/components/ui';
+import { History } from 'lucide-react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
 interface OptimizationRun {
@@ -280,9 +281,11 @@ export function OptimizationHistoryPanel() {
             ))}
           </div>
         ) : (
-          <div className="text-center text-gray-500 py-8">
-            아직 최적화 실행 기록이 없습니다
-          </div>
+          <EmptyState
+            icon={<History className="w-5 h-5" />}
+            title="아직 최적화 실행 기록이 없어요"
+            description="경로를 한 번 계산하면 이곳에 자동으로 쌓여요."
+          />
         )}
       </Card>
 

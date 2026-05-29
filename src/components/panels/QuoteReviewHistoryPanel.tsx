@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { FileText, Trash2, Eye, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { FileText, FileSpreadsheet, FileImage, Paperclip, Trash2, Eye, AlertCircle, CheckCircle, X, ClipboardList } from 'lucide-react';
+import { EmptyState } from '@/components/ui';
 import RiskReportModal from '@/components/modals/RiskReportModal';
 
 interface ReviewItem {
@@ -115,11 +116,11 @@ export default function QuoteReviewHistoryPanel() {
 
   const getFileTypeIcon = (fileType: string) => {
     switch (fileType) {
-      case 'pdf': return '📄';
-      case 'excel': return '📊';
-      case 'word': return '📝';
-      case 'image': return '🖼️';
-      default: return '📎';
+      case 'pdf': return <FileText className="w-6 h-6" />;
+      case 'excel': return <FileSpreadsheet className="w-6 h-6" />;
+      case 'word': return <FileText className="w-6 h-6" />;
+      case 'image': return <FileImage className="w-6 h-6" />;
+      default: return <Paperclip className="w-6 h-6" />;
     }
   };
 
@@ -163,9 +164,11 @@ export default function QuoteReviewHistoryPanel() {
       {!loading && !error && (
         <div className="space-y-3">
           {reviews.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              검토 이력이 없습니다
-            </div>
+            <EmptyState
+              icon={<ClipboardList className="w-5 h-5" />}
+              title="아직 검토 이력이 없어요"
+              description="견적 문서를 검토하면 결과가 이곳에 기록돼요."
+            />
           ) : (
             reviews.map((review) => (
               <div
@@ -175,7 +178,7 @@ export default function QuoteReviewHistoryPanel() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl">{getFileTypeIcon(review.fileType)}</span>
+                      <span className="text-muted-foreground">{getFileTypeIcon(review.fileType)}</span>
                       <div>
                         <p className="font-medium text-gray-900">{review.fileName}</p>
                         <p className="text-xs text-gray-500 mt-0.5">
