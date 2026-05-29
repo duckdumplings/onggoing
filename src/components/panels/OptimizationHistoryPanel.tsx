@@ -44,7 +44,7 @@ export function OptimizationHistoryPanel() {
   const [error, setError] = useState<string | null>(null);
   const [selectedRun, setSelectedRun] = useState<OptimizationRun | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-  const { optimizeRouteWith } = useRouteOptimization();
+  const { optimizeRouteWith, requestInputApply } = useRouteOptimization();
 
   // 최적화 실행 히스토리 조회
   const fetchHistory = async (limit = 10, offset = 0) => {
@@ -99,10 +99,7 @@ export function OptimizationHistoryPanel() {
       console.log('재실행 시작:', run.request_data);
 
       // 1. RouteOptimizerPanel의 입력란에 이전 설정값들을 설정
-      const setRouteOptimizerInput = (window as any).setRouteOptimizerInput;
-      if (setRouteOptimizerInput) {
-        setRouteOptimizerInput(run.request_data);
-      }
+      requestInputApply(run.request_data);
 
       // 2. 잠시 기다린 후 최적화 실행 (입력값 설정이 완료될 때까지)
       setTimeout(async () => {

@@ -179,6 +179,12 @@ export interface RouteOptimizationState {
   cancel: () => void;
   reset: () => void;
   lastError: any | null;
+  // 다중 배송원 결과 — RouteOptimizerPanel ↔ TmapMainMap ↔ AIQuoteChat 공유 (window 전역 대체)
+  multiDriverResult: any;
+  setMultiDriverResult: (result: any) => void;
+  // 외부(견적챗/이력)에서 RouteOptimizerPanel 입력을 채우는 요청 (window 전역 대체)
+  inputApplyRequest: { data: any; nonce: number } | null;
+  requestInputApply: (data: any) => void;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -201,8 +207,16 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [error, setError] = useState<string | null>(null);
   const [lastError, setLastError] = useState<any | null>(null);
   const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
+  const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
+  const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
+  const inputNonceRef = useRef(0);
+
+  const requestInputApply = useCallback((data: any) => {
+    inputNonceRef.current += 1;
+    setInputApplyRequest({ data, nonce: inputNonceRef.current });
+  }, []);
 
   const setOptions = useCallback((o: Partial<OptimizationOptions>) => {
     setOptionsState(prev => ({ ...prev, ...o }));
@@ -444,6 +458,10 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     cancel,
     reset,
     lastError,
+    multiDriverResult,
+    setMultiDriverResult,
+    inputApplyRequest,
+    requestInputApply,
   };
 
   return (

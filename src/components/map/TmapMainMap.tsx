@@ -34,8 +34,7 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions } = useRouteOptimization();
-  const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
   const [showRecalculateDialog, setShowRecalculateDialog] = useState(false);
@@ -111,25 +110,8 @@ export default function TmapMainMap() {
     return `${h}:${m}`;
   };
 
-  // 다중 배송원 결과 감지
-  useEffect(() => {
-    const checkMultiDriver = () => {
-      try {
-        const result = (window as any).multiDriverResult;
-        if (result && result.success) {
-          setMultiDriverResult(result);
-        } else {
-          setMultiDriverResult(null);
-        }
-      } catch (e) {
-        // ignore
-      }
-    };
-
-    checkMultiDriver();
-    const interval = setInterval(checkMultiDriver, 500);
-    return () => clearInterval(interval);
-  }, []);
+  // 다중 배송원 결과는 useRouteOptimization 컨텍스트에서 공유받는다.
+  // (이전엔 전역 객체를 500ms 간격으로 폴링했음)
   const waypoints = useMemo(() => {
     const points: Array<{
       lat: number;

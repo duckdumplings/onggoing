@@ -48,7 +48,6 @@ export default function RouteOptimizerPanel() {
   const shouldPersistOptimizationRun = true;
   const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>('single');
   const [driverCount, setDriverCount] = useState(2);
-  const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [isMultiDriverLoading, setIsMultiDriverLoading] = useState(false);
   const [savedRouteId, setSavedRouteId] = useState<string | null>(null);
   const [isOptionsOpen, setIsOptionsOpen] = useState(true); // 옵션 아코디언 상태 (기본 펼침)
@@ -67,6 +66,9 @@ export default function RouteOptimizerPanel() {
     setVehicleType,
     lastError,
     routeData,
+    multiDriverResult,
+    setMultiDriverResult,
+    inputApplyRequest,
   } = useRouteOptimization();
 
   // 외부에서 입력값을 설정할 수 있는 함수들
@@ -167,23 +169,12 @@ export default function RouteOptimizerPanel() {
     }
   }, [setVehicleType]);
 
-  // 전역에서 접근할 수 있도록 window 객체에 등록
+  // 견적챗/이력에서 입력 적용을 요청하면 컨텍스트의 inputApplyRequest가 갱신된다.
+  // (이전엔 전역 함수 등록 + CustomEvent 방식으로 처리했음)
   useEffect(() => {
-    (window as any).setRouteOptimizerInput = setInputFromHistory;
-    return () => {
-      delete (window as any).setRouteOptimizerInput;
-    };
-  }, [setInputFromHistory]);
-
-  useEffect(() => {
-    const onAiApply = (event: Event) => {
-      const customEvent = event as CustomEvent<{ requestData?: any }>;
-      if (!customEvent?.detail?.requestData) return;
-      setInputFromHistory(customEvent.detail.requestData);
-    };
-    window.addEventListener('ai-quote-apply', onAiApply as EventListener);
-    return () => window.removeEventListener('ai-quote-apply', onAiApply as EventListener);
-  }, [setInputFromHistory]);
+    if (!inputApplyRequest?.data) return;
+    setInputFromHistory(inputApplyRequest.data);
+  }, [inputApplyRequest, setInputFromHistory]);
 
   // 선택 상태
   const [originSelection, setOriginSelection] = useState<AddressSelection | null>(null);
@@ -1016,12 +1007,6 @@ export default function RouteOptimizerPanel() {
                 console.log('[RouteOptimizerPanel] 다중 배송원 최적화 완료:', result);
                 setMultiDriverResult(result);
                 setFieldErrors({});
-
-                try {
-                  (window as any).multiDriverResult = result;
-                } catch (e) {
-                  console.warn('전역 상태 저장 실패:', e);
-                }
 
                 if (shouldPersistOptimizationRun) {
                   try {

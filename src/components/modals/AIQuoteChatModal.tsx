@@ -94,15 +94,8 @@ interface AIQuoteChatModalProps {
   onClose: () => void;
 }
 
-declare global {
-  interface Window {
-    setRouteOptimizerInput?: (requestData: any) => void;
-    multiDriverResult?: any;
-  }
-}
-
 export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalProps) {
-  const { optimizeRouteWith } = useRouteOptimization();
+  const { optimizeRouteWith, requestInputApply, setMultiDriverResult } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1061,14 +1054,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
   const applyToPanel = (requestData: any) => {
     if (!requestData) return;
-    if (typeof window.setRouteOptimizerInput === 'function') {
-      window.setRouteOptimizerInput(requestData);
-    }
-    window.dispatchEvent(
-      new CustomEvent('ai-quote-apply', {
-        detail: { requestData },
-      })
-    );
+    requestInputApply(requestData);
   };
 
   const handleApplyToPanel = () => applyToPanel(latestResult?.routeRequest);
@@ -1082,7 +1068,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     setPreviewError(null);
     setIsPreviewLoading(true);
     applyToPanel(requestData);
-    window.multiDriverResult = null;
+    setMultiDriverResult(null);
 
     const toCoord = (p: any) =>
       p && typeof p === 'object' && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)
