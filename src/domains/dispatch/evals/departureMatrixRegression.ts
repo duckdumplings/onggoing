@@ -8,6 +8,7 @@
 import {
   DEFAULT_DEPARTURE_PRESETS,
   resolveDeparturePresets,
+  assessDeadlineFeasibility,
 } from '@/domains/dispatch/utils/departureMatrix';
 
 interface MatrixCase {
@@ -59,6 +60,38 @@ export const DEPARTURE_MATRIX_REGRESSION_CASES: MatrixCase[] = [
         assert(new Date(r.iso).getTime() > now.getTime(), `future:${r.id}`);
         assert(typeof r.dateLabel === 'string' && r.dateLabel.length > 0, `label:${r.id}`);
       }
+    },
+  },
+  {
+    name: '데드라인 충족: 09:00 출발 + 120분 소요, 마감 15:00 → 충족(여유 240분)',
+    run: () => {
+      // 로컬 벽시계 09:00 출발(호스트 TZ 무관하게 결정론적). 마감은 로컬 HH:mm로 해석된다.
+      const dep = new Date(2026, 5, 1, 9, 0, 0).toISOString();
+      const f = assessDeadlineFeasibility(dep, 120, '15:00');
+      assert(f !== null, 'notNull');
+      assert(f!.arrivalLabel === '11:00', `arrival=${f!.arrivalLabel}`);
+      assert(f!.meetsDeadline === true, 'meets');
+      assert(f!.slackMinutes === 240, `slack=${f!.slackMinutes}`);
+    },
+  },
+  {
+    name: '데드라인 초과: 13:00 출발 + 180분 소요, 마감 15:00 → 미충족(초과 -60분)',
+    run: () => {
+      const dep = new Date(2026, 5, 1, 13, 0, 0).toISOString();
+      const f = assessDeadlineFeasibility(dep, 180, '15:00');
+      assert(f !== null, 'notNull');
+      assert(f!.arrivalLabel === '16:00', `arrival=${f!.arrivalLabel}`);
+      assert(f!.meetsDeadline === false, 'notMeets');
+      assert(f!.slackMinutes === -60, `slack=${f!.slackMinutes}`);
+    },
+  },
+  {
+    name: '잘못된 데드라인 형식은 null',
+    run: () => {
+      const dep = new Date(2026, 5, 1, 9, 0, 0).toISOString();
+      assert(assessDeadlineFeasibility(dep, 60, '오후 3시') === null, 'badFormat');
+      assert(assessDeadlineFeasibility(dep, 60, '25:00') === null, 'badHour');
+      assert(assessDeadlineFeasibility('not-a-date', 60, '15:00') === null, 'badDate');
     },
   },
 ];

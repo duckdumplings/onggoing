@@ -10,9 +10,10 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
+import { createServerClient } from '@/libs/supabase-client';
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
-import { resolveDeparturePresets } from '@/domains/dispatch/utils/departureMatrix';
+import { resolveDeparturePresets, assessDeadlineFeasibility } from '@/domains/dispatch/utils/departureMatrix';
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
 import { retrieveRagContext } from '@/domains/quote/services/ragRetriever';
 import {
@@ -243,14 +244,18 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     compare_departure_times: tool({
       description:
-        '단일 경로(역할 태깅된 stops)를 평일/주말 × 시간대(한산/출근/퇴근) 프리셋별로 계산해, 출발시간에 따른 소요시간·시간당 견적 차이를 매트릭스로 돌려준다. 사용자가 "출발시간/요일에 따라 견적이 달라지냐", "주말 기준으로도 내줘" 등을 물으면 사용하라. 시간당 요금제 기준이며, 금액은 도구 결과만 사용하라.',
+        '단일 경로(역할 태깅된 stops)를 평일/주말 × 시간대(한산/출근/퇴근) 프리셋별로 계산해, 출발시간에 따른 소요시간·시간당 견적 차이를 매트릭스로 돌려준다. 사용자가 "출발시간/요일에 따라 견적이 달라지냐", "주말 기준으로도 내줘", "오후 3시까지 도착해야 한다" 등을 물으면 사용하라. 시간당 요금제 기준이며, 금액은 도구 결과만 사용하라. deadline(도착 마감 시각)을 주면 각 출발시간의 예상 도착시각과 마감 충족 여부를 함께 돌려주고, 마감을 지키는 출발 중 가장 저렴한 것을 추천한다.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
         frequency: FrequencySchema.optional(),
+        deadline: z
+          .string()
+          .optional()
+          .describe('최종 지점 도착 마감 시각 "HH:mm"(24시간제). 예: "15:00". 사용자가 도착 마감을 말하면 채워라.'),
       }),
-      execute: async ({ stops, vehicleType, scheduleType, frequency }) => {
+      execute: async ({ stops, vehicleType, scheduleType, frequency, deadline }) => {
         const domainStops = toDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
@@ -330,12 +335,14 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               const quoteJson = await quoteRes.json();
               const hourly = quoteJson?.plans?.hourly ?? {};
               const oneTimePrice = Number(hourly.total ?? 0);
+              const totalMinutes = driveMinutes + dwellMinutesTotal;
+              const feasibility = deadline ? assessDeadlineFeasibility(preset.iso, totalMinutes, deadline) : null;
               return {
                 ...base,
                 km: Number(km.toFixed(1)),
                 driveMinutes,
                 dwellMinutes: dwellMinutesTotal,
-                totalMinutes: driveMinutes + dwellMinutesTotal,
+                totalMinutes,
                 billMinutes: Number(hourly.billMinutes ?? 0),
                 ratePerHour: Number(hourly.ratePerHour ?? 0),
                 fuelSurcharge: Number(hourly.fuelSurcharge ?? 0),
@@ -343,6 +350,13 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
                 formattedOneTime: won(oneTimePrice),
                 annualPrice: annualizePrice(oneTimePrice, freq),
                 formattedAnnual: won(annualizePrice(oneTimePrice, freq)),
+                ...(feasibility
+                  ? {
+                      arrivalLabel: feasibility.arrivalLabel,
+                      meetsDeadline: feasibility.meetsDeadline,
+                      deadlineSlackMinutes: feasibility.slackMinutes,
+                    }
+                  : {}),
               };
             } catch (e) {
               return { ...base, error: e instanceof Error ? e.message : '계산 중 오류' };
@@ -353,18 +367,35 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const valid = rows.filter((r) => !('error' in r) && Number((r as any).oneTimePrice) > 0) as Array<
           Extract<(typeof rows)[number], { oneTimePrice: number }>
         >;
-        const recommended = valid.reduce<(typeof valid)[number] | null>((best, cur) => {
-          if (!best) return cur;
-          return cur.oneTimePrice < best.oneTimePrice ? cur : best;
-        }, null);
+        const cheapest = (list: typeof valid) =>
+          list.reduce<(typeof valid)[number] | null>((best, cur) => {
+            if (!best) return cur;
+            return cur.oneTimePrice < best.oneTimePrice ? cur : best;
+          }, null);
+
+        // 데드라인이 있으면 마감을 지키는 출발 중 최저가를 추천. 모두 불가면 전체 최저가로 폴백하고 안내.
+        const feasible = deadline ? valid.filter((r) => (r as any).meetsDeadline === true) : valid;
+        const deadlineInfeasible = Boolean(deadline) && feasible.length === 0;
+        const recommended = cheapest(deadlineInfeasible ? valid : feasible);
 
         const out = {
           matrix: rows,
           recommendedId: recommended?.id ?? null,
           frequencyLabel: formatFrequency(freq),
+          deadline: deadline ?? null,
+          deadlineInfeasible,
+          deadlineNote: deadline
+            ? deadlineInfeasible
+              ? `도착 마감 ${deadline}을 지키는 출발 프리셋이 없다. 출발을 앞당기거나 체류시간 단축/지점 분할을 검토해야 한다(아래는 마감 무관 최저가).`
+              : `도착 마감 ${deadline}을 지키는 출발 중 최저가를 추천했다.`
+            : null,
           basis: '시간당 요금제 기준 · 출발시간별 교통량(Tmap 예측) 반영 · 옹고잉 요금엔 심야/주말 할증 없음',
         };
-        track('compare_departure_times', { stopCount: stops.length, presets: presets.length }, { recommendedId: out.recommendedId, valid: valid.length });
+        track(
+          'compare_departure_times',
+          { stopCount: stops.length, presets: presets.length, deadline: deadline ?? null },
+          { recommendedId: out.recommendedId, valid: valid.length, deadlineInfeasible }
+        );
         return out;
       },
     }),
@@ -419,6 +450,66 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const result = validatePlan(toDomainStops(stops), frequency as Frequency | undefined);
         track('validate_plan', { stopCount: stops.length }, result);
         return result;
+      },
+    }),
+
+    recall_recent_quotes: tool({
+      description:
+        '현재 사용자의 과거 견적 대화를 최근순으로 조회한다. 사용자가 "지난번 견적", "저번에 했던 거", "이전 견적 다시", "과거 견적 재사용", "전에 노원구청 경로 그대로" 등 과거 작업을 참조할 때 호출하라. 목록(제목/요약/일시)을 받아 어떤 견적을 재사용할지 사용자에게 확인하라. 금액·경로 같은 사실은 요약을 그대로 베끼지 말고, 사용자가 고른 뒤 주소/차종/빈도 등을 확인해 도구(geocode/optimize/compare/calculate)로 다시 산출하라.',
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(10).default(5).describe('가져올 최근 견적 대화 수'),
+      }),
+      execute: async ({ limit }) => {
+        if (!ctx.sessionId) {
+          track('recall_recent_quotes', { limit }, { available: false });
+          return { available: false, reason: '저장된 대화가 없어 과거 견적을 불러올 수 없어요(로그인 시 대화가 저장됩니다).', quotes: [] as unknown[] };
+        }
+        try {
+          const supabase = createServerClient();
+          // 현재 세션 소유자 역추적(인증 헤더 없이 sessionId만으로 사용자 스코프 확보).
+          const { data: cur } = await supabase
+            .from('quote_chat_sessions')
+            .select('created_by')
+            .eq('id', ctx.sessionId)
+            .maybeSingle();
+          const userId = cur?.created_by;
+          if (!userId) {
+            track('recall_recent_quotes', { limit }, { available: false });
+            return { available: false, reason: '현재 대화의 사용자 정보를 확인할 수 없어요.', quotes: [] as unknown[] };
+          }
+          const { data: sessions } = await supabase
+            .from('quote_chat_sessions')
+            .select('id, title, last_summary, updated_at')
+            .eq('created_by', userId)
+            .neq('id', ctx.sessionId)
+            .order('updated_at', { ascending: false })
+            .limit(limit);
+          const list = sessions ?? [];
+          const quotes = await Promise.all(
+            list.map(async (s) => {
+              let summary = String(s.last_summary || '').trim();
+              if (!summary) {
+                // 요약이 비면 시나리오 비교를 담은 최신 어시스턴트 메시지에서 보강.
+                const { data: msgs } = await supabase
+                  .from('quote_chat_messages')
+                  .select('content, metadata, created_at')
+                  .eq('session_id', s.id)
+                  .eq('role', 'assistant')
+                  .order('created_at', { ascending: false })
+                  .limit(3);
+                const rows = msgs ?? [];
+                const withScenario = rows.find((m: { metadata?: { hasScenarioComparison?: boolean } }) => m?.metadata?.hasScenarioComparison) ?? rows[0];
+                summary = String(withScenario?.content || '').replace(/\s+/g, ' ').slice(0, 220);
+              }
+              return { sessionId: s.id, title: s.title || '제목 없음', updatedAt: s.updated_at, summary };
+            })
+          );
+          track('recall_recent_quotes', { limit }, { available: true, count: quotes.length });
+          return { available: true, count: quotes.length, quotes };
+        } catch (e) {
+          track('recall_recent_quotes', { limit }, { error: true });
+          return { available: false, reason: e instanceof Error ? e.message : '과거 견적 조회 중 오류', quotes: [] as unknown[] };
+        }
       },
     }),
 

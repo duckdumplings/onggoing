@@ -75,3 +75,48 @@ export function resolveDeparturePresets(
     return { ...p, iso: date.toISOString(), dateLabel: formatDateLabel(date) };
   });
 }
+
+/** 도착 데드라인 충족 여부 판정 결과. */
+export interface DeadlineFeasibility {
+  /** 예상 도착 ISO(출발 + 총 소요시간). */
+  arrivalIso: string;
+  /** "HH:mm" 도착 라벨. */
+  arrivalLabel: string;
+  /** 데드라인 충족 여부. */
+  meetsDeadline: boolean;
+  /** 데드라인까지 남는(+)/초과(-) 분. */
+  slackMinutes: number;
+}
+
+/**
+ * 출발 ISO + 총 소요시간(분) + 도착 데드라인("HH:mm")으로 도착 가능성을 판정한다.
+ * 데드라인은 출발 날짜와 동일 일자의 해당 시각으로 해석한다(익일 데드라인은 미지원, null 반환).
+ *
+ * @returns 데드라인 형식이 잘못되면 null
+ */
+export function assessDeadlineFeasibility(
+  departureIso: string,
+  totalMinutes: number,
+  deadlineHHmm: string
+): DeadlineFeasibility | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(deadlineHHmm).trim());
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+
+  const departure = new Date(departureIso);
+  if (Number.isNaN(departure.getTime())) return null;
+
+  const arrival = new Date(departure.getTime() + Math.max(0, totalMinutes) * 60_000);
+  const deadline = new Date(departure);
+  deadline.setHours(h, m, 0, 0);
+
+  const slackMinutes = Math.round((deadline.getTime() - arrival.getTime()) / 60_000);
+  return {
+    arrivalIso: arrival.toISOString(),
+    arrivalLabel: `${pad2(arrival.getHours())}:${pad2(arrival.getMinutes())}`,
+    meetsDeadline: slackMinutes >= 0,
+    slackMinutes,
+  };
+}
