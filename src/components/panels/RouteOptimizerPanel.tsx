@@ -26,7 +26,7 @@ import {
   Ban,
   AlertTriangle,
 } from 'lucide-react';
-import { Tabs, RadioGroup, Switch, ThemeToggle } from '@/components/ui';
+import { Tabs, RadioGroup, Switch } from '@/components/ui';
 import { cn } from '@/utils/cn';
 import { reportActionFailure } from '@/libs/errorReporting';
 import { resolveDepartureDateTime, formatDepartureLabel, describeRelativeDay } from '@/domains/dispatch/utils/departureTime';
@@ -482,16 +482,13 @@ export default function RouteOptimizerPanel() {
     <section className="flex flex-col glass-card rounded-none border-0 border-r border-border font-sans transition-all duration-300">
       {/* Header */}
       <div className="flex-none px-5 py-5 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary rounded-xl text-primary-foreground flex items-center justify-center">
-              <Map className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-foreground tracking-tight leading-tight">경로 최적화</h2>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-primary rounded-xl text-primary-foreground flex items-center justify-center">
+            <Map className="w-5 h-5" />
           </div>
-          <ThemeToggle />
+          <div>
+            <h2 className="text-lg font-bold text-foreground tracking-tight leading-tight">경로 최적화</h2>
+          </div>
         </div>
       </div>
 

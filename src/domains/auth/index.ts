@@ -52,7 +52,7 @@ export interface UserProfile {
 
 export interface UserPreferences {
   language: 'ko' | 'en';
-  theme: 'light' | 'dark' | 'auto';
+  theme: 'light';
   notifications: NotificationSettings;
 }
 

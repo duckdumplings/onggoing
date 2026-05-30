@@ -4,12 +4,11 @@ import type { Config } from 'tailwindcss'
  * Tailwind 토큰 매핑
  *
  * 시맨틱 토큰은 globals.css의 CSS 변수를 참조한다.
- * 다크모드는 .dark 클래스로 토글되며, 모든 시맨틱 토큰은 자동으로 다크 값으로 매핑된다.
+ * 지도 기반 라이트 전용 제품 — 다크모드는 운영하지 않는다(라이트 글래스가 지도 위 가독성 우월).
  *
  * 변경 시: .cursor/rules/30-anti-slop-design.mdc §7 (새 색상 / 시맨틱 토큰 도입 절차) 준수.
  */
 const config: Config = {
-  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',

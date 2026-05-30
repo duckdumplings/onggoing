@@ -17,7 +17,6 @@ export { default as Switch } from './Switch';
 export { default as RadioGroup } from './RadioGroup';
 export { default as Tabs } from './Tabs';
 export { default as Tooltip } from './Tooltip';
-export { default as ThemeToggle } from './ThemeToggle';
 
 export type { ButtonProps } from './Button';
 export type { InputProps } from './Input';

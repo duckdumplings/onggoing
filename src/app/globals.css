@@ -6,7 +6,7 @@
  * Design Tokens — OKLCH-based semantic system
  *
  * 우선순위: 시맨틱 토큰 (success/warning/error/info/primary 등) > 기본 팔레트 > hex literal(금지)
- * 다크모드: html.dark 클래스 토글로 활성화. 모든 토큰은 .dark에서 자동 매핑.
+ * 라이트 전용: 지도 기반 제품으로 다크모드는 미운영(지도 위 가독성·일관성 우선).
  * 갱신 시: .cursor/rules/30-anti-slop-design.mdc §7 절차 준수.
  */
 
@@ -84,62 +84,6 @@
   --foreground-rgb: 15, 23, 42;
   --background-start-rgb: 255, 255, 255;
   --background-end-rgb: 255, 255, 255;
-}
-
-.dark {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-
-  --primary: #6366f1;
-  --primary-foreground: #ffffff;
-
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-
-  --success: #34d399;
-  --success-foreground: #022c22;
-  --success-muted: rgba(16, 185, 129, 0.15);
-  --warning: #fbbf24;
-  --warning-foreground: #422006;
-  --warning-muted: rgba(245, 158, 11, 0.15);
-  --error: #fb7185;
-  --error-foreground: #4c0519;
-  --error-muted: rgba(244, 63, 94, 0.15);
-  --info: #60a5fa;
-  --info-foreground: #172554;
-  --info-muted: rgba(59, 130, 246, 0.15);
-  --destructive: #fb7185;
-  --destructive-foreground: #ffffff;
-
-  --border: #27272a;
-  --input: #27272a;
-  --input-background: rgba(39, 39, 42, 0.55);
-  --ring: rgba(99, 102, 241, 0.45);
-
-  --chart-1: #818cf8;
-  --chart-4: #c7d2fe;
-  --chart-5: #e0e7ff;
-  --route-line: #818cf8;
-  --route-line-alt: #a5b4fc;
-  --route-pin-origin: #34d399;
-  --route-pin-waypoint: #818cf8;
-  --route-pin-destination: #fb7185;
-
-  --sidebar: rgba(9, 9, 11, 0.78);
-  --sidebar-foreground: #fafafa;
-  --sidebar-border: rgba(39, 39, 42, 0.7);
-
-  --foreground-rgb: 250, 250, 250;
-  --background-start-rgb: 9, 9, 11;
-  --background-end-rgb: 9, 9, 11;
 }
 
 @layer base {

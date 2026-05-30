@@ -38,12 +38,6 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://apis.openapi.sk.com" />
         <link rel="preconnect" href="https://topopentile3.tmap.co.kr" />
-        {/* FOUC 방지: 페인트 전에 테마 클래스 적용 (localStorage > prefers-color-scheme) */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){}})();`,
-          }}
-        />
       </head>
       <body className="font-sans">
         <RouteOptimizationProvider>

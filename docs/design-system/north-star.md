@@ -115,11 +115,11 @@
 |---|---|
 | OKLCH 시맨틱 토큰 (`primary/success/warning/error/info/muted`) | ✓ (`globals.css`) |
 | Tailwind 토큰 매핑 (`tailwind.config.ts`) | ✓ |
-| 다크모드 (`.dark` 클래스 토글) | ✓ |
+| 다크모드 | ✗ 미운영 (지도 기반 라이트 전용 — §1 "다크 hero 강제" 슬롭 회피) |
 | `GlassCard` tier 컴포넌트 (launcher/card/canvas) | ✓ |
 | `Badge`/`Skeleton`/`EmptyState`/`SummaryCard` | ✓ |
 | `.tabular` 유틸리티 (정밀 표현) | ✓ |
-| 다크모드 토글 UI + FOUC 방지 + 전역 다크 커버리지 | ✓ |
+| 라이트 전용 확정 (다크 토글/FOUC/`.dark` 제거) | ✓ (2026-05-30) |
 | 한국어 우선 폰트 (Pretendard Variable, self-host) | ✓ (`layout.tsx`, Phase 3에서 선행 도입) |
 | 마이크로 인터랙션 라이브러리 (focus 링/layoutId) | 부분 (framer-motion 의존 있음) |
 | 모달 공통 셸 통일 (포커스 트랩·ESC·스크롤락) | ✓ (`components/ui/Modal.tsx`) |
