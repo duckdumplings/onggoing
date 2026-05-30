@@ -166,7 +166,7 @@ function SortableWaypointItem({ waypoint, index, onUpdate, onDelete, onDuplicate
                   const value = Math.max(0, parseInt(e.target.value || '10', 10));
                   onUpdate(waypoint.id, { dwellTime: value });
                 }}
-                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-primary transition-colors font-medium text-foreground"
+                className="w-12 h-6 bg-transparent text-xs text-center focus:outline-none border-b border-transparent focus:border-primary transition-colors font-medium text-foreground tabular"
               />
               <span className="text-[10px] text-muted-foreground">분</span>
             </div>

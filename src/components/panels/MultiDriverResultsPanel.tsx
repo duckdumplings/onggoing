@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import DriverRouteDetailModal from '@/components/modals/DriverRouteDetailModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, ChevronRight, HelpCircle, Lightbulb, AlertTriangle, Shuffle } from 'lucide-react';
-import { SummaryCard, Badge, Tooltip } from '@/components/ui';
+import { SummaryCard, Badge, Tooltip, Metric } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 
 interface DriverRoute {
@@ -72,7 +72,7 @@ export default function MultiDriverResultsPanel({ result }: Props) {
         </h3>
         <div className="flex items-center gap-2">
           <Badge variant={balanceVariant} size="sm">
-            균형도 {(summary.balanceScore * 100).toFixed(0)}%
+            균형도 <span className="tabular">{(summary.balanceScore * 100).toFixed(0)}</span>%
           </Badge>
           <Tooltip
             side="left"
@@ -139,27 +139,19 @@ export default function MultiDriverResultsPanel({ result }: Props) {
                 <div className="grid grid-cols-4 gap-2 text-xs relative z-10 bg-white/50 p-2 rounded-lg border border-white/50">
                   <div>
                     <div className="text-[10px] text-muted-foreground">거리</div>
-                    <div className={`font-bold ${color.text}`}>
-                      {(driver.totalDistance / 1000).toFixed(1)}km
-                    </div>
+                    <Metric size="sm" value={(driver.totalDistance / 1000).toFixed(1)} unit="km" valueClassName={color.text} />
                   </div>
                   <div>
                     <div className="text-[10px] text-muted-foreground">이동</div>
-                    <div className={`font-bold ${color.text}`}>
-                      {Math.round(driver.travelTime / 60)}분
-                    </div>
+                    <Metric size="sm" value={Math.round(driver.travelTime / 60)} unit="분" valueClassName={color.text} />
                   </div>
                   <div>
                     <div className="text-[10px] text-muted-foreground">대기</div>
-                    <div className={`font-bold ${color.text}`}>
-                      {Math.round(driver.dwellTime / 60)}분
-                    </div>
+                    <Metric size="sm" value={Math.round(driver.dwellTime / 60)} unit="분" valueClassName={color.text} />
                   </div>
                   <div>
                     <div className="text-[10px] text-muted-foreground">합계</div>
-                    <div className={`font-bold ${color.text}`}>
-                      {Math.round(driver.totalTime / 60)}분
-                    </div>
+                    <Metric size="sm" value={Math.round(driver.totalTime / 60)} unit="분" valueClassName={color.text} />
                   </div>
                 </div>
 

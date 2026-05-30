@@ -11,6 +11,7 @@ export { default as Badge } from './Badge';
 export { default as Skeleton } from './Skeleton';
 export { default as EmptyState } from './EmptyState';
 export { default as SummaryCard } from './SummaryCard';
+export { default as Metric } from './Metric';
 
 export { default as BottomSheet } from './BottomSheet';
 export { default as Switch } from './Switch';
@@ -30,6 +31,7 @@ export type { BadgeProps, BadgeVariant } from './Badge';
 export type { SkeletonProps } from './Skeleton';
 export type { EmptyStateProps } from './EmptyState';
 export type { SummaryCardProps, Trend } from './SummaryCard';
+export type { MetricProps } from './Metric';
 
 export type { BottomSheetProps, BottomSheetSnap } from './BottomSheet';
 export type { SwitchProps } from './Switch';

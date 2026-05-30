@@ -119,6 +119,7 @@
 | `GlassCard` tier 컴포넌트 (launcher/card/canvas) | ✓ |
 | `Badge`/`Skeleton`/`EmptyState`/`SummaryCard` | ✓ |
 | `.tabular` 유틸리티 (정밀 표현) | ✓ |
+| `Metric` 인라인 수치 프리미티브 (값 tabular + 단위 축소) | ✓ (2026-05-30) — SummaryCard(대형)와 상호보완 |
 | 라이트 전용 확정 (다크 토글/FOUC/`.dark` 제거) | ✓ (2026-05-30) |
 | 한국어 우선 폰트 (Pretendard Variable, self-host) | ✓ (`layout.tsx`, Phase 3에서 선행 도입) |
 | 모션 토큰 (`--motion-fast/base/slow`, `--ease-standard`) + 공용 `.focus-ring` 유틸 | ✓ (2026-05-30, `globals.css`/`tailwind.config.ts`) |
