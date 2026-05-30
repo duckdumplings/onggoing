@@ -24,8 +24,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseClasses = `
       inline-flex items-center justify-center
       font-medium rounded-lg
-      transition-all duration-200
-      focus:outline-none focus:ring-2 focus:ring-offset-2
+      transition-all duration-base ease-standard
+      focus-ring
       disabled:opacity-50 disabled:cursor-not-allowed
     `;
 
@@ -33,25 +33,21 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       primary: `
         bg-primary hover:bg-primary-700 
         text-primary-foreground 
-        focus:ring-primary-500
         shadow-sm hover:shadow-md
       `,
       secondary: `
         bg-secondary hover:bg-accent 
         text-secondary-foreground 
-        focus:ring-secondary-500
         border border-border
       `,
       danger: `
         bg-error-500 hover:bg-error-600 
         text-white 
-        focus:ring-error-500
         shadow-sm hover:shadow-md
       `,
       ghost: `
         bg-transparent hover:bg-muted 
         text-foreground 
-        focus:ring-secondary-500
       `
     };
 

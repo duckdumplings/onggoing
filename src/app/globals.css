@@ -75,6 +75,18 @@
   /* === Radius === */
   --radius: 0.75rem;
 
+  /*
+   * === Motion (정체성 5축: 활기 + 톤 절제) ===
+   * 단일 출처. North Star §0 "timing curve 절제 (200~250ms ease-out)".
+   * fast: 토글/탭/체크 등 즉각 피드백 · base: 일반 hover/색상 전환 · slow: 시트/모달 등장
+   */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+  /* standard: 감속(진입) 곡선 — 진중하고 자연스러운 정지. 오버슈트 금지(절제). */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
   /* === Typography === */
   --font-size: 16px;
   --font-weight-normal: 400;
@@ -102,10 +114,9 @@
     -moz-osx-font-smoothing: grayscale;
   }
   /*
-   * 폼 컨트롤 다크모드 기본값.
-   * Tailwind preflight는 text input의 UA 흰 배경을 리셋하지 않으므로,
-   * 배경을 명시하지 않은 입력이 다크모드에서 흰 박스로 남는다.
-   * 토큰 배경/텍스트를 base 기본값으로 깔아 일괄 대응한다.
+   * 폼 컨트롤 토큰 기본값.
+   * Tailwind preflight는 text input의 UA 흰 배경을 완전히 리셋하지 않으므로,
+   * 토큰 배경/텍스트를 base 기본값으로 깔아 입력 표면을 일관화한다.
    * (개별 컴포넌트가 bg-* 유틸리티를 지정하면 utilities 레이어가 우선한다)
    */
   input,
@@ -140,6 +151,19 @@
     font-weight: 700;
     line-height: 1.15;
     letter-spacing: -0.02em;
+  }
+
+  /*
+   * 공용 focus 링 — 키보드 네비게이션에서만 노출(focus-visible).
+   * 정체성 5축 "활기": 단일 ring 토큰으로 모든 인터랙티브 요소 포커스 일관화.
+   * 마우스 클릭 시 링 미노출(focus-visible) → 진중한 톤 유지.
+   */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+  /* 인셋 컨텍스트(탭/필 등 작은 인라인 컨트롤)용 — offset 없음 */
+  .focus-ring-inset {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
   }
 
   /* Surface variants — token-based */
@@ -272,5 +296,6 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

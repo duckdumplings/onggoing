@@ -121,7 +121,8 @@
 | `.tabular` 유틸리티 (정밀 표현) | ✓ |
 | 라이트 전용 확정 (다크 토글/FOUC/`.dark` 제거) | ✓ (2026-05-30) |
 | 한국어 우선 폰트 (Pretendard Variable, self-host) | ✓ (`layout.tsx`, Phase 3에서 선행 도입) |
-| 마이크로 인터랙션 라이브러리 (focus 링/layoutId) | 부분 (framer-motion 의존 있음) |
+| 모션 토큰 (`--motion-fast/base/slow`, `--ease-standard`) + 공용 `.focus-ring` 유틸 | ✓ (2026-05-30, `globals.css`/`tailwind.config.ts`) |
+| 마이크로 인터랙션 (layoutId 전환 등 framer-motion) | 부분 (개별 컴포넌트 단위) |
 | 모달 공통 셸 통일 (포커스 트랩·ESC·스크롤락) | ✓ (`components/ui/Modal.tsx`) |
 | 접근성 WCAG AA (axe 점검) | ✓ 1차 (잔여: CTA 4.46:1 등 팔레트 미세 항목) |
 

@@ -166,6 +166,15 @@ const config: Config = {
           'sans-serif',
         ],
       },
+      // 모션 토큰 — globals.css :root 와 단일 출처 동기화. North Star §0 활기 축.
+      transitionDuration: {
+        fast: 'var(--motion-fast)',
+        base: 'var(--motion-base)',
+        slow: 'var(--motion-slow)',
+      },
+      transitionTimingFunction: {
+        standard: 'var(--ease-standard)',
+      },
     },
   },
   plugins: [],

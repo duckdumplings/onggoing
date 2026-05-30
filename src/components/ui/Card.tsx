@@ -19,7 +19,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
   }, ref) => {
     const baseClasses = `
       bg-card text-card-foreground border rounded-lg shadow-sm
-      transition-all duration-200
+      transition-all duration-base ease-standard
     `;
 
     const variantClasses = {
@@ -45,6 +45,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           baseClasses,
           variantClasses[variant],
           status && statusClasses[status],
+          onClick && 'focus-ring',
           className
         )}
         onClick={onClick}
