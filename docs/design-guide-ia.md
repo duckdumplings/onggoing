@@ -391,7 +391,7 @@ const WebAppOptimizedComponent = () => {
     ">
       {/* 웹앱 전용 UI */}
       <div className="web-app-header">
-        <h1>옹고잉 스마트 물류 플랫폼</h1>
+        <h1>옹라우팅</h1>
       </div>
     </div>
   );

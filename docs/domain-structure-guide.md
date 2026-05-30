@@ -1,7 +1,7 @@
 # 도메인별 디렉토리 구조 가이드라인
 
 ## 개요
-이 문서는 옹고잉 스마트 물류 플랫폼의 Domain-Driven Organization Strategy에 따른 디렉토리 구조와 개발 가이드라인을 설명합니다.
+이 문서는 옹라우팅의 Domain-Driven Organization Strategy에 따른 디렉토리 구조와 개발 가이드라인을 설명합니다.
 
 ## 디렉토리 구조
 

@@ -1,4 +1,4 @@
-# AGENTS.md — 옹고잉 스마트 물류 플랫폼 리포지터리 맵
+# AGENTS.md — 옹라우팅 리포지터리 맵
 
 > "1,000페이지의 설명서가 아닌 맵을 제공" — OpenAI Harness Engineering
 >

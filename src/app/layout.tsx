@@ -24,7 +24,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: '옹고잉 스마트 물류 플랫폼',
+  title: '옹라우팅',
   description: '최적 동선 및 견적 제공 프로그램',
 }
 

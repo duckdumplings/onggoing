@@ -1,6 +1,6 @@
 # 옹라우팅
 
-Next.js 기반 반응형 웹(PWA)과 Supabase 백엔드를 활용해 배송 루트 최적화, 제약조건 모델링, 자동 견적·배차 추천, 실시간 차량 위치 추적, 관리자 대시보드를 제공하는 B2B 물류 솔루션입니다.
+Next.js 기반 반응형 웹(PWA)과 Supabase 백엔드를 활용해 배송 루트 최적화, 제약조건 모델링, 자동 견적·배차 추천, 실시간 차량 위치 추적, 관리자 대시보드를 제공하는 B2B 물류 솔루션입니다. (운영 서비스: 옹고잉)
 
 > **에이전트/개발자 시작점**: [`AGENTS.md`](./AGENTS.md) — 리포지터리 맵
 > **디자인 정체성**: [`docs/design-system/north-star.md`](./docs/design-system/north-star.md)
