@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { createServerClient } from '@/libs/supabase-client';
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
+import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
 import { resolveDeparturePresets, assessDeadlineFeasibility } from '@/domains/dispatch/utils/departureMatrix';
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
@@ -87,26 +88,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           }
           return address;
         };
-        const pickups = domainStops.filter((s) => s.role === 'pickup');
-        const drops = domainStops.filter((s) => s.role === 'drop');
-        const originStop = pickups[0] ?? domainStops[0];
-        const finalDrop = drops[drops.length - 1];
-        const remaining = domainStops.filter((s) => s !== originStop);
-        const ordered = finalDrop ? [...remaining.filter((s) => s !== finalDrop), finalDrop] : remaining;
-
-        const payload = {
-          origins: [toPoint(originStop.address)],
-          destinations: ordered.map((s) => toPoint(s.address)),
-          finalDestinationAddress: finalDrop ? finalDrop.address : null,
-          useExplicitDestination: Boolean(finalDrop),
+        // 출발지/순서/open-start 규칙은 buildRolePayload로 단일화. 일반 경로는 정확해(fastOrder=false).
+        const payload = buildRolePayload({
+          stops: domainStops,
+          toPoint,
           vehicleType,
-          optimizeOrder: true,
-          returnToOrigin: false,
           roadOption,
           // 견적 산정과 지도 미리보기 결과 일치를 위해 출발 시각을 고정.
           departureAt: ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-          dwellMinutes: ordered.map((s) => s.dwellMinutes ?? 0),
-        };
+          fastOrder: false,
+        });
 
         const res = await fetch(new URL('/api/route-optimization', ctx.baseUrl), {
           method: 'POST',
@@ -129,10 +120,14 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
           optimizedOrder: summary?.optimizationInfo?.optimizedOrder ?? null,
+          // open-start로 시스템이 고른 출발지/근거(메일 순서 고정이 아님).
+          openStart: Boolean(summary?.openStart),
+          chosenOrigin: summary?.chosenOrigin ?? null,
+          originRationale: summary?.originRationale ?? null,
           // 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
           routeRequest: { ...payload, useRealtimeTraffic: true },
         };
-        track('optimize_route', payload, { km: out.km, driveMinutes: out.driveMinutes });
+        track('optimize_route', payload, { km: out.km, driveMinutes: out.driveMinutes, openStart: out.openStart });
         return out;
       },
     }),
@@ -265,14 +260,17 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           }
           return address;
         };
-        const pickups = domainStops.filter((s) => s.role === 'pickup');
-        const drops = domainStops.filter((s) => s.role === 'drop');
-        const originStop = pickups[0] ?? domainStops[0];
-        const finalDrop = drops[drops.length - 1];
-        const remaining = domainStops.filter((s) => s !== originStop);
-        const ordered = finalDrop ? [...remaining.filter((s) => s !== finalDrop), finalDrop] : remaining;
-        const dwellMinutesArr = ordered.map((s) => s.dwellMinutes ?? 0);
-        const stopsCount = Math.max(0, ordered.length - (finalDrop ? 1 : 0));
+        // 출발매트릭스는 프리셋마다 경로를 돌리므로 행렬 폭증 방지를 위해 fastOrder(NN) 사용.
+        const basePayload = buildRolePayload({
+          stops: domainStops,
+          toPoint,
+          vehicleType,
+          roadOption: 'time-first',
+          useRealtimeTraffic: true,
+          fastOrder: true,
+        });
+        const dwellMinutesArr = basePayload.dwellMinutes;
+        const stopsCount = Math.max(0, basePayload.destinations.length - (basePayload.useExplicitDestination ? 1 : 0));
         const freq = frequency as Frequency | undefined;
 
         const presets = resolveDeparturePresets();
@@ -287,19 +285,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               dateLabel: preset.dateLabel,
               departureAt: preset.iso,
             };
-            const payload = {
-              origins: [toPoint(originStop.address)],
-              destinations: ordered.map((s) => toPoint(s.address)),
-              finalDestinationAddress: finalDrop ? finalDrop.address : null,
-              useExplicitDestination: Boolean(finalDrop),
-              vehicleType,
-              optimizeOrder: true,
-              returnToOrigin: false,
-              roadOption: 'time-first' as const,
-              departureAt: preset.iso,
-              useRealtimeTraffic: true,
-              dwellMinutes: dwellMinutesArr,
-            };
+            const payload = { ...basePayload, departureAt: preset.iso };
             try {
               const routeRes = await fetch(new URL('/api/route-optimization', ctx.baseUrl), {
                 method: 'POST',

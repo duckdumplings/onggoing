@@ -1,4 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  type Waypoint,
+  type TrafficAnchorMode,
+  anchorDepartureTime,
+  fetchSegmentTravel,
+  getTmapRoute,
+  haversineMeters,
+  quickEtaMinutes,
+} from '@/domains/dispatch/services/segmentTravel';
+import { buildDirectedMatrix } from '@/domains/dispatch/services/routeMatrix';
+import { solveOpenStart, type OriginRationale } from '@/domains/dispatch/services/openStartOptimizer';
 
 // 좌표 유효성 검사 함수 추가
 function isValidCoordinate(lat: number, lng: number): boolean {
@@ -204,139 +215,10 @@ function isPhysicallyImpossible(
 
 // ===== Tmap 기반 시간창 우선 최적화 핵심 헬퍼 =====
 
-// 교통 앵커 모드: 오늘/내일/자동(과거시간→내일, 미래시간→오늘)
-type TrafficAnchorMode = 'today' | 'tomorrow' | 'auto';
-
-function setTimeOfDay(base: Date, timeSource: Date): Date {
-  const d = new Date(base);
-  d.setHours(timeSource.getHours(), timeSource.getMinutes(), timeSource.getSeconds(), 0);
-  return d;
-}
-
-function anchorDepartureTime(desired: Date, mode: TrafficAnchorMode, now: Date = new Date()): Date {
-  const desiredTime = desired.getHours() * 60 + desired.getMinutes();
-  const nowTime = now.getHours() * 60 + now.getMinutes();
-
-  if (mode === 'today') {
-    // 과거 시각이어도 그대로 오늘의 해당 시각으로 사용
-    return setTimeOfDay(now, desired);
-  }
-
-  if (mode === 'tomorrow') {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return setTimeOfDay(tomorrow, desired);
-  }
-
-  // auto: 과거 시각이면 내일, 아니면 오늘
-  if (desiredTime <= nowTime) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return setTimeOfDay(tomorrow, desired);
-  }
-  return setTimeOfDay(now, desired);
-}
-
-type Waypoint = { latitude: number; longitude: number; address: string };
+// 교통 앵커/구간 실측 프리미티브(Waypoint, TrafficAnchorMode, anchorDepartureTime,
+// fetchSegmentTravel, getTmapRoute, haversineMeters, quickEtaMinutes 등)는
+// @/domains/dispatch/services/segmentTravel 로 추출되어 공유된다. 아래 타입만 로컬 유지.
 type TimeWindow = { due?: Date | null };
-
-function makeDepartureBucket(date: Date, minutes: number = 5) {
-  const d = new Date(date);
-  d.setSeconds(0, 0);
-  const m = d.getMinutes();
-  const rounded = Math.floor(m / minutes) * minutes;
-  d.setMinutes(rounded);
-  return d.toISOString(); // 버킷 키
-}
-
-function coordKey(a: Waypoint, b: Waypoint) {
-  return `${a.latitude.toFixed(6)},${a.longitude.toFixed(6)}->${b.latitude.toFixed(6)},${b.longitude.toFixed(6)}`;
-}
-
-async function fetchSegmentTravel(
-  cache: Map<string, { timeSec: number; distM: number }>,
-  from: Waypoint,
-  to: Waypoint,
-  departAt: Date,
-  tmapKey: string,
-  vehicleTypeCode: string,
-  trafficMode: 'realtime' | 'standard',
-  trafficAnchor: TrafficAnchorMode,
-): Promise<{ timeSec: number; distM: number; mode?: 'prediction' | 'routes-fallback' }> {
-  const anchored = anchorDepartureTime(departAt, trafficAnchor);
-  const bucket = makeDepartureBucket(anchored, 5);
-  const key = `${coordKey(from, to)}@${bucket}@${trafficMode}@${vehicleTypeCode}`;
-  const hit = cache.get(key);
-  if (hit) {
-    console.log(`[Tmap 캐시 히트] ${from.address} → ${to.address}`);
-    return { ...hit, mode: 'prediction' };
-  }
-
-  console.log(`[Tmap 예측 호출] ${from.address} → ${to.address} (${anchored.toISOString()})`);
-
-  // 1) Prediction 재시도
-  const backoffs = [400, 900, 1600];
-  for (let i = 0; i < backoffs.length; i++) {
-    const result = await getTmapRoute(
-      { x: from.longitude, y: from.latitude },
-      { x: to.longitude, y: to.latitude },
-      tmapKey,
-      {
-        vehicleTypeCode,
-        trafficInfo: trafficMode === 'realtime' ? 'Y' : 'N',
-        departureAt: anchored.toISOString()
-      }
-    ).catch((e) => null);
-    if (result && Array.isArray(result.features)) {
-      let timeSec = 0, distM = 0;
-      for (const f of result.features) {
-        if (f?.properties?.totalTime) timeSec += f.properties.totalTime;
-        if (f?.properties?.totalDistance) distM += f.properties.totalDistance;
-      }
-      const val = { timeSec, distM };
-      cache.set(key, val);
-      console.log(`[Tmap 예측 완료] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
-      return { ...val, mode: 'prediction' };
-    }
-    await sleep(backoffs[i]);
-  }
-
-  // 2) 일반 routes 대체 (departureAt 없이 trafficInfo만)
-  console.warn(`[Prediction 실패 → routes 대체 시도] ${from.address} → ${to.address}`);
-  for (let i = 0; i < 2; i++) {
-    const result = await getTmapRoute(
-      { x: from.longitude, y: from.latitude },
-      { x: to.longitude, y: to.latitude },
-      tmapKey,
-      {
-        vehicleTypeCode,
-        trafficInfo: trafficMode === 'realtime' ? 'Y' : 'N',
-        departureAt: null
-      }
-    ).catch((e) => null);
-    if (result && Array.isArray(result.features)) {
-      let timeSec = 0, distM = 0;
-      for (const f of result.features) {
-        if (f?.properties?.totalTime) timeSec += f.properties.totalTime;
-        if (f?.properties?.totalDistance) distM += f.properties.totalDistance;
-      }
-      const val = { timeSec, distM };
-      cache.set(key, val);
-      console.log(`[routes 대체 성공] ${from.address} → ${to.address}: ${timeSec}초, ${distM}m`);
-      return { ...val, mode: 'routes-fallback' };
-    }
-    await sleep(600 + i * 900);
-  }
-
-  // 3) 모든 시도 실패 → 오류 throw (Haversine 폴백 사용하지 않음)
-  throw new Error(`TMAP_UNAVAILABLE: ${from.address} → ${to.address}`);
-}
-
-function quickEtaMinutes(from: Waypoint, to: Waypoint): number {
-  const d = haversineMeters(from.latitude, from.longitude, to.latitude, to.longitude);
-  const vKmh = 35; // 보수적 평균속도
-  return Math.max(10, Math.round((d / 1000) / vKmh * 60));
-}
 
 async function selectNextStop(
   now: Date,
@@ -934,7 +816,9 @@ export async function POST(request: NextRequest) {
       returnToOrigin = true,
       deliveryTimes = [],
       isNextDayFlags = [],
-      dwellMinutes = []
+      dwellMinutes = [],
+      openStart = false,
+      fastOrder = false
     } = body;
 
     console.log('=== API 요청 받음 ===');
@@ -1096,16 +980,89 @@ export async function POST(request: NextRequest) {
     console.log('hasDepartureAt:', !!departureAt);
     console.log('========================');
 
+    // ===== open-start 사전 패스 (B1) =====
+    // 수거 N지점 → 단일 고정 하차(useExplicitDestination) 패턴에서 출발지도 비용 최소화 변수로 둔다.
+    // 시작점/순서를 솔버로 먼저 정한 뒤 기존 파이프라인(ETA·톨비·유류비·세그먼트)을 그대로 재사용한다.
+    let effectiveOptimizeOrder = optimizeOrder;
+    let openStartRationale: OriginRationale | null = null;
+    let chosenOriginAddress: string | null = null;
+
+    const hasTimeConstraints = (deliveryTimes as unknown[]).some(
+      (t) => typeof t === 'string' && t.trim() !== ''
+    );
+    const canOpenStart =
+      openStart === true &&
+      useExplicitDestination === true &&
+      returnToOrigin === false &&
+      !hasTimeConstraints &&
+      destinationCoords.length >= 2; // 픽업 후보 ≥2 (origin + 비고정 목적지)
+
+    if (canOpenStart) {
+      try {
+        const fixedDrop = destinationCoords[destinationCoords.length - 1];
+        const candidates: Waypoint[] = [
+          { latitude: startLocation.latitude, longitude: startLocation.longitude, address: startLocation.address },
+          ...destinationCoords.slice(0, -1),
+        ];
+        const matrixPoints: Waypoint[] = [...candidates, fixedDrop];
+        const matrix = await buildDirectedMatrix({
+          points: matrixPoints,
+          departAt: departureAt ? new Date(departureAt) : new Date(),
+          tmapKey,
+          vehicleTypeCode,
+          trafficMode: usedTraffic,
+          trafficAnchor: 'tomorrow',
+        });
+
+        const k = candidates.length;
+        const destIdx = k; // 행렬에서 고정 하차지 인덱스
+        const solution = solveOpenStart({
+          labels: candidates.map((c) => c.address),
+          time: candidates.map((_, i) => candidates.map((__, j) => matrix.timeSec[i][j])),
+          dist: candidates.map((_, i) => candidates.map((__, j) => matrix.distM[i][j])),
+          toDestTime: candidates.map((_, i) => matrix.timeSec[i][destIdx]),
+          toDestDist: candidates.map((_, i) => matrix.distM[i][destIdx]),
+          mode: fastOrder ? 'fast' : 'auto',
+        });
+
+        if (solution.order.length > 0) {
+          const chosenOrigin = candidates[solution.chosenOriginIndex];
+          const orderedPickupsAfterStart = solution.order
+            .slice(1)
+            .map((idx) => candidates[idx]);
+
+          startLocation = {
+            latitude: chosenOrigin.latitude,
+            longitude: chosenOrigin.longitude,
+            address: chosenOrigin.address,
+          };
+          // destinationCoords를 [중간 픽업(해결된 순서)..., 고정 하차지]로 재구성.
+          destinationCoords.length = 0;
+          destinationCoords.push(...orderedPickupsAfterStart, fixedDrop);
+
+          effectiveOptimizeOrder = false; // 솔버 순서를 그대로 사용
+          openStartRationale = solution.originRationale;
+          chosenOriginAddress = chosenOrigin.address;
+
+          console.log('[open-start] 선택된 출발지:', chosenOrigin.address, '| 방법:', solution.method);
+          console.log('[open-start] 재구성 경로:', destinationCoords.map((d) => d.address));
+        }
+      } catch (e) {
+        // 실측 실패 등은 open-start만 건너뛰고 기존 파이프라인으로 진행(회귀 격리).
+        console.warn('[open-start] 사전 패스 실패, 기존 최적화로 폴백:', e instanceof Error ? e.message : e);
+      }
+    }
+
     // 목적지 순서 최적화 (배송완료시간 고려)
     console.log('순서 최적화 시작:', {
-      optimizeOrder,
+      optimizeOrder: effectiveOptimizeOrder,
       deliveryTimes,
       isNextDayFlags,
       originalDestinations: destinationCoords.map(d => d.address)
     });
 
     let orderedDestinations;
-    if (optimizeOrder) {
+    if (effectiveOptimizeOrder) {
       console.log('[Multi-Objective 최적화] 함수 호출 시작');
 
       // 시간제약 데이터 준비 (인덱스 정합성 유지)
@@ -1677,7 +1634,7 @@ export async function POST(request: NextRequest) {
         totalTime: totalTimeWithDwell, // 체류시간 포함
         travelTime: totalTime, // 이동시간만
         dwellTime: totalDwellTime, // 체류시간
-        optimizeOrder,
+        optimizeOrder: effectiveOptimizeOrder,
         usedTraffic,
         departureAt: departureAt ?? null,
         vehicleTypeCode,
@@ -1685,6 +1642,9 @@ export async function POST(request: NextRequest) {
         roadOptionApplied: roadOption,
         roadComparisons,
         returnedToOrigin,
+        openStart: canOpenStart && chosenOriginAddress != null,
+        chosenOrigin: chosenOriginAddress,
+        originRationale: openStartRationale,
         validation: {
           hasErrors: validationErrors.length > 0,
           errors: validationErrors,
@@ -1924,147 +1884,6 @@ async function geocodeAddressReliable(
   throw lastError || new Error(`지오코딩 실패: "${address}"`);
 }
 
-// Tmap 자동차 경로안내 (타임머신 기능 포함)
-async function getTmapRoute(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  appKey: string,
-  opts?: {
-    vehicleTypeCode?: string;
-    trafficInfo?: 'Y' | 'N';
-    departureAt?: string | null;
-    roadOption?: 'time-first' | 'toll-saving' | 'free-road-first';
-  }
-) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
-
-  try {
-    // 출발시간이 있어도 도로 옵션이 time-first가 아니면 일반 routes API를 사용해 옵션을 반영한다.
-    const shouldUsePrediction = Boolean(opts?.departureAt) && (opts?.roadOption || 'time-first') === 'time-first';
-
-    // 출발시간이 설정되고 time-first인 경우 타임머신 API 사용
-    if (shouldUsePrediction) {
-      const departureAtValue = opts?.departureAt;
-      if (!departureAtValue) {
-        throw new Error('PREDICTION_DEPARTURE_TIME_REQUIRED');
-      }
-      const url = 'https://apis.openapi.sk.com/tmap/routes/prediction?version=1';
-
-      // ISO 8601 형식으로 변환 (예: 2024-12-01T14:00:00+0900)
-      // 입력된 시간을 한국 시간대로 직접 변환
-      const departureDate = new Date(departureAtValue);
-
-      // 한국 시간대로 변환 (YYYY-MM-DDTHH:MM:SS+0900)
-      const year = departureDate.getFullYear();
-      const month = String(departureDate.getMonth() + 1).padStart(2, '0');
-      const day = String(departureDate.getDate()).padStart(2, '0');
-      const hours = String(departureDate.getHours()).padStart(2, '0');
-      const minutes = String(departureDate.getMinutes()).padStart(2, '0');
-      const seconds = String(departureDate.getSeconds()).padStart(2, '0');
-
-      const predictionTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+0900`;
-
-      const body = {
-        routesInfo: {
-          departure: {
-            name: 'start',
-            lon: String(start.x),
-            lat: String(start.y)
-          },
-          destination: {
-            name: 'end',
-            lon: String(end.x),
-            lat: String(end.y)
-          },
-          predictionType: 'departure',
-          predictionTime: predictionTime
-        }
-      };
-
-      console.log('타임머신 API 호출:', {
-        predictionTime,
-        originalTime: departureAtValue,
-        departureDate: departureDate.toISOString(),
-        localTime: departureDate.toString(),
-        timezone: 'KST+0900'
-      });
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          appKey: appKey,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) throw new Error(`Tmap prediction failed: ${res.status}`);
-      const result = await res.json();
-
-      console.log('타임머신 API 응답:', {
-        status: res.status,
-        featuresCount: result.features?.length,
-        totalTime: result.features?.[0]?.properties?.totalTime
-      });
-
-      return result;
-    } else {
-      // 실시간 교통정보 사용 시 기존 API
-      const url = 'https://apis.openapi.sk.com/tmap/routes';
-      const roadOption = opts?.roadOption || 'time-first';
-      // Tmap routes API의 searchOption은 한 자리 값에 leading zero를 붙이면 400을 반환한다.
-      // (검증: '0'/'1'/'2'/'4' → 200, '00'/'01'/'02'/'04' → 400, '10'/'12'는 두 자리라 정상)
-      const searchOptionByRoadOption: Record<string, string> = {
-        'time-first': opts?.trafficInfo === 'N' ? '2' : '0',
-        'toll-saving': '10',
-        'free-road-first': '1',
-      };
-      const selectedSearchOption = searchOptionByRoadOption[roadOption] || searchOptionByRoadOption['time-first'];
-      const tollgateCarTypeByVehicleCode: Record<string, string> = {
-        '1': 'car',
-        '2': 'mediumvan',
-      };
-
-      const body: any = {
-        startX: String(start.x),
-        startY: String(start.y),
-        endX: String(end.x),
-        endY: String(end.y),
-        reqCoordType: 'WGS84GEO',
-        resCoordType: 'WGS84GEO',
-        searchOption: selectedSearchOption,
-        trafficInfo: opts?.trafficInfo ?? 'Y',
-        vehicleType: opts?.vehicleTypeCode ?? '1',
-        tollgateCarType: tollgateCarTypeByVehicleCode[opts?.vehicleTypeCode ?? '1'] || 'car',
-      };
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { appKey: appKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) throw new Error(`Tmap route failed: ${res.status}`);
-      const result = await res.json();
-
-      console.log('일반 API 응답:', {
-        status: res.status,
-        featuresCount: result.features?.length,
-        trafficInfo: body.trafficInfo,
-        searchOption: body.searchOption
-      });
-
-      return result;
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function readNumberValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -2212,19 +2031,6 @@ async function calculateRoadComparisonMetrics(params: {
     estimatedToll: allSegmentsHaveToll ? Math.round(totalTollFromApi) : estimatedToll,
     tollSource: allSegmentsHaveToll ? 'api' as const : 'estimated' as const,
   };
-}
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
 }
 
 function decideTrafficMode(departureAt?: string | null): 'realtime' | 'standard' {
@@ -2873,7 +2679,3 @@ async function precheckDirectFeasibility(
   }
   return errors;
 }
-
-function sleep(ms: number) {
-  return new Promise((res) => setTimeout(res, ms));
-} 

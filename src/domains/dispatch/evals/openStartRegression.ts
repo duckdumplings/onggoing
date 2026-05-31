@@ -1,0 +1,130 @@
+/**
+ * open-start 솔버 회귀 검증.
+ *
+ * - 비대칭 행렬에서 Held-Karp 정확해는 NN+2-opt 폴백보다 같거나 우수해야 한다.
+ * - "한쪽 끝에서 출발해 하차지 방향으로 쓸어담는" 배치에서 올바른 시작점을 선택해야 한다.
+ * - order는 모든 픽업의 유효 순열이고 order[0]가 chosenOriginIndex와 일치해야 한다.
+ * - 시작점이 메일 첫 줄(인덱스 0)로 고정되지 않음을 확인(세션 결함 회귀 방지).
+ */
+import { solveOpenStart, type OpenStartInput } from '@/domains/dispatch/services/openStartOptimizer';
+
+interface OpenStartCase {
+  name: string;
+  run: () => void;
+}
+
+function assert(condition: boolean, label: string) {
+  if (!condition) throw new Error(label);
+}
+
+/** 1차원 위치로부터 대칭 시간/거리 행렬과 하차지 거리 배열을 만든다. */
+function linearInput(positions: number[], destPos: number): OpenStartInput {
+  const n = positions.length;
+  const time = positions.map((pi) => positions.map((pj) => Math.abs(pi - pj)));
+  return {
+    labels: positions.map((_, i) => `P${i}`),
+    time,
+    dist: time.map((row) => row.map((v) => v * 1000)),
+    toDestTime: positions.map((p) => Math.abs(p - destPos)),
+    toDestDist: positions.map((p) => Math.abs(p - destPos) * 1000),
+  };
+}
+
+function isPermutation(order: number[], n: number): boolean {
+  if (order.length !== n) return false;
+  const seen = new Set(order);
+  if (seen.size !== n) return false;
+  for (let i = 0; i < n; i++) if (!seen.has(i)) return false;
+  return true;
+}
+
+export const OPEN_START_REGRESSION_CASES: OpenStartCase[] = [
+  {
+    name: '선형 배치: 하차지 반대편 끝에서 출발(쓸어담기)',
+    // P0..P2 = 0,10,20 / 하차지 30. 최적은 P0에서 출발해 30 방향으로.
+    run: () => {
+      const input = linearInput([0, 10, 20], 30);
+      const sol = solveOpenStart(input);
+      assert(sol.chosenOriginIndex === 0, `chosenOrigin=${sol.chosenOriginIndex}`);
+      assert(JSON.stringify(sol.order) === JSON.stringify([0, 1, 2]), `order=${sol.order}`);
+      assert(sol.totalTimeSec === 30, `total=${sol.totalTimeSec}`);
+    },
+  },
+  {
+    name: '시작점이 메일 첫 줄(인덱스 0)로 고정되지 않음',
+    // P0가 하차지에 가장 가깝게 배치 → 시작점은 P0가 아니어야 한다.
+    run: () => {
+      const input = linearInput([30, 20, 10, 0], 35); // 하차지 35, P0=30(가까움), P3=0(멈)
+      const sol = solveOpenStart(input);
+      assert(sol.chosenOriginIndex !== 0, `시작점이 0으로 고정됨(${sol.chosenOriginIndex})`);
+      assert(sol.chosenOriginIndex === 3, `expected start P3, got ${sol.chosenOriginIndex}`);
+    },
+  },
+  {
+    name: 'order는 유효 순열이고 order[0]===chosenOriginIndex',
+    run: () => {
+      const input = linearInput([5, 40, 15, 0, 25], 50);
+      const sol = solveOpenStart(input);
+      assert(isPermutation(sol.order, 5), `not permutation: ${sol.order}`);
+      assert(sol.order[0] === sol.chosenOriginIndex, `order[0]!=chosen`);
+    },
+  },
+  {
+    name: '비대칭 행렬에서 정확해 ≤ fast 폴백',
+    run: () => {
+      // 비대칭(교통 방향성 모사) 행렬.
+      const time = [
+        [0, 1, 9, 8],
+        [9, 0, 1, 9],
+        [8, 9, 0, 1],
+        [1, 8, 9, 0],
+      ];
+      const input: OpenStartInput = {
+        labels: ['A', 'B', 'C', 'D'],
+        time,
+        dist: time.map((r) => r.map((v) => v * 1000)),
+        toDestTime: [5, 5, 5, 5],
+        toDestDist: [5000, 5000, 5000, 5000],
+      };
+      const exact = solveOpenStart({ ...input, mode: 'exact' });
+      const fast = solveOpenStart({ ...input, mode: 'fast' });
+      assert(exact.method === 'exact' && fast.method === 'fast', 'method tags');
+      assert(exact.totalTimeSec <= fast.totalTimeSec, `exact ${exact.totalTimeSec} > fast ${fast.totalTimeSec}`);
+    },
+  },
+  {
+    name: '근거(originRationale): 차선 대비 절감이 음수가 아님',
+    run: () => {
+      const input = linearInput([0, 10, 20], 30);
+      const sol = solveOpenStart(input);
+      assert(sol.originRationale != null, 'rationale null');
+      assert((sol.originRationale?.deltaMin ?? -1) >= 0, `deltaMin<0`);
+      assert(Boolean(sol.originRationale?.runnerUpLabel), 'no runnerUp');
+    },
+  },
+  {
+    name: '단일 픽업: 근거 없음, 그대로 하차지로',
+    run: () => {
+      const input = linearInput([0], 30);
+      const sol = solveOpenStart(input);
+      assert(sol.chosenOriginIndex === 0, 'single start');
+      assert(sol.originRationale === null, 'single rationale should be null');
+      assert(sol.totalTimeSec === 30, `single total=${sol.totalTimeSec}`);
+    },
+  },
+];
+
+export function assertOpenStartRegression() {
+  const failures: string[] = [];
+  for (const c of OPEN_START_REGRESSION_CASES) {
+    try {
+      c.run();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failures.push(`✗ ${c.name}: ${msg}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Open-start regression failed:\n${failures.join('\n')}`);
+  }
+}

@@ -5,6 +5,7 @@ import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 import { X, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
+import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
 import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
 import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import QuoteDetailModal from '@/domains/chat/components/QuoteDetailModal';
@@ -34,7 +35,28 @@ import type {
   ChatAttachment,
   GeneratedFile,
   AgentStep,
+  ChatStructuredPayload,
 } from '@/domains/chat/types';
+
+/** 최종 페이로드에서 구조화 카드용 데이터를 추린다(없으면 undefined). */
+function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPayload | undefined {
+  const hasAny =
+    Boolean(payload.scenarioComparison) ||
+    Boolean(payload.departureMatrix) ||
+    Boolean(payload.routeRequest) ||
+    Boolean(payload.quote);
+  if (!hasAny) return undefined;
+  return {
+    quote: payload.quote ?? undefined,
+    scenarioComparison: payload.scenarioComparison ?? undefined,
+    scenarioRoutes: payload.scenarioRoutes ?? undefined,
+    scenarioRouteErrors: payload.scenarioRouteErrors ?? undefined,
+    routeRequest: payload.routeRequest ?? undefined,
+    departureMatrix: payload.departureMatrix ?? undefined,
+    departureAt: payload.departureAt ?? undefined,
+    realtimeTraffic: true,
+  };
+}
 
 interface AIQuoteChatModalProps {
   isOpen: boolean;
@@ -142,7 +164,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const pushAssistantMessage = (
     content: string,
     kind: ChatMessage['kind'] = 'normal',
-    options?: { evidence?: AIQuoteResponse['evidence']; sourceUserText?: string }
+    options?: { evidence?: AIQuoteResponse['evidence']; sourceUserText?: string; structured?: ChatStructuredPayload }
   ) => {
     setMessages((prev) => [
       ...prev,
@@ -154,6 +176,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
         timestamp: new Date(),
         evidence: options?.evidence,
         sourceUserText: options?.sourceUserText,
+        structured: options?.structured,
       },
     ]);
   };
@@ -333,6 +356,11 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           evidence:
             typeof m.metadata === 'object' && m.metadata
               ? ((m.metadata as Record<string, unknown>).evidence as AIQuoteResponse['evidence']) || undefined
+              : undefined,
+          // 영속된 구조화 결과(시나리오/출발매트릭스/경로) 복원 → 카드 재표시.
+          structured:
+            typeof m.metadata === 'object' && m.metadata
+              ? ((m.metadata as Record<string, unknown>).structured as ChatStructuredPayload) || undefined
               : undefined,
         }))
       );
@@ -681,17 +709,18 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
       const hasQuote = Boolean(payload.quote);
       const text = (liveText || payload.assistantMessage || '').trim();
+      const structured = buildStructuredFromPayload(payload);
 
       if (liveCreated) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === liveId
-              ? { ...m, content: text || '(응답 없음)', kind: hasQuote ? 'result' : 'normal', evidence: payload.evidence, sourceUserText: message }
+              ? { ...m, content: text || '(응답 없음)', kind: hasQuote ? 'result' : 'normal', evidence: payload.evidence, sourceUserText: message, structured }
               : m
           )
         );
       } else if (text) {
-        pushAssistantMessage(text, hasQuote ? 'result' : 'normal', { evidence: payload.evidence, sourceUserText: message });
+        pushAssistantMessage(text, hasQuote ? 'result' : 'normal', { evidence: payload.evidence, sourceUserText: message, structured });
       } else if (payload.followUpQuestions?.length) {
         pushAssistantMessage(payload.followUpQuestions.map((q) => `• ${q.question}`).join('\n'), 'system');
       } else {
@@ -704,12 +733,16 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
           routeSummary: payload.routeSummary || null,
           evidence: payload.evidence || null,
           sourceUserText: message,
+          structured: structured ?? null,
         });
       }
 
       if (payload.assumptions?.length) {
         pushAssistantMessage(`참고: ${payload.assumptions.join(', ')}`, 'system');
       }
+
+      // 하이브리드: 추천(기본) 시나리오/경로를 모달은 열어둔 채 지도에 자동 반영.
+      autoPreviewRecommended(payload);
     } catch (error) {
       if ((error as any)?.name === 'AbortError') {
         pushAssistantMessage('요청을 중단했어요.', 'system');
@@ -837,8 +870,12 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   };
 
   // 좌표가 해석된 지점은 좌표로(재지오코딩 회피), 아니면 주소 문자열로 미리보기를 실행한다.
-  const previewRouteOnMap = async (rawRequest: any, useSanitizedFallback = false) => {
+  const previewRouteOnMap = async (
+    rawRequest: any,
+    opts: { useSanitizedFallback?: boolean; closeOnSuccess?: boolean; silent?: boolean } = {}
+  ) => {
     if (!rawRequest) return;
+    const { useSanitizedFallback = false, closeOnSuccess = true, silent = false } = opts;
     const requestData = useSanitizedFallback
       ? sanitizeRequestDataForPreview(rawRequest)
       : rawRequest;
@@ -904,29 +941,51 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
               .join('\n')
             : null;
         const message = detailSummary ? `${baseMessage}\n${detailSummary}` : baseMessage;
-        setPreviewError(message);
-        pushAssistantMessage(`지도로 반영하지 못했어요: ${message}`, 'system');
+        if (!silent) {
+          setPreviewError(message);
+          pushAssistantMessage(`지도로 반영하지 못했어요: ${message}`, 'system');
+        }
         return;
       }
 
-      pushAssistantMessage('좌측 패널과 지도에 견적 조건을 반영했어요.', 'system');
-      onClose(); // 성공 시에만 닫기
+      if (!silent) pushAssistantMessage('좌측 패널과 지도에 견적 조건을 반영했어요.', 'system');
+      if (closeOnSuccess) onClose(); // 명시적 "지도에서 보기"일 때만 닫는다.
     } finally {
       setIsPreviewLoading(false);
     }
   };
 
   const handlePreviewOnMap = (useSanitizedFallback = false) =>
-    previewRouteOnMap(latestResult?.routeRequest, useSanitizedFallback);
+    previewRouteOnMap(latestResult?.routeRequest, { useSanitizedFallback });
 
   // 시나리오 비교에서 특정 시나리오를 앱 지도에 표시.
-  const handleScenarioSelect = (label: string) => {
-    const match = latestResult?.scenarioRoutes?.find((s) => s.label === label);
+  // routes를 직접 넘기면(인라인 카드) 그것을, 없으면 latestResult를 사용.
+  const handleScenarioSelect = (
+    label: string,
+    routes?: Array<{ label: string; routeRequest: any }>
+  ) => {
+    const pool = routes ?? latestResult?.scenarioRoutes;
+    const match = pool?.find((s) => s.label === label);
     if (!match?.routeRequest) {
       pushAssistantMessage('이 시나리오의 경로 정보를 찾지 못했어요. 다시 견적을 요청해 주세요.', 'system');
       return;
     }
     void previewRouteOnMap(match.routeRequest);
+  };
+
+  /** 추천(기본) 시나리오/경로를 모달은 열어둔 채 지도에 자동 반영(하이브리드). */
+  const autoPreviewedKeyRef = useRef<string | null>(null);
+  const autoPreviewRecommended = (payload: AIQuoteResponse) => {
+    const recLabel = payload.scenarioComparison?.recommendedLabel ?? null;
+    const recRoute = recLabel
+      ? payload.scenarioRoutes?.find((s) => s.label === recLabel)?.routeRequest
+      : undefined;
+    const target = recRoute ?? payload.routeRequest;
+    if (!target) return;
+    const key = JSON.stringify({ o: target.origins, d: target.destinations, dep: target.departureAt });
+    if (autoPreviewedKeyRef.current === key) return; // 동일 경로 중복 자동표시 방지
+    autoPreviewedKeyRef.current = key;
+    void previewRouteOnMap(target, { closeOnSuccess: false, silent: true });
   };
 
   if (!isOpen) return null;
@@ -1070,7 +1129,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 key={msg.id}
                 className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`flex max-w-[85%] md:max-w-[75%] gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
 
                   {/* Avatar */}
                   <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
@@ -1092,6 +1151,32 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     >
                       {renderMessageBody(msg)}
                     </div>
+                    {msg.role === 'assistant' && msg.structured && (
+                      <div className="mt-3 w-full space-y-3">
+                        {msg.structured.scenarioComparison && (
+                          <ScenarioComparisonCard
+                            comparison={msg.structured.scenarioComparison}
+                            routeErrors={msg.structured.scenarioRouteErrors}
+                            realtimeTraffic={msg.structured.realtimeTraffic}
+                            departureAt={msg.structured.departureAt}
+                            onSelect={(r) => handleScenarioSelect(r.label, msg.structured?.scenarioRoutes)}
+                          />
+                        )}
+                        {msg.structured.departureMatrix && (
+                          <DepartureMatrixCard matrix={msg.structured.departureMatrix} />
+                        )}
+                        {!msg.structured.scenarioComparison && Boolean(msg.structured.routeRequest) && (
+                          <button
+                            type="button"
+                            onClick={() => void previewRouteOnMap(msg.structured?.routeRequest)}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                          >
+                            <MapIcon className="h-3.5 w-3.5" />
+                            지도에서 보기
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {shouldRenderEvidence(msg) && (
                       <div className="mt-2 w-full max-w-[560px]">
                         <button

@@ -7,6 +7,7 @@ import {
   geocodeStopAddresses,
   type GeocodedStop,
 } from '@/domains/dispatch/services/stopGeocoder';
+import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
 import type {
   QuoteScenario,
   RouteMetrics,
@@ -77,37 +78,22 @@ function toRoutePoint(address: string, geocodeCache: Map<string, GeocodedStop>) 
   return address;
 }
 
-/** 시나리오의 stops를 route-optimization 페이로드(출발지 1 + 경유지 N + 종착 고정)로 변환. */
+/** 시나리오의 stops를 route-optimization 페이로드(출발지 1 + 경유지 N + 종착 고정)로 변환.
+ * 일반 시나리오 비교는 정확해(fastOrder=false)로 open-start 최적 시작점을 산출한다. */
 function buildRoutePayload(
   scenario: QuoteScenario,
   geocodeCache: Map<string, GeocodedStop>,
   departureAt?: string
 ) {
-  const pickups = scenario.stops.filter((s) => s.role === 'pickup');
-  const drops = scenario.stops.filter((s) => s.role === 'drop');
-
-  // 출발지: 첫 수거지(없으면 첫 stop)
-  const originStop = pickups[0] ?? scenario.stops[0];
-  const remaining = scenario.stops.filter((s) => s !== originStop);
-  // 종착지: 단일 하차지(있으면 맨 끝 고정)
-  const finalDrop = drops[drops.length - 1];
-  const orderedRemaining = finalDrop
-    ? [...remaining.filter((s) => s !== finalDrop), finalDrop]
-    : remaining;
-
-  return {
-    origins: [toRoutePoint(originStop.address, geocodeCache)],
-    destinations: orderedRemaining.map((s) => toRoutePoint(s.address, geocodeCache)),
-    finalDestinationAddress: finalDrop ? finalDrop.address : null,
-    useExplicitDestination: Boolean(finalDrop),
+  return buildRolePayload({
+    stops: scenario.stops,
+    toPoint: (address) => toRoutePoint(address, geocodeCache),
     vehicleType: scenario.vehicleType,
-    optimizeOrder: true,
-    returnToOrigin: false,
-    useRealtimeTraffic: true,
     roadOption: 'time-first',
     departureAt: departureAt ?? undefined,
-    dwellMinutes: orderedRemaining.map((s) => s.dwellMinutes ?? 0),
-  };
+    useRealtimeTraffic: true,
+    fastOrder: false,
+  });
 }
 
 type ScenarioRoutePayload = ReturnType<typeof buildRoutePayload>;
@@ -154,6 +140,8 @@ async function resolveMetrics(
         driveMinutes: Math.round(Number(summary.travelTime || 0) / 60),
         dwellMinutes: Math.round(Number(summary.dwellTime || 0) / 60),
         stopsCount: 0, // 0이면 scenarioPricing이 역할 구성에서 자동 추정
+        chosenOrigin: summary.chosenOrigin ?? undefined,
+        originRationale: summary.originRationale ?? null,
       },
     };
   } catch (e) {

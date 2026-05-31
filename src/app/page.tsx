@@ -16,20 +16,16 @@ export default function Home() {
     <div className="h-screen bg-background flex overflow-hidden font-sans">
       {/* 좌측 패널 */}
       <motion.aside
-        initial={{ x: -300, opacity: 0 }}
+        initial={{ x: -16, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
         className="hidden md:flex flex-col z-30 w-[28rem] bg-card border-r border-border shadow-xl"
       >
         <header className="px-6 py-5 flex-shrink-0 border-b border-border">
           <div className="flex items-center gap-3 select-none group cursor-default">
-            <motion.div
-              whileHover={{ rotate: 180 }}
-              transition={{ duration: 0.6, ease: "easeInOut" }}
-              className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground shadow-lg"
-            >
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-primary text-primary-foreground shadow-lg">
               <Compass className="w-5 h-5" />
-            </motion.div>
+            </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-1">
                 <span className="text-primary">옹라우팅</span>

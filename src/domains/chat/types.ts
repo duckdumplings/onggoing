@@ -1,5 +1,53 @@
 import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
 
+/** 출발시간 매트릭스 한 행(compare_departure_times 결과). 누락 필드는 계산 실패. */
+export type DepartureMatrixRow = {
+  id: string;
+  label: string;
+  dayType?: 'weekday' | 'weekend' | string;
+  trafficLabel?: string;
+  dateLabel?: string;
+  departureAt?: string;
+  km?: number;
+  driveMinutes?: number;
+  dwellMinutes?: number;
+  totalMinutes?: number;
+  oneTimePrice?: number;
+  formattedOneTime?: string;
+  annualPrice?: number;
+  formattedAnnual?: string;
+  arrivalLabel?: string;
+  meetsDeadline?: boolean;
+  deadlineSlackMinutes?: number;
+  error?: string;
+};
+
+/** 출발시간 매트릭스 결과 전체. */
+export type DepartureMatrixResult = {
+  matrix: DepartureMatrixRow[];
+  recommendedId: string | null;
+  frequencyLabel?: string | null;
+  deadline?: string | null;
+  deadlineInfeasible?: boolean;
+  deadlineNote?: string | null;
+  basis?: string;
+};
+
+/**
+ * 어시스턴트 답변에 동반되는 구조화 결과 페이로드.
+ * 마크다운 본문과 함께 카드/지도로 렌더하고, 메시지 metadata에 영속해 재진입 시 복원한다.
+ */
+export type ChatStructuredPayload = {
+  quote?: unknown;
+  scenarioComparison?: ScenarioComparison;
+  scenarioRoutes?: Array<{ label: string; routeRequest: unknown }>;
+  scenarioRouteErrors?: Array<{ label: string; message: string }>;
+  routeRequest?: unknown;
+  departureMatrix?: DepartureMatrixResult | null;
+  departureAt?: string;
+  realtimeTraffic?: boolean;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'assistant' | 'user';
@@ -8,6 +56,8 @@ export type ChatMessage = {
   timestamp: Date;
   evidence?: AIQuoteResponse['evidence'];
   sourceUserText?: string;
+  /** 구조화 결과(시나리오 비교/출발매트릭스/경로). 있으면 버블에 카드 인라인 렌더. */
+  structured?: ChatStructuredPayload;
 };
 
 export type AIQuoteResponse = {
@@ -27,6 +77,8 @@ export type AIQuoteResponse = {
   scenarioComparison?: ScenarioComparison;
   scenarioRouteErrors?: Array<{ label: string; message: string }>;
   scenarioRoutes?: Array<{ label: string; routeRequest: any }>;
+  departureMatrix?: DepartureMatrixResult | null;
+  departureAt?: string | null;
   assumptions?: string[];
   routeRequest?: any;
   routeRequestMeta?: {

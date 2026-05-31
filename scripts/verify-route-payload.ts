@@ -20,6 +20,10 @@ import {
   DEPARTURE_MATRIX_REGRESSION_CASES,
   assertDepartureMatrixRegression,
 } from '../src/domains/dispatch/evals/departureMatrixRegression';
+import {
+  OPEN_START_REGRESSION_CASES,
+  assertOpenStartRegression,
+} from '../src/domains/dispatch/evals/openStartRegression';
 
 try {
   assertRoutePayloadRegression();
@@ -37,6 +41,10 @@ try {
   assertDepartureMatrixRegression();
   console.log('✓ departure matrix regression OK');
   console.log(`  - departure matrix cases: ${DEPARTURE_MATRIX_REGRESSION_CASES.length}`);
+
+  assertOpenStartRegression();
+  console.log('✓ open-start regression OK');
+  console.log(`  - open-start cases: ${OPEN_START_REGRESSION_CASES.length}`);
 } catch (e) {
   console.error('✗ route payload/departure regression failed');
   if (e instanceof Error) {

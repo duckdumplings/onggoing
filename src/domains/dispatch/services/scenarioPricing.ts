@@ -30,7 +30,8 @@ const PER_JOB_REGULAR_FACTOR = 1.2;
 
 /**
  * 중간 경유지 수(정액 경유비 대상)를 역할 구성으로 추정한다.
- * 출발지(첫 수거지)와 최종 하차지를 제외한 나머지가 정액 대상.
+ * 출발지(시스템이 open-start로 고른 첫 수거지)와 최종 하차지를 제외한 나머지가 정액 대상.
+ * open-start로 출발지가 바뀌어도 "총 지점 - 2"라는 정액 대상 수는 불변이므로 본 계산은 그대로 유효하다.
  */
 export function deriveStopsCount(totalStops: number): number {
   return Math.max(0, totalStops - 2);

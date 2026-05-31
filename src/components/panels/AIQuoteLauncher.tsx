@@ -17,7 +17,7 @@ export default function AIQuoteLauncher({ onOpen }: AIQuoteLauncherProps) {
               출발지, 경유지, 시간 조건을 자연어로 입력하면 견적안을 자동 도출합니다.
             </p>
           </div>
-          <span className="rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">
+          <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
             OpenAI + Tmap
           </span>
         </div>
@@ -25,7 +25,7 @@ export default function AIQuoteLauncher({ onOpen }: AIQuoteLauncherProps) {
         <button
           type="button"
           onClick={onOpen}
-          className="mt-3 w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+          className="mt-3 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         >
           AI 견적챗 열기
         </button>

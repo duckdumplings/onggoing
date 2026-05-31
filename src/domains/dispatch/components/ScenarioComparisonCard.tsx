@@ -147,6 +147,29 @@ export default function ScenarioComparisonCard({
                           departureAt={departureAt}
                           onApplyTip={onApplyTip ? (tip) => onApplyTip(r, tip) : undefined}
                         />
+                        {r.metrics.chosenOrigin && (
+                          <div className="mt-3 text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">출발지</span>{' '}
+                            {r.metrics.chosenOrigin}
+                            {r.metrics.originRationale?.runnerUpLabel &&
+                              (r.metrics.originRationale.deltaMin > 0 ||
+                                r.metrics.originRationale.deltaKm > 0) && (
+                                <span className="ml-1 tabular-nums">
+                                  (차선 {r.metrics.originRationale.runnerUpLabel} 대비
+                                  {r.metrics.originRationale.deltaMin > 0
+                                    ? ` -${r.metrics.originRationale.deltaMin}분`
+                                    : ''}
+                                  {r.metrics.originRationale.deltaKm > 0
+                                    ? ` · -${r.metrics.originRationale.deltaKm}km`
+                                    : ''}
+                                  )
+                                </span>
+                              )}
+                            <span className="ml-1 text-[11px] text-muted-foreground/80">
+                              · 시스템이 총 이동시간 최소 지점으로 자동 선택
+                            </span>
+                          </div>
+                        )}
                         {onSelect && (
                           <button
                             type="button"

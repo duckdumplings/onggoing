@@ -52,6 +52,25 @@ export interface RouteMetrics {
   dwellMinutes: number;
   /** 중간 경유지 수(최종 하차지 제외). 정액 경유비 산정 기준. */
   stopsCount: number;
+  /** open-start로 시스템이 선택한 출발지(주소). 미사용 시 undefined. */
+  chosenOrigin?: string;
+  /** 출발지 선택 근거(대안 대비 절감). open-start 미사용 시 null/undefined. */
+  originRationale?: OriginRationale | null;
+}
+
+/**
+ * open-start 출발지 선택 근거(대안 대비 절감).
+ * 엔진(openStartOptimizer)이 산출한 값을 UI/문서가 그대로 소비한다.
+ */
+export interface OriginRationale {
+  /** 선택된 출발지 라벨(주소). */
+  chosenLabel: string;
+  /** 차선 출발지 라벨. 후보가 1개뿐이면 null. */
+  runnerUpLabel: string | null;
+  /** 차선 대비 단축된 총 이동시간(분, 양수면 그만큼 빠름). */
+  deltaMin: number;
+  /** 차선 대비 단축된 총 이동거리(km). */
+  deltaKm: number;
 }
 
 /** 한 건의 견적 시나리오 입력. (예: "3개 지점 수거 → 문래역 하차") */
