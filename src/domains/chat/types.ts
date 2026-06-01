@@ -58,6 +58,8 @@ export type ChatMessage = {
   sourceUserText?: string;
   /** 구조화 결과(시나리오 비교/출발매트릭스/경로). 있으면 버블에 카드 인라인 렌더. */
   structured?: ChatStructuredPayload;
+  /** 실패 응답 — 버블에 "다시 시도" 버튼을 노출한다(sourceUserText로 재전송). */
+  retryable?: boolean;
 };
 
 export type AIQuoteResponse = {

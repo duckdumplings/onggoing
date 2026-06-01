@@ -247,7 +247,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
   const pushAssistantMessage = (
     content: string,
     kind: ChatMessage['kind'] = 'normal',
-    options?: { evidence?: AIQuoteResponse['evidence']; sourceUserText?: string; structured?: ChatStructuredPayload }
+    options?: { evidence?: AIQuoteResponse['evidence']; sourceUserText?: string; structured?: ChatStructuredPayload; retryable?: boolean }
   ) => {
     setMessages((prev) => [
       ...prev,
@@ -260,8 +260,17 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
         evidence: options?.evidence,
         sourceUserText: options?.sourceUserText,
         structured: options?.structured,
+        retryable: options?.retryable,
       },
     ]);
+  };
+
+  // 실패한 사용자 질문을 사용자 말풍선 중복 없이 다시 전송한다(에러 버블의 "다시 시도").
+  const handleRetryMessage = (sourceUserText?: string) => {
+    if (loading) return;
+    const text = (sourceUserText || '').trim();
+    if (!text) return;
+    void handleSend(text, { skipUserEcho: true });
   };
 
   const renderMessageBody = (msg: ChatMessage) => {
@@ -774,7 +783,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
         const json = (await res.json().catch(() => null)) as AIQuoteResponse | null;
         if (json) setLatestResult(json);
         const errMsg = json?.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
-        pushAssistantMessage(errMsg, 'normal', { sourceUserText: message });
+        pushAssistantMessage(errMsg, 'normal', { sourceUserText: message, retryable: true });
         return;
       }
 
@@ -822,7 +831,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
 
       if (!finalPayload) {
         if (!liveText) {
-          pushAssistantMessage('응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message });
+          pushAssistantMessage('응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message, retryable: true });
         }
         return;
       }
@@ -834,10 +843,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
         const errText = payload.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
         if (liveCreated) {
           setMessages((prev) =>
-            prev.map((m) => (m.id === liveId ? { ...m, content: liveText || errText, sourceUserText: message } : m))
+            prev.map((m) => (m.id === liveId ? { ...m, content: liveText || errText, sourceUserText: message, retryable: true } : m))
           );
         } else {
-          pushAssistantMessage(liveText || errText, 'normal', { sourceUserText: message });
+          pushAssistantMessage(liveText || errText, 'normal', { sourceUserText: message, retryable: true });
         }
         return;
       }
@@ -882,7 +891,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
       if ((error as any)?.name === 'AbortError') {
         pushAssistantMessage('요청을 중단했어요.', 'system');
       } else {
-        pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.');
+        pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message, retryable: true });
       }
     } finally {
       abortRef.current = null;
@@ -1356,6 +1365,19 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
                         )}
                       </div>
                     )}
+                    {msg.role === 'assistant' && msg.retryable && msg.sourceUserText && (
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRetryMessage(msg.sourceUserText)}
+                          disabled={loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          다시 시도
+                        </button>
+                      </div>
+                    )}
                     {shouldRenderEvidence(msg) && (
                       <div className="mt-2 w-full max-w-[560px]">
                         <button
@@ -1534,12 +1556,20 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
                 ))}
               </div>
             )}
-            {/* Quick Templates */}
+            {/* Quick Templates (콜드스타트: 한 번 탭으로 바로 시작) */}
+            {!messages.some((m) => m.role === 'user') && !loading && (
+              <p className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">이렇게 시작해보세요 · 탭하면 바로 견적</p>
+            )}
             <div className="flex gap-2 overflow-x-auto pb-3 hide-scrollbar mask-linear-fade">
               {quickTemplates.map((template, idx) => (
                 <button
                   key={idx}
                   onClick={() => {
+                    const coldStart = !messages.some((m) => m.role === 'user');
+                    if (coldStart && !loading) {
+                      void handleSend(template);
+                      return;
+                    }
                     setInput(template);
                     if (textareaRef.current) {
                       textareaRef.current.focus();
