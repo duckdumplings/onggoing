@@ -35,7 +35,7 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, routeDetailOpen, setRouteDetailOpen } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, routeDetailOpen, setRouteDetailOpen, openWorkspace } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
   const [showRecalculateDialog, setShowRecalculateDialog] = useState(false);
@@ -517,10 +517,18 @@ export default function TmapMainMap() {
               <div className="w-12 h-12 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
                 <Truck className="w-6 h-6" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="font-bold text-foreground text-lg">다중 배송원 최적화</h3>
                 <p className="text-xs text-muted-foreground font-medium">{multiDriverResult.drivers.length}명 배송원</p>
               </div>
+              <button
+                type="button"
+                onClick={() => openWorkspace('result')}
+                className="focus-ring-inset flex-none rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                title="배차 결과 상세 보기"
+              >
+                상세 보기
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">

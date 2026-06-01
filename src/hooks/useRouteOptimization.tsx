@@ -249,6 +249,13 @@ export interface RouteOptimizationState {
   // 경로 결과 상세 오버레이 표시 여부 (커맨드 독 상세 버튼과 지도 상세 패널이 공유)
   routeDetailOpen: boolean;
   setRouteDetailOpen: (open: boolean) => void;
+
+  // 우측 워크스페이스(탭 패널): 대화/배차 결과를 하나의 표면에서 전환한다.
+  workspaceOpen: boolean;
+  workspaceTab: 'chat' | 'result';
+  openWorkspace: (tab?: 'chat' | 'result') => void;
+  closeWorkspace: () => void;
+  setWorkspaceTab: (tab: 'chat' | 'result') => void;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -278,6 +285,13 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
   const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number } | null>(null);
   const [routeDetailOpen, setRouteDetailOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'result'>('chat');
+  const openWorkspace = useCallback((tab: 'chat' | 'result' = 'chat') => {
+    setWorkspaceTab(tab);
+    setWorkspaceOpen(true);
+  }, []);
+  const closeWorkspace = useCallback(() => setWorkspaceOpen(false), []);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
   const inputNonceRef = useRef(0);
@@ -536,6 +550,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     sendChatPrompt,
     routeDetailOpen,
     setRouteDetailOpen,
+    workspaceOpen,
+    workspaceTab,
+    openWorkspace,
+    closeWorkspace,
+    setWorkspaceTab,
   };
 
   return (

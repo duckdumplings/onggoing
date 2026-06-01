@@ -4,7 +4,6 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import AddressAutocomplete, { type AddressSelection } from '@/components/AddressAutocomplete';
 import WaypointList, { type Waypoint } from './WaypointList';
-import MultiDriverResultsPanel from './MultiDriverResultsPanel';
 import {
   ChevronDown,
   ChevronUp,
@@ -75,6 +74,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
     multiDriverResult,
     setMultiDriverResult,
     inputApplyRequest,
+    openWorkspace,
   } = useRouteOptimization();
 
   // 외부에서 입력값을 설정할 수 있는 함수들
@@ -1013,6 +1013,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
                 const result = await response.json();
                 console.log('[RouteOptimizerPanel] 다중 배송원 최적화 완료:', result);
                 setMultiDriverResult(result);
+                openWorkspace('result');
                 setFieldErrors({});
 
                 if (shouldPersistOptimizationRun) {
@@ -1189,33 +1190,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
         </button>
       </div>
 
-      {/* 다중 배송원 상세 결과 — 지도를 가리지 않는 우측 슬라이드오버(챗과 동일 패턴) */}
-      {optimizationMode === 'multi' && multiDriverResult && (
-        <>
-          <button
-            type="button"
-            aria-label="다중 배송원 결과 닫기"
-            onClick={() => setMultiDriverResult(null)}
-            className="fixed inset-0 z-[55] bg-foreground/10"
-          />
-          <div className="fixed right-0 top-0 z-[56] flex h-full w-full flex-col border-l border-border bg-card shadow-2xl animate-in slide-in-from-right duration-300 sm:w-[560px] lg:w-[640px]">
-            <div className="flex flex-none items-center justify-between border-b border-border bg-card px-5 py-4">
-              <h3 className="text-lg font-bold text-foreground">다중 배송원 최적화 결과</h3>
-              <button
-                onClick={() => setMultiDriverResult(null)}
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
-                aria-label="닫기"
-                title="닫기"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              <MultiDriverResultsPanel result={multiDriverResult} />
-            </div>
-          </div>
-        </>
-      )}
+      {/* 다중 배송원 상세 결과는 우측 워크스페이스 '배차 결과' 탭에서 렌더링한다 (WorkspacePanel). */}
 
       {/* 저장된 경로 불러오기 (하단 숨김 버튼) */}
       <div className="p-5 pt-2 text-center">
