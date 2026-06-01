@@ -64,9 +64,11 @@ const MAX_CHARS = 8000;
 interface AIQuoteChatModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** true면 오버레이 모달 대신 부모를 채우는 인라인 도킹 패널로 렌더(데스크톱 우측 도크). */
+  docked?: boolean;
 }
 
-export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalProps) {
+export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AIQuoteChatModalProps) {
   const { optimizeRouteWith, requestInputApply, setMultiDriverResult } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -1098,8 +1100,20 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[4000] flex items-center justify-center glass-overlay p-4 md:p-6 transition-opacity duration-300">
-      <div className="flex h-full w-full max-w-6xl lg:max-w-[1280px] xl:max-w-[1500px] 2xl:max-w-[1720px] overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row">
+    <div
+      className={
+        docked
+          ? 'h-full w-full flex flex-col bg-card'
+          : 'fixed inset-0 z-[4000] flex items-center justify-center glass-overlay p-4 md:p-6 transition-opacity duration-300'
+      }
+    >
+      <div
+        className={
+          docked
+            ? 'flex h-full w-full overflow-hidden bg-card flex-row'
+            : 'flex h-full w-full max-w-6xl lg:max-w-[1280px] xl:max-w-[1500px] 2xl:max-w-[1720px] overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row'
+        }
+      >
 
         {/* Main Chat Area */}
         <div className="flex flex-1 flex-col h-full min-w-0 bg-card relative">

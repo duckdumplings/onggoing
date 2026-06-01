@@ -8,18 +8,22 @@ import BottomSheet from '@/components/ui/BottomSheet';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Compass } from 'lucide-react';
+import { useIsDesktop } from '@/hooks/useMediaQuery';
 
 export default function Home() {
   const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
+  const isDesktop = useIsDesktop();
+  // 데스크톱에서 챗을 열면 우측 인라인 도크로 표시하고, 좌측 입력 패널은 접어 지도 공간을 확보한다.
+  const docked = isDesktop && isAiQuoteModalOpen;
 
   return (
     <div className="h-screen bg-background flex overflow-hidden font-sans">
-      {/* 좌측 패널 */}
+      {/* 좌측 패널 (도크가 열리면 접힘) */}
       <motion.aside
         initial={{ x: -16, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.24, ease: "easeOut" }}
-        className="hidden md:flex flex-col z-30 w-[28rem] bg-card border-r border-border shadow-xl"
+        className={`${docked ? 'hidden' : 'hidden md:flex'} flex-col z-30 w-[28rem] bg-card border-r border-border shadow-xl`}
       >
         <header className="px-6 py-5 flex-shrink-0 border-b border-border">
           <div className="flex items-center gap-3 select-none group cursor-default">
@@ -48,9 +52,21 @@ export default function Home() {
       </motion.aside>
 
       {/* 우측 지도 - 모바일에서는 전체 화면, 데스크톱에서는 잔여 영역 */}
-      <main className="relative flex-1 h-full bg-muted">
+      <main className="relative flex-1 h-full bg-muted min-w-0">
         <TmapMainMap />
       </main>
+
+      {/* 데스크톱: 우측 인라인 도킹 패널 (챗) */}
+      {docked && (
+        <motion.aside
+          initial={{ x: 24, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="hidden lg:flex h-full w-[720px] xl:w-[860px] flex-shrink-0 border-l border-border bg-card shadow-xl z-30"
+        >
+          <AIQuoteChatModal docked isOpen={isAiQuoteModalOpen} onClose={() => setIsAiQuoteModalOpen(false)} />
+        </motion.aside>
+      )}
 
       {/* 모바일 하단 시트 — 지도를 가리지 않고 제어판을 띄운다 */}
       <BottomSheet aria-label="경로·견적 제어판">
@@ -61,7 +77,10 @@ export default function Home() {
         </div>
       </BottomSheet>
 
-      <AIQuoteChatModal isOpen={isAiQuoteModalOpen} onClose={() => setIsAiQuoteModalOpen(false)} />
+      {/* 모바일/태블릿: 오버레이 모달 (데스크톱 도크가 아닐 때만) */}
+      {!docked && (
+        <AIQuoteChatModal isOpen={isAiQuoteModalOpen} onClose={() => setIsAiQuoteModalOpen(false)} />
+      )}
     </div>
   );
 }
