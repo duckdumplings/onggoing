@@ -37,6 +37,8 @@ import type {
   AgentStep,
   ChatStructuredPayload,
 } from '@/domains/chat/types';
+import type { QuoteIssuer } from '@/domains/quote/services/chatFileGenerator';
+import { EMPTY_ISSUER, loadIssuer, saveIssuer, toGenerationIssuer } from '@/domains/quote/services/issuerSettings';
 
 /** 최종 페이로드에서 구조화 카드용 데이터를 추린다(없으면 undefined). */
 function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPayload | undefined {
@@ -122,6 +124,19 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
   const [docValidDays, setDocValidDays] = useState(14);
   const [docIncludeVat, setDocIncludeVat] = useState(true);
   const [docNotes, setDocNotes] = useState('');
+  // 발행처(공급자) 설정 — localStorage 보관, 견적서 생성에 주입.
+  const [issuer, setIssuer] = useState<QuoteIssuer>(EMPTY_ISSUER);
+  const [issuerOpen, setIssuerOpen] = useState(false);
+  const updateIssuer = (patch: Partial<QuoteIssuer>) => {
+    setIssuer((prev) => {
+      const next = { ...prev, ...patch };
+      saveIssuer(next);
+      return next;
+    });
+  };
+  useEffect(() => {
+    setIssuer(loadIssuer());
+  }, []);
 
   // 직전 결과(견적/시나리오/경로 좌표)를 후속 요청 컨텍스트로 구조화 — 멀티턴 메모리.
   const conversationContext = useMemo(() => {
@@ -497,11 +512,12 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
     }
   };
 
-  /** 현재 대화 컨텍스트 + 사용자가 지정한 견적서 옵션으로 생성 입력을 구성. */
-  const buildGenerationInput = () => {
+  /** 현재 대화 컨텍스트 + 사용자가 지정한 견적서 옵션으로 생성 입력을 구성.
+   *  override.structured가 있으면 해당 결과 카드 기준으로 시나리오를 구성한다(카드 원클릭 발행용). */
+  const buildGenerationInput = (override?: { structured?: ChatStructuredPayload }) => {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
-    const comparison = latestResult?.scenarioComparison;
+    const comparison = override?.structured?.scenarioComparison ?? latestResult?.scenarioComparison;
     const scenarios = comparison?.results?.map((r: any) => ({
       label: r.label,
       recommendedPlan: r.recommendedPlan,
@@ -534,6 +550,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
       validUntilDays: docValidDays,
       includeVat: docIncludeVat,
       notes: docNotes.trim() || undefined,
+      issuer: toGenerationIssuer(issuer),
     };
   };
 
@@ -559,10 +576,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
     return true;
   };
 
-  const handleGenerateFile = async (fileType: GeneratedFile['file_type']) => {
+  const handleGenerateFile = async (
+    fileType: GeneratedFile['file_type'],
+    override?: { structured?: ChatStructuredPayload }
+  ) => {
     setIsGeneratingFile(true);
     try {
-      const input = buildGenerationInput();
+      const input = buildGenerationInput(override);
       const isPersisted = Boolean(currentSessionId && !currentSessionId.startsWith('local-'));
       if (isPersisted) {
         const result = await generateFileApi(currentSessionId as string, fileType, input);
@@ -1302,13 +1322,24 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
                     {msg.role === 'assistant' && msg.structured && (
                       <div className="mt-3 w-full space-y-3">
                         {msg.structured.scenarioComparison && (
-                          <ScenarioComparisonCard
-                            comparison={msg.structured.scenarioComparison}
-                            routeErrors={msg.structured.scenarioRouteErrors}
-                            realtimeTraffic={msg.structured.realtimeTraffic}
-                            departureAt={msg.structured.departureAt}
-                            onSelect={(r) => handleScenarioSelect(r.label, msg.structured?.scenarioRoutes)}
-                          />
+                          <>
+                            <ScenarioComparisonCard
+                              comparison={msg.structured.scenarioComparison}
+                              routeErrors={msg.structured.scenarioRouteErrors}
+                              realtimeTraffic={msg.structured.realtimeTraffic}
+                              departureAt={msg.structured.departureAt}
+                              onSelect={(r) => handleScenarioSelect(r.label, msg.structured?.scenarioRoutes)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleGenerateFile('pdf', { structured: msg.structured })}
+                              disabled={isGeneratingFile}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 active:scale-[0.99] transition disabled:opacity-50"
+                            >
+                              {isGeneratingFile ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                              이 결과로 견적서 발행 (PDF)
+                            </button>
+                          </>
                         )}
                         {msg.structured.departureMatrix && (
                           <DepartureMatrixCard matrix={msg.structured.departureMatrix} />
@@ -1821,6 +1852,108 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
                       placeholder="견적서에 함께 표기할 메모"
                       className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100 resize-none"
                     />
+                  </div>
+
+                  {/* 발행처(공급자) 설정 — 로고/사업자번호 등, localStorage 보관 */}
+                  <div className="pt-1 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setIssuerOpen((v) => !v)}
+                      className="w-full flex items-center justify-between py-1.5 text-[11px] font-bold text-foreground"
+                    >
+                      <span>발행처(공급자) 설정</span>
+                      <span className="text-[10px] font-semibold text-indigo-600">{issuerOpen ? '접기' : '펼치기'}</span>
+                    </button>
+                    {issuerOpen && (
+                      <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-14 h-14 flex-none rounded-lg border border-border bg-muted overflow-hidden flex items-center justify-center">
+                            {issuer.logoDataUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={issuer.logoDataUrl} alt="발행처 로고" className="w-full h-full object-contain" />
+                            ) : (
+                              <FileText className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-200 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50 cursor-pointer">
+                              <Paperclip className="w-3 h-3" />
+                              로고 업로드
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = () => updateIssuer({ logoDataUrl: String(reader.result || '') });
+                                  reader.readAsDataURL(file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {issuer.logoDataUrl && (
+                              <button
+                                type="button"
+                                onClick={() => updateIssuer({ logoDataUrl: '' })}
+                                className="block text-[10px] text-muted-foreground hover:text-rose-600"
+                              >
+                                로고 제거
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">발행처명</label>
+                          <input
+                            value={issuer.name || ''}
+                            onChange={(e) => updateIssuer({ name: e.target.value })}
+                            placeholder="예: 옹고잉 물류"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-semibold text-muted-foreground mb-1">사업자번호</label>
+                            <input
+                              value={issuer.bizNumber || ''}
+                              onChange={(e) => updateIssuer({ bizNumber: e.target.value })}
+                              placeholder="000-00-00000"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-semibold text-muted-foreground mb-1">연락처</label>
+                            <input
+                              value={issuer.contact || ''}
+                              onChange={(e) => updateIssuer({ contact: e.target.value })}
+                              placeholder="02-0000-0000"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">이메일</label>
+                          <input
+                            value={issuer.email || ''}
+                            onChange={(e) => updateIssuer({ email: e.target.value })}
+                            placeholder="info@company.com"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">주소</label>
+                          <input
+                            value={issuer.address || ''}
+                            onChange={(e) => updateIssuer({ address: e.target.value })}
+                            placeholder="서울특별시 ..."
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">이 기기에 저장되어 모든 견적서에 자동 반영됩니다.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

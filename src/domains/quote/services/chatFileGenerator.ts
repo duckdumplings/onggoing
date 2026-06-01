@@ -42,6 +42,8 @@ export type QuoteIssuer = {
   contact?: string;
   bizNumber?: string;
   address?: string;
+  /** 로고 이미지(data URL, png/jpg). PDF 헤더에 임베드된다. */
+  logoDataUrl?: string;
 };
 
 export type GenerationInput = {
@@ -94,6 +96,18 @@ const DEFAULT_ISSUER: Required<Pick<QuoteIssuer, 'name' | 'email'>> & QuoteIssue
   name: '옹고잉 물류',
   email: 'info@naeyil.com',
 };
+
+/** data URL(base64) → Buffer. PDF 로고 임베드용. 실패 시 null. */
+function dataUrlToBuffer(dataUrl?: string): Buffer | null {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  const m = dataUrl.match(/^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return null;
+  try {
+    return Buffer.from(m[2], 'base64');
+  } catch {
+    return null;
+  }
+}
 
 function resolveIssuer(issuer?: QuoteIssuer): QuoteIssuer {
   return { ...DEFAULT_ISSUER, ...(issuer || {}) };
@@ -349,15 +363,25 @@ async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
       y += h;
     };
 
-    // ── 헤더: 좌측 타이틀 / 우측 발행처 ──
+    // ── 헤더: 좌측 타이틀 / 우측 발행처(로고 우선) ──
     text('견 적 서', X0, y, { size: 24, color: PDF_ACCENT });
-    text(issuer.name || '', X0, y + 4, { width: CONTENT_W, align: 'right', size: 13, color: PDF_INK });
+    let rightTop = y + 4;
+    const logoBuf = dataUrlToBuffer(issuer.logoDataUrl);
+    if (logoBuf) {
+      try {
+        doc.image(logoBuf, X1 - 130, y, { fit: [130, 38] });
+        rightTop = y + 44;
+      } catch {
+        // 로고 디코드 실패 시 텍스트 헤더로 폴백
+      }
+    }
+    text(issuer.name || '', X0, rightTop, { width: CONTENT_W, align: 'right', size: 13, color: PDF_INK });
     const issuerMeta = [issuer.email, issuer.contact, issuer.bizNumber ? `사업자 ${issuer.bizNumber}` : '']
       .filter(Boolean)
       .join('  ·  ');
-    text(issuerMeta, X0, y + 24, { width: CONTENT_W, align: 'right', size: 9, color: PDF_MUTED });
+    text(issuerMeta, X0, rightTop + 20, { width: CONTENT_W, align: 'right', size: 9, color: PDF_MUTED });
     text('QUOTATION', X0, y + 30, { size: 9, color: PDF_MUTED });
-    y += 50;
+    y += logoBuf ? 76 : 50;
 
     // ── 메타 바: 견적번호 / 발행일 / 유효기간 ──
     doc.save();
@@ -510,7 +534,9 @@ async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
     doc.restore();
     y += 8;
     text(`발행: ${issuer.name}`, X0, y, { size: 9, color: PDF_INK });
-    const footMeta = [issuer.email, issuer.contact].filter(Boolean).join('  ·  ');
+    const footMeta = [issuer.bizNumber ? `사업자 ${issuer.bizNumber}` : '', issuer.email, issuer.contact, issuer.address]
+      .filter(Boolean)
+      .join('  ·  ');
     if (footMeta) text(footMeta, X0, y, { width: CONTENT_W, align: 'right', size: 9, color: PDF_MUTED });
 
     doc.end();
