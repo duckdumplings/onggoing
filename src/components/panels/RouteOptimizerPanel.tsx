@@ -505,7 +505,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
       {/* Main Content (Scrollable) */}
       <div className={isDock ? 'p-1 space-y-6' : 'p-5 space-y-6 pb-6'}>
         {/* 1. Resource Section (Mode & Vehicle) */}
-        <div className="bg-muted rounded-xl border border-border p-4 space-y-4">
+        <div className={isDock ? 'rounded-2xl border border-border bg-card/40 p-3.5 space-y-3.5' : 'bg-muted rounded-xl border border-border p-4 space-y-4'}>
           {/* 모드 선택 */}
           <RadioGroup
             value={optimizationMode}
@@ -658,7 +658,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
           </div>
 
           {/* 경유지 리스트 Content */}
-          <div className="bg-muted/50 rounded-2xl border border-border p-1 ml-4 shadow-sm">
+          <div className={isDock ? 'rounded-2xl p-1 ml-4' : 'bg-muted/50 rounded-2xl border border-border p-1 ml-4 shadow-sm'}>
             <WaypointList
               waypoints={waypoints}
               onWaypointsChange={setWaypoints}
@@ -814,7 +814,7 @@ export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizer
       </div>
 
       {/* Sticky Footer Action Button */}
-      <div className="sticky bottom-0 p-5 bg-card border-t border-border z-30">
+      <div className={isDock ? 'sticky bottom-0 z-30 -mx-1 px-1 pt-4 pb-1 bg-gradient-to-t from-card via-card/90 to-transparent' : 'sticky bottom-0 p-5 bg-card border-t border-border z-30'}>
         <button
           ref={optimizeButtonRef}
           onClick={async () => {
