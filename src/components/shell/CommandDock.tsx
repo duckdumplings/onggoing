@@ -78,7 +78,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   return (
     <div
       className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-5 transition-[padding] duration-300 ${
-        chatOpen ? 'lg:pr-[720px] xl:pr-[840px]' : ''
+        chatOpen ? 'lg:pr-[480px]' : ''
       }`}
     >
       <div className="pointer-events-auto w-full max-w-[680px]">

@@ -66,9 +66,9 @@ export default function Home() {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
-              className="absolute right-0 top-0 z-50 h-full w-full border-l border-border bg-card shadow-2xl lg:w-[720px] xl:w-[840px]"
+              className="absolute right-0 top-0 z-50 h-full w-full border-l border-border bg-card shadow-2xl sm:w-[440px] lg:w-[460px]"
             >
-              <AIQuoteChatModal docked isOpen onClose={closeChat} />
+              <AIQuoteChatModal docked compact isOpen onClose={closeChat} />
             </motion.aside>
           )}
         </AnimatePresence>

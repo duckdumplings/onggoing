@@ -68,9 +68,11 @@ interface AIQuoteChatModalProps {
   onClose: () => void;
   /** true면 오버레이 모달 대신 부모를 채우는 인라인 도킹 패널로 렌더(데스크톱 우측 도크). */
   docked?: boolean;
+  /** true면 우측 견적현황/발행 패널을 인라인 2단 대신 슬라이드 드로어로 전환(좁은 슬라이드오버용). */
+  compact?: boolean;
 }
 
-export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AIQuoteChatModalProps) {
+export default function AIQuoteChatModal({ isOpen, onClose, docked = false, compact = false }: AIQuoteChatModalProps) {
   const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -127,6 +129,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
   // 발행처(공급자) 설정 — localStorage 보관, 견적서 생성에 주입.
   const [issuer, setIssuer] = useState<QuoteIssuer>(EMPTY_ISSUER);
   const [issuerOpen, setIssuerOpen] = useState(false);
+  // compact 모드에서 우측 견적현황/발행 드로어 열림 상태
+  const [infoSheetOpen, setInfoSheetOpen] = useState(false);
   const updateIssuer = (patch: Partial<QuoteIssuer>) => {
     setIssuer((prev) => {
       const next = { ...prev, ...patch };
@@ -1166,8 +1170,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
       <div
         className={
           docked
-            ? 'flex h-full w-full overflow-hidden bg-card flex-row'
-            : 'flex h-full w-full max-w-6xl lg:max-w-[1280px] xl:max-w-[1500px] 2xl:max-w-[1720px] overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row'
+            ? 'relative flex h-full w-full overflow-hidden bg-card flex-row'
+            : 'relative flex h-full w-full max-w-6xl lg:max-w-[1280px] xl:max-w-[1500px] 2xl:max-w-[1720px] overflow-hidden rounded-2xl bg-card shadow-2xl ring-1 ring-black/5 flex-col md:flex-row'
         }
       >
 
@@ -1217,6 +1221,26 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
               >
                 <RefreshCw className="h-5 w-5" />
               </button>
+
+              {/* compact: 견적현황/발행 드로어 토글 */}
+              {compact && (
+                <button
+                  type="button"
+                  onClick={() => setInfoSheetOpen((v) => !v)}
+                  className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                    infoSheetOpen
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                  }`}
+                  title="견적 현황·발행"
+                >
+                  <Calculator className="h-4 w-4" />
+                  <span className="hidden sm:inline">견적</span>
+                  {latestResult?.quote && !infoSheetOpen && (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-indigo-500" />
+                  )}
+                </button>
+              )}
 
               {/* Mobile Close Button */}
               <button
@@ -1701,8 +1725,22 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
           </div>
         </div>
 
-        {/* Info Sidebar (Right Panel) */}
-        <div className="hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-slate-50/50">
+        {/* Info Sidebar (Right Panel) — compact 모드에서는 슬라이드 드로어로 전환 */}
+        {compact && infoSheetOpen && (
+          <button
+            type="button"
+            aria-label="견적 패널 닫기"
+            onClick={() => setInfoSheetOpen(false)}
+            className="absolute inset-0 z-30 bg-foreground/15"
+          />
+        )}
+        <div
+          className={
+            compact
+              ? `absolute inset-y-0 right-0 z-40 flex w-[92%] max-w-[400px] flex-col border-l border-border bg-slate-50 shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
+              : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-slate-50/50'
+          }
+        >
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-white/50">
@@ -1711,8 +1749,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
               실시간 견적 현황
             </h3>
             <button
-              onClick={onClose}
+              onClick={() => (compact ? setInfoSheetOpen(false) : onClose())}
               className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-muted-foreground transition-colors"
+              title={compact ? '닫기' : '견적챗 닫기'}
             >
               <X className="w-5 h-5" />
             </button>
