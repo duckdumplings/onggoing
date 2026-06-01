@@ -242,9 +242,9 @@ export interface RouteOptimizationState {
   // 외부(견적챗/이력)에서 RouteOptimizerPanel 입력을 채우는 요청 (window 전역 대체)
   inputApplyRequest: { data: any; nonce: number } | null;
   requestInputApply: (data: any) => void;
-  // 지도/패널 경로를 견적챗으로 주입하는 요청 (지도 → 챗, 단방향)
-  quoteFromRouteRequest: { text: string; nonce: number } | null;
-  requestQuoteFromRoute: (text: string) => void;
+  // 임의 텍스트를 견적챗으로 전송하는 요청 (지도 CTA / 커맨드 독 입력 → 챗, 단방향)
+  chatPromptRequest: { text: string; nonce: number } | null;
+  sendChatPrompt: (text: string) => void;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -272,7 +272,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
-  const [quoteFromRouteRequest, setQuoteFromRouteRequest] = useState<{ text: string; nonce: number } | null>(null);
+  const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
   const inputNonceRef = useRef(0);
@@ -283,9 +283,9 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setInputApplyRequest({ data, nonce: inputNonceRef.current });
   }, []);
 
-  const requestQuoteFromRoute = useCallback((text: string) => {
+  const sendChatPrompt = useCallback((text: string) => {
     quoteNonceRef.current += 1;
-    setQuoteFromRouteRequest({ text, nonce: quoteNonceRef.current });
+    setChatPromptRequest({ text, nonce: quoteNonceRef.current });
   }, []);
 
   const setOptions = useCallback((o: Partial<OptimizationOptions>) => {
@@ -527,8 +527,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setMultiDriverResult,
     inputApplyRequest,
     requestInputApply,
-    quoteFromRouteRequest,
-    requestQuoteFromRoute,
+    chatPromptRequest,
+    sendChatPrompt,
   };
 
   return (

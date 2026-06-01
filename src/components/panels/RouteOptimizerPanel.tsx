@@ -42,7 +42,13 @@ type SavedOptimizationRun = {
   requestData?: any;
 };
 
-export default function RouteOptimizerPanel() {
+interface RouteOptimizerPanelProps {
+  /** 'rail'(좌측 풀하이트) | 'dock'(커맨드 독 시트 내부 — 자체 크롬/테두리 제거) */
+  variant?: 'rail' | 'dock';
+}
+
+export default function RouteOptimizerPanel({ variant = 'rail' }: RouteOptimizerPanelProps = {}) {
+  const isDock = variant === 'dock';
   // 최적화 실행 결과는 환경(localhost 포함)과 무관하게 항상 저장한다.
   // (이전엔 localhost에서 저장이 비활성화되어 "저장된 경로 불러오기"가 항상 비어 있었음)
   const shouldPersistOptimizationRun = true;
@@ -479,21 +485,25 @@ export default function RouteOptimizerPanel() {
   };
 
   return (
-    <section className="flex flex-col glass-card rounded-none border-0 border-r border-border font-sans transition-all duration-300">
-      {/* Header */}
-      <div className="flex-none px-5 py-5 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-primary rounded-xl text-primary-foreground flex items-center justify-center">
-            <Map className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-foreground tracking-tight leading-tight">경로 최적화</h2>
+    <section className={isDock
+      ? 'flex flex-col bg-transparent font-sans'
+      : 'flex flex-col glass-card rounded-none border-0 border-r border-border font-sans transition-all duration-300'}>
+      {/* Header — 도크 모드에서는 독이 자체 헤더를 제공하므로 숨김 */}
+      {!isDock && (
+        <div className="flex-none px-5 py-5 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-primary rounded-xl text-primary-foreground flex items-center justify-center">
+              <Map className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground tracking-tight leading-tight">경로 최적화</h2>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content (Scrollable) */}
-      <div className="p-5 space-y-6 pb-6">
+      <div className={isDock ? 'p-1 space-y-6' : 'p-5 space-y-6 pb-6'}>
         {/* 1. Resource Section (Mode & Vehicle) */}
         <div className="bg-muted rounded-xl border border-border p-4 space-y-4">
           {/* 모드 선택 */}

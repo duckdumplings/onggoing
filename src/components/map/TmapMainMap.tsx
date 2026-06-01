@@ -34,7 +34,7 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, requestQuoteFromRoute } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
   const [resultCollapsed, setResultCollapsed] = useState(false);
@@ -68,7 +68,7 @@ export default function TmapMainMap() {
     if (destAddrs.length) lines.push(`- 도착/경유지: ${destAddrs.join(' → ')}`);
     if (km || min) lines.push(`- 참고(현재 최적화 결과): 총거리 ${km ?? '?'}km, 예상 ${min ?? '?'}분`);
     lines.push('요금제별로 비교하고 추천안도 함께 제시해줘.');
-    requestQuoteFromRoute(lines.join('\n'));
+    sendChatPrompt(lines.join('\n'));
   };
 
   const roadOptionLabelMap: Record<'time-first' | 'toll-saving' | 'free-road-first', string> = {
@@ -520,7 +520,7 @@ export default function TmapMainMap() {
 
       {/* 우측 사이드 패널 (Drawer) - 경로 정보 */}
       {multiDriverResult && multiDriverResult.success ? (
-        <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
+        <div className="absolute left-4 top-[4.75rem] bottom-[6.5rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[420px] pointer-events-none">
           <div className="glass-canvas rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
             <div className="flex-none flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
@@ -646,8 +646,8 @@ export default function TmapMainMap() {
           </div>
         </div>
       ) : routeData?.summary && (
-        <div className={`absolute top-4 right-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[400px] pointer-events-none ${resultCollapsed ? '' : 'bottom-4'}`}>
-          <div className={`glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto ${resultCollapsed ? '' : 'h-full'}`}>
+        <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[380px] pointer-events-none">
+          <div className={`glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto ${resultCollapsed ? '' : 'max-h-[calc(100vh-12rem)]'}`}>
             <div className="flex-none flex items-center gap-3">
               <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
                 <Map className="w-5 h-5" />

@@ -71,7 +71,7 @@ interface AIQuoteChatModalProps {
 }
 
 export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AIQuoteChatModalProps) {
-  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, quoteFromRouteRequest } = useRouteOptimization();
+  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -910,11 +910,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
   // 초기화 effect가 사용자 메시지를 덮어쓰는 경합을 피한다.
   const lastQuoteNonceRef = useRef(0);
   useEffect(() => {
-    if (!quoteFromRouteRequest) return;
-    if (quoteFromRouteRequest.nonce === lastQuoteNonceRef.current) return;
-    lastQuoteNonceRef.current = quoteFromRouteRequest.nonce;
-    pendingQuoteTextRef.current = quoteFromRouteRequest.text?.trim() || null;
-  }, [quoteFromRouteRequest?.nonce]);
+    if (!chatPromptRequest) return;
+    if (chatPromptRequest.nonce === lastQuoteNonceRef.current) return;
+    lastQuoteNonceRef.current = chatPromptRequest.nonce;
+    pendingQuoteTextRef.current = chatPromptRequest.text?.trim() || null;
+  }, [chatPromptRequest?.nonce]);
 
   useEffect(() => {
     if (!isOpen || !initialized || loading) return;
@@ -924,7 +924,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false }: AI
     handleSend(text);
     // handleSend는 최신 클로저로 호출하며, 트리거는 초기화 완료/로딩/신규 요청에만 반응한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialized, loading, quoteFromRouteRequest?.nonce]);
+  }, [isOpen, initialized, loading, chatPromptRequest?.nonce]);
 
   // 마지막 사용자 질문으로 답변을 다시 생성(사용자 말풍선 중복 없이).
   const handleRegenerate = () => {
