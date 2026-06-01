@@ -29,7 +29,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
   const panel = (
     <div className="flex h-full w-full flex-col bg-card">
       {showTabs && (
-        <div className="flex flex-none items-center gap-1 border-b border-border bg-card/95 px-2.5 pt-2.5 backdrop-blur-sm">
+        <div className="flex flex-none items-center gap-1 bg-card/95 px-2.5 pt-2 backdrop-blur-sm">
           <TabButton
             label="대화"
             icon={<MessageSquare className="h-3.5 w-3.5" />}
@@ -63,7 +63,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
         {/* 배차 결과 탭 */}
         {hasResult && (
           <div className={activeTab === 'result' ? 'flex h-full flex-col' : 'hidden'}>
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-muted/40">
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-muted/40 border-t border-border">
               <MultiDriverResultsPanel result={multiDriverResult} />
             </div>
           </div>

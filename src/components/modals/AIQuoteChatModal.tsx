@@ -1318,6 +1318,14 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               if (e.dataTransfer?.files?.length) void handleUploadFiles(e.dataTransfer.files);
             }}
           >
+            {isSessionLoading && (
+              <div className="sticky top-0 z-10 -mt-2 mb-1 flex items-center justify-center">
+                <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  이전 대화를 불러오는 중…
+                </span>
+              </div>
+            )}
             {isDragging && (
               <div className="absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 backdrop-blur-sm pointer-events-none">
                 <div className="flex items-center gap-2 text-sm font-semibold text-primary">
@@ -1662,9 +1670,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       void handleUploadFiles(dt.files);
                     }
                   }}
-                  placeholder={loading ? '답변을 생성하고 있어요…' : '무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)'}
+                  placeholder={loading ? '답변을 생성하고 있어요…' : compact ? '메시지를 입력하세요…' : '무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)'}
                   disabled={loading}
-                  className="w-full max-h-[200px] min-h-[56px] py-4 pl-5 pr-14 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
+                  className="w-full max-h-[200px] min-h-[52px] py-3.5 pl-4 pr-14 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground placeholder:truncate resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
                   rows={1}
                 />
                 {loading ? (

@@ -512,7 +512,7 @@ export default function TmapMainMap() {
       {/* 우측 사이드 패널 (Drawer) - 경로 정보 */}
       {multiDriverResult && multiDriverResult.success ? (
         <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[340px] pointer-events-none">
-          <div className="glass-canvas rounded-2xl p-4 pointer-events-auto">
+          <div className="glass-canvas rounded-2xl p-4 pointer-events-auto animate-in fade-in slide-in-from-left-2 duration-200">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
                 <Truck className="w-5 h-5" />
@@ -558,7 +558,7 @@ export default function TmapMainMap() {
         </div>
       ) : routeData?.summary && routeDetailOpen && (
         <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[380px] pointer-events-none">
-          <div className="glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto max-h-[calc(100vh-14rem)]">
+          <div className="glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto max-h-[calc(100vh-14rem)] animate-in fade-in slide-in-from-left-2 duration-200">
             <div className="flex-none flex items-center gap-3">
               <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
                 <Map className="w-5 h-5" />
@@ -592,14 +592,14 @@ export default function TmapMainMap() {
                 <button
                   type="button"
                   onClick={() => setDetailTab('kpi')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'kpi' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'kpi' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   KPI 요약
                 </button>
                 <button
                   type="button"
                   onClick={() => setDetailTab('eta')}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'eta' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${detailTab === 'eta' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   ETA 상세
                 </button>
@@ -866,7 +866,7 @@ export default function TmapMainMap() {
                   setQuoteDetailTab('pricing');
                   setShowQuoteDetailDialog(true);
                 }}
-                className="mt-3 w-full rounded-xl border border-indigo-200 bg-indigo-50 py-2.5 text-sm font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+                className="mt-3 w-full rounded-xl border border-primary/20 bg-primary/5 py-2.5 text-sm font-bold text-primary hover:bg-primary/10 transition-colors"
               >
                 견적 상세 보기
               </button>
@@ -877,8 +877,14 @@ export default function TmapMainMap() {
       )}
 
       {showQuoteDetailDialog && routeQuoteDetail && (
-        <div className="absolute inset-0 z-[2300] glass-overlay flex items-center justify-center px-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl p-5 max-h-[86vh] overflow-y-auto">
+        <div
+          className="absolute inset-0 z-[2300] glass-overlay flex items-center justify-center px-4 animate-in fade-in duration-200"
+          onClick={() => setShowQuoteDetailDialog(false)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-2xl border border-border bg-card shadow-2xl p-5 max-h-[86vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-base font-extrabold text-foreground">견적 상세 정보 (전체 시나리오)</h4>
               <button
@@ -911,21 +917,21 @@ export default function TmapMainMap() {
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('pricing')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'pricing' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'pricing' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 요금 상세
               </button>
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('eta')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'eta' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'eta' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 ETA 상세
               </button>
               <button
                 type="button"
                 onClick={() => setQuoteDetailTab('route')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'route' ? 'bg-card text-indigo-600 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${quoteDetailTab === 'route' ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 경로/옵션
               </button>
@@ -1138,7 +1144,7 @@ export default function TmapMainMap() {
           <div className="glass-canvas p-8 text-center rounded-2xl">
             <div className="relative w-16 h-16 mx-auto mb-6">
               <div className="absolute inset-0 border-4 border-border rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             </div>
             <div className="text-foreground font-black text-xl mb-2 tracking-tight">최적 경로 계산 중</div>
             <div className="text-sm text-muted-foreground font-medium">AI가 실시간 교통정보를 분석하고 있습니다</div>
@@ -1176,7 +1182,7 @@ export default function TmapMainMap() {
                 type="button"
                 onClick={applyRoadOption}
                 disabled={isApplyingRoadOption}
-                className="px-3 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+                className="px-3 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
               >
                 {isApplyingRoadOption ? '재계산 중...' : '재계산'}
               </button>
