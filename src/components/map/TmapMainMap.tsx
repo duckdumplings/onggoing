@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, ChevronUp, Calculator } from 'lucide-react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import {
@@ -34,7 +34,7 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, requestQuoteFromRoute } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
   const [resultCollapsed, setResultCollapsed] = useState(false);
@@ -52,6 +52,24 @@ export default function TmapMainMap() {
   useEffect(() => {
     if (routeData?.summary) setResultCollapsed(false);
   }, [routeData?.summary]);
+
+  // 현재 지도 경로를 자연어로 정리해 견적챗에 주입한다("이 경로로 견적").
+  const handleQuoteFromRoute = () => {
+    const summary: any = routeData?.summary || {};
+    const km = Number.isFinite(summary.totalDistance) ? (summary.totalDistance / 1000).toFixed(1) : null;
+    const min = Number.isFinite(summary.totalTime) ? Math.ceil(summary.totalTime / 60) : null;
+    const originAddr = (origins as any)?.address?.trim();
+    const destAddrs = (destinations || [])
+      .map((d) => (d as any)?.address?.trim())
+      .filter(Boolean) as string[];
+    const lines: string[] = ['지금 지도에 표시된 경로 그대로 견적을 내줘.'];
+    lines.push(`- 차량: ${vehicleType || '레이'}`);
+    if (originAddr) lines.push(`- 출발지: ${originAddr}`);
+    if (destAddrs.length) lines.push(`- 도착/경유지: ${destAddrs.join(' → ')}`);
+    if (km || min) lines.push(`- 참고(현재 최적화 결과): 총거리 ${km ?? '?'}km, 예상 ${min ?? '?'}분`);
+    lines.push('요금제별로 비교하고 추천안도 함께 제시해줘.');
+    requestQuoteFromRoute(lines.join('\n'));
+  };
 
   const roadOptionLabelMap: Record<'time-first' | 'toll-saving' | 'free-road-first', string> = {
     'time-first': '시간 우선',
@@ -656,7 +674,15 @@ export default function TmapMainMap() {
             </div>
 
             {!resultCollapsed && (<>
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4 mt-5">
+            <button
+              type="button"
+              onClick={handleQuoteFromRoute}
+              className="flex-none mt-4 inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold shadow-lg hover:opacity-90 active:scale-[0.99] transition"
+            >
+              <Calculator className="w-4 h-4" />
+              이 경로로 견적
+            </button>
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4 mt-4">
               <div className="flex-none flex p-1 bg-muted rounded-lg">
                 <button
                   type="button"

@@ -5,14 +5,26 @@ import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import AIQuoteLauncher from '@/components/panels/AIQuoteLauncher';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
 import BottomSheet from '@/components/ui/BottomSheet';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Compass } from 'lucide-react';
 import { useIsDesktop } from '@/hooks/useMediaQuery';
+import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
 export default function Home() {
   const [isAiQuoteModalOpen, setIsAiQuoteModalOpen] = useState(false);
   const isDesktop = useIsDesktop();
+  const { quoteFromRouteRequest } = useRouteOptimization();
+
+  // "이 경로로 견적" 요청이 오면 챗(도크/모달)을 자동으로 연다.
+  const lastQuoteOpenNonce = useRef(0);
+  useEffect(() => {
+    if (quoteFromRouteRequest && quoteFromRouteRequest.nonce !== lastQuoteOpenNonce.current) {
+      lastQuoteOpenNonce.current = quoteFromRouteRequest.nonce;
+      setIsAiQuoteModalOpen(true);
+    }
+  }, [quoteFromRouteRequest?.nonce]);
+
   // 데스크톱에서 챗을 열면 우측 인라인 도크로 표시하고, 좌측 입력 패널은 접어 지도 공간을 확보한다.
   const docked = isDesktop && isAiQuoteModalOpen;
 
