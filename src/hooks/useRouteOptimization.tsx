@@ -245,6 +245,10 @@ export interface RouteOptimizationState {
   // 임의 텍스트를 견적챗으로 전송하는 요청 (지도 CTA / 커맨드 독 입력 → 챗, 단방향)
   chatPromptRequest: { text: string; nonce: number } | null;
   sendChatPrompt: (text: string) => void;
+
+  // 경로 결과 상세 오버레이 표시 여부 (커맨드 독 상세 버튼과 지도 상세 패널이 공유)
+  routeDetailOpen: boolean;
+  setRouteDetailOpen: (open: boolean) => void;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -273,6 +277,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
   const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number } | null>(null);
+  const [routeDetailOpen, setRouteDetailOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const lastPayloadRef = useRef<any | null>(null);
   const inputNonceRef = useRef(0);
@@ -529,6 +534,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     requestInputApply,
     chatPromptRequest,
     sendChatPrompt,
+    routeDetailOpen,
+    setRouteDetailOpen,
   };
 
   return (

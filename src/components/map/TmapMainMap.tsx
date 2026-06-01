@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, ChevronUp, Calculator } from 'lucide-react';
+import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, Calculator } from 'lucide-react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import {
@@ -13,6 +13,7 @@ import {
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
 import { reportActionFailure } from '@/libs/errorReporting';
+import { buildRouteQuotePrompt } from '@/domains/dispatch/utils/routeQuotePrompt';
 
 // 배송원별 색상 정의
 const DRIVER_COLORS = [
@@ -34,10 +35,9 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, routeDetailOpen, setRouteDetailOpen } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
-  const [resultCollapsed, setResultCollapsed] = useState(false);
   const [showRecalculateDialog, setShowRecalculateDialog] = useState(false);
   const [showTollDetailDialog, setShowTollDetailDialog] = useState(false);
   const [showQuoteDetailDialog, setShowQuoteDetailDialog] = useState(false);
@@ -48,27 +48,18 @@ export default function TmapMainMap() {
   const [isApplyingRoadOption, setIsApplyingRoadOption] = useState(false);
   const [roadOptionApplyError, setRoadOptionApplyError] = useState<string | null>(null);
 
-  // 새 경로 결과가 도착하면 상세를 펼친 상태로 표시
-  useEffect(() => {
-    if (routeData?.summary) setResultCollapsed(false);
-  }, [routeData?.summary]);
-
   // 현재 지도 경로를 자연어로 정리해 견적챗에 주입한다("이 경로로 견적").
   const handleQuoteFromRoute = () => {
     const summary: any = routeData?.summary || {};
-    const km = Number.isFinite(summary.totalDistance) ? (summary.totalDistance / 1000).toFixed(1) : null;
-    const min = Number.isFinite(summary.totalTime) ? Math.ceil(summary.totalTime / 60) : null;
-    const originAddr = (origins as any)?.address?.trim();
-    const destAddrs = (destinations || [])
-      .map((d) => (d as any)?.address?.trim())
-      .filter(Boolean) as string[];
-    const lines: string[] = ['지금 지도에 표시된 경로 그대로 견적을 내줘.'];
-    lines.push(`- 차량: ${vehicleType || '레이'}`);
-    if (originAddr) lines.push(`- 출발지: ${originAddr}`);
-    if (destAddrs.length) lines.push(`- 도착/경유지: ${destAddrs.join(' → ')}`);
-    if (km || min) lines.push(`- 참고(현재 최적화 결과): 총거리 ${km ?? '?'}km, 예상 ${min ?? '?'}분`);
-    lines.push('요금제별로 비교하고 추천안도 함께 제시해줘.');
-    sendChatPrompt(lines.join('\n'));
+    sendChatPrompt(
+      buildRouteQuotePrompt({
+        vehicleType,
+        originAddress: (origins as any)?.address,
+        destinationAddresses: (destinations || []).map((d) => (d as any)?.address),
+        totalDistanceMeters: summary.totalDistance,
+        totalTimeSeconds: summary.totalTime,
+      }),
+    );
   };
 
   const roadOptionLabelMap: Record<'time-first' | 'toll-saving' | 'free-road-first', string> = {
@@ -645,35 +636,29 @@ export default function TmapMainMap() {
             </div>
           </div>
         </div>
-      ) : routeData?.summary && (
+      ) : routeData?.summary && routeDetailOpen && (
         <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[380px] pointer-events-none">
-          <div className={`glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto ${resultCollapsed ? '' : 'max-h-[calc(100vh-12rem)]'}`}>
+          <div className="glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto max-h-[calc(100vh-14rem)]">
             <div className="flex-none flex items-center gap-3">
               <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
                 <Map className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-foreground text-lg tracking-tight leading-none">경로 정보</h3>
-                {resultCollapsed ? (
-                  <p className="mt-1 text-xs font-semibold text-muted-foreground tabular-nums truncate">
-                    {((routeData.summary as any).totalDistance / 1000).toFixed(1)}km · {Math.ceil((routeData.summary as any).totalTime / 60)}분 · 경유 {waypoints?.length ? waypoints.length - 2 : 0}곳
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
-                )}
+                <h3 className="font-bold text-foreground text-lg tracking-tight leading-none">경로 상세</h3>
+                <p className="mt-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
               </div>
               <button
                 type="button"
-                onClick={() => setResultCollapsed((v) => !v)}
+                onClick={() => setRouteDetailOpen(false)}
                 className="flex-none p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                title={resultCollapsed ? '경로 정보 펼치기' : '접어서 지도 보기'}
-                aria-label={resultCollapsed ? '경로 정보 펼치기' : '경로 정보 접기'}
+                title="상세 닫기"
+                aria-label="경로 상세 닫기"
               >
-                {resultCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                <ChevronDown className="w-4 h-4" />
               </button>
             </div>
 
-            {!resultCollapsed && (<>
+            {(<>
             <button
               type="button"
               onClick={handleQuoteFromRoute}

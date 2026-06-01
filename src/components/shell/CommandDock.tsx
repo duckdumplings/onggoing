@@ -1,10 +1,23 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowUp, ChevronDown, Map, Route, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowUp, Calculator, ChevronDown, ChevronUp, Map, Route, Sparkles } from 'lucide-react';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import { buildRouteQuotePrompt } from '@/domains/dispatch/utils/routeQuotePrompt';
+
+function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="flex items-baseline gap-1 whitespace-nowrap">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="tabular text-sm font-black leading-none text-foreground">
+        {value}
+        <span className="ml-0.5 text-[10px] font-semibold text-muted-foreground">{unit}</span>
+      </span>
+    </div>
+  );
+}
 
 interface CommandDockProps {
   /** 자연어 입력만 하고 경로 시트를 토글한다. 자유 입력은 챗으로 전송된다. */
@@ -26,9 +39,19 @@ const QUICK_CHIPS = [
  * 결과 KPI는 지도 오버레이가 담당하므로 독은 입력에만 집중한다.
  */
 export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDockProps) {
-  const { sendChatPrompt } = useRouteOptimization();
+  const { sendChatPrompt, routeData, destinations, origins, vehicleType, routeDetailOpen, setRouteDetailOpen } =
+    useRouteOptimization();
   const [prompt, setPrompt] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
+
+  const summary = routeData?.summary as
+    | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number; isSelected?: boolean }> }
+    | undefined;
+  const hasResult = !!summary && Number.isFinite(summary.totalDistance);
+  const km = hasResult ? ((summary!.totalDistance as number) / 1000).toFixed(1) : '0';
+  const min = hasResult ? Math.ceil((summary!.totalTime as number) / 60) : 0;
+  const selectedToll = summary?.roadComparisons?.find((r) => r.isSelected)?.estimatedToll;
+  const stops = destinations?.length ?? 0;
 
   const submitPrompt = () => {
     const text = prompt.trim();
@@ -38,6 +61,18 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
     }
     sendChatPrompt(text);
     setPrompt('');
+  };
+
+  const quoteFromResult = () => {
+    sendChatPrompt(
+      buildRouteQuotePrompt({
+        vehicleType,
+        originAddress: (origins as { address?: string } | undefined)?.address,
+        destinationAddresses: (destinations || []).map((d) => (d as { address?: string }).address),
+        totalDistanceMeters: summary?.totalDistance ?? null,
+        totalTimeSeconds: summary?.totalTime ?? null,
+      }),
+    );
   };
 
   return (
@@ -77,6 +112,53 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
           transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
           className="rounded-3xl glass-canvas p-2 shadow-2xl"
         >
+          {/* 결과 KPI 스트립 — 경로 계산 후 표시 */}
+          <AnimatePresence initial={false}>
+            {hasResult && (
+              <motion.div
+                key="kpi-strip"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-muted/70 px-3.5 py-2.5">
+                  <Metric label="거리" value={km} unit="km" />
+                  <span className="h-3.5 w-px bg-border" />
+                  <Metric label="시간" value={String(min)} unit="분" />
+                  {Number.isFinite(selectedToll) && (
+                    <>
+                      <span className="h-3.5 w-px bg-border" />
+                      <Metric label="톨" value={(selectedToll as number).toLocaleString()} unit="원" />
+                    </>
+                  )}
+                  <span className="h-3.5 w-px bg-border" />
+                  <Metric label="경유" value={String(stops)} unit="곳" />
+
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRouteDetailOpen(!routeDetailOpen)}
+                      className="focus-ring-inset inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                    >
+                      {routeDetailOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                      상세
+                    </button>
+                    <button
+                      type="button"
+                      onClick={quoteFromResult}
+                      className="focus-ring-inset inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.98]"
+                    >
+                      <Calculator className="h-3.5 w-3.5" />
+                      이 경로로 견적
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
