@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3 } from 'lucide-react';
+import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import {
@@ -37,6 +37,7 @@ export default function TmapMainMap() {
   const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
+  const [resultCollapsed, setResultCollapsed] = useState(false);
   const [showRecalculateDialog, setShowRecalculateDialog] = useState(false);
   const [showTollDetailDialog, setShowTollDetailDialog] = useState(false);
   const [showQuoteDetailDialog, setShowQuoteDetailDialog] = useState(false);
@@ -46,6 +47,11 @@ export default function TmapMainMap() {
   const [pendingRoadOption, setPendingRoadOption] = useState<'time-first' | 'toll-saving' | 'free-road-first' | null>(null);
   const [isApplyingRoadOption, setIsApplyingRoadOption] = useState(false);
   const [roadOptionApplyError, setRoadOptionApplyError] = useState<string | null>(null);
+
+  // 새 경로 결과가 도착하면 상세를 펼친 상태로 표시
+  useEffect(() => {
+    if (routeData?.summary) setResultCollapsed(false);
+  }, [routeData?.summary]);
 
   const roadOptionLabelMap: Record<'time-first' | 'toll-saving' | 'free-road-first', string> = {
     'time-first': '시간 우선',
@@ -622,19 +628,35 @@ export default function TmapMainMap() {
           </div>
         </div>
       ) : routeData?.summary && (
-        <div className="absolute top-4 right-4 bottom-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[440px] pointer-events-none">
-          <div className="glass-canvas rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
-            <div className="flex-none flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
+        <div className={`absolute top-4 right-4 z-[1000] w-[calc(100vw-2rem)] sm:w-[400px] pointer-events-none ${resultCollapsed ? '' : 'bottom-4'}`}>
+          <div className={`glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto ${resultCollapsed ? '' : 'h-full'}`}>
+            <div className="flex-none flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
                 <Map className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="font-bold text-foreground text-lg tracking-tight">경로 정보</h3>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-foreground text-lg tracking-tight leading-none">경로 정보</h3>
+                {resultCollapsed ? (
+                  <p className="mt-1 text-xs font-semibold text-muted-foreground tabular-nums truncate">
+                    {((routeData.summary as any).totalDistance / 1000).toFixed(1)}km · {Math.ceil((routeData.summary as any).totalTime / 60)}분 · 경유 {waypoints?.length ? waypoints.length - 2 : 0}곳
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={() => setResultCollapsed((v) => !v)}
+                className="flex-none p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title={resultCollapsed ? '경로 정보 펼치기' : '접어서 지도 보기'}
+                aria-label={resultCollapsed ? '경로 정보 펼치기' : '경로 정보 접기'}
+              >
+                {resultCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
             </div>
 
-            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4">
+            {!resultCollapsed && (<>
+            <div className="flex-1 flex flex-col min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-4 mt-5">
               <div className="flex-none flex p-1 bg-muted rounded-lg">
                 <button
                   type="button"
@@ -918,6 +940,7 @@ export default function TmapMainMap() {
                 견적 상세 보기
               </button>
             )}
+            </>)}
           </div>
         </div>
       )}
