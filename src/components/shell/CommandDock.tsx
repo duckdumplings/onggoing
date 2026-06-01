@@ -33,10 +33,11 @@ const QUICK_CHIPS = [
 ];
 
 /**
- * 컨셉 A 셸의 하단 중앙 커맨드 독.
+ * 컨셉 A 셸의 하단 중앙 커맨드 독 — 하나의 살아 움직이는(morphing) 표면.
+ * 단일 컨테이너 안에서 상태가 높이 애니메이션으로 부드럽게 전환된다.
  * - idle: 자연어 입력 + 빠른 예시 칩 (탭 → 챗으로 즉시 전송)
- * - route: '경로 입력' 토글 시 위로 펼쳐지는 시트에 RouteOptimizerPanel(dock variant) 호스팅
- * 결과 KPI는 지도 오버레이가 담당하므로 독은 입력에만 집중한다.
+ * - route: '경로 입력' 토글 시 같은 컨테이너 상단으로 RouteOptimizerPanel(dock)이 펼쳐짐
+ * - result: 경로 계산 후 KPI 스트립([상세]/[이 경로로 견적])이 입력 위로 솟아남
  */
 export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDockProps) {
   const { sendChatPrompt, routeData, destinations, origins, vehicleType, routeDetailOpen, setRouteDetailOpen } =
@@ -82,36 +83,48 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
       }`}
     >
       <div className="pointer-events-auto w-full max-w-[680px]">
-        {/* 경로 입력 시트 — 위로 펼침 */}
-        {routeOpen && (
-          <div className="mb-3 max-h-[62vh] overflow-y-auto custom-scrollbar rounded-3xl glass-canvas p-4 shadow-2xl">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Map className="h-4 w-4" />
-                </span>
-                <span className="text-sm font-bold text-foreground">경로 최적화</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRouteOpen(false)}
-                className="focus-ring-inset flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                aria-label="경로 입력 닫기"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </button>
-            </div>
-            <RouteOptimizerPanel variant="dock" />
-          </div>
-        )}
-
-        {/* 메인 독 */}
+        {/* 하나의 살아 움직이는 독 — 경로입력/결과KPI/입력이 한 컨테이너 안에서 morph */}
         <motion.div
+          layout
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
+          transition={{ layout: { duration: 0.34, ease: [0.2, 0, 0, 1] }, duration: 0.32, ease: [0.2, 0, 0, 1] }}
           className="rounded-3xl glass-canvas p-2 shadow-2xl"
         >
+          {/* 경로 입력 섹션 — 위로 펼쳐지며 독과 한 몸으로 성장 */}
+          <AnimatePresence initial={false}>
+            {routeOpen && (
+              <motion.div
+                key="route-section"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="mb-1.5 max-h-[56vh] overflow-y-auto custom-scrollbar rounded-2xl border border-border/60 bg-background/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                        <Map className="h-4 w-4" />
+                      </span>
+                      <span className="text-sm font-bold text-foreground">경로 최적화</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRouteOpen(false)}
+                      className="focus-ring-inset flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      aria-label="경로 입력 닫기"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <RouteOptimizerPanel variant="dock" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* 결과 KPI 스트립 — 경로 계산 후 표시 */}
           <AnimatePresence initial={false}>
             {hasResult && (
@@ -159,7 +172,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             )}
           </AnimatePresence>
 
-          <div className="flex items-center gap-2">
+          <motion.div layout className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setRouteOpen((v) => !v)}
@@ -197,10 +210,10 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             >
               <ArrowUp className="h-5 w-5" />
             </button>
-          </div>
+          </motion.div>
 
           {/* 빠른 예시 칩 */}
-          <div className="mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5 custom-scrollbar">
+          <motion.div layout className="mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5 custom-scrollbar">
             {QUICK_CHIPS.map((chip) => (
               <button
                 key={chip}
@@ -211,7 +224,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                 {chip}
               </button>
             ))}
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </div>
