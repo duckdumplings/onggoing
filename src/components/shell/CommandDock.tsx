@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp, Calculator, ChevronDown, ChevronUp, Map, Route, Sparkles } from 'lucide-react';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
@@ -45,6 +45,12 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   const [prompt, setPrompt] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
 
+  // 우측 워크스페이스(챗)가 열리면 독은 슬림 입력 pill로 최소화한다.
+  // 경로 입력 시트가 펼쳐져 있었다면 함께 접어 한 화면에 큰 표면이 둘 겹치지 않게 한다.
+  useEffect(() => {
+    if (chatOpen) setRouteOpen(false);
+  }, [chatOpen]);
+
   const summary = routeData?.summary as
     | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number; isSelected?: boolean }> }
     | undefined;
@@ -82,7 +88,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
         chatOpen ? 'lg:pr-[480px]' : ''
       }`}
     >
-      <div className="pointer-events-auto w-full max-w-[680px]">
+      <motion.div layout className={`pointer-events-auto w-full ${chatOpen ? 'max-w-[520px]' : 'max-w-[680px]'}`}>
         {/* 하나의 살아 움직이는 독 — 경로입력/결과KPI/입력이 한 컨테이너 안에서 morph */}
         <motion.div
           layout
@@ -91,9 +97,9 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
           transition={{ layout: { duration: 0.34, ease: [0.2, 0, 0, 1] }, duration: 0.32, ease: [0.2, 0, 0, 1] }}
           className="rounded-3xl glass-canvas p-2 shadow-2xl"
         >
-          {/* 경로 입력 섹션 — 위로 펼쳐지며 독과 한 몸으로 성장 */}
+          {/* 경로 입력 섹션 — 위로 펼쳐지며 독과 한 몸으로 성장 (챗 작업 중엔 숨김) */}
           <AnimatePresence initial={false}>
-            {routeOpen && (
+            {routeOpen && !chatOpen && (
               <motion.div
                 key="route-section"
                 initial={{ height: 0, opacity: 0 }}
@@ -125,9 +131,9 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             )}
           </AnimatePresence>
 
-          {/* 결과 KPI 스트립 — 경로 계산 후 표시 */}
+          {/* 결과 KPI 스트립 — 경로 계산 후 표시 (챗 작업 중엔 숨김) */}
           <AnimatePresence initial={false}>
-            {hasResult && (
+            {hasResult && !chatOpen && (
               <motion.div
                 key="kpi-strip"
                 initial={{ height: 0, opacity: 0 }}
@@ -173,18 +179,20 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
           </AnimatePresence>
 
           <motion.div layout className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setRouteOpen((v) => !v)}
-              className={`focus-ring-inset inline-flex flex-none items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
-                routeOpen
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-foreground hover:bg-secondary'
-              }`}
-            >
-              <Route className="h-4 w-4" />
-              <span className="hidden sm:inline">경로 입력</span>
-            </button>
+            {!chatOpen && (
+              <button
+                type="button"
+                onClick={() => setRouteOpen((v) => !v)}
+                className={`focus-ring-inset inline-flex flex-none items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
+                  routeOpen
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-foreground hover:bg-secondary'
+                }`}
+              >
+                <Route className="h-4 w-4" />
+                <span className="hidden sm:inline">경로 입력</span>
+              </button>
+            )}
 
             <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
               <Sparkles className={`h-4 w-4 flex-none ${chatOpen ? 'text-primary' : 'text-primary/70'}`} />
@@ -228,7 +236,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             </motion.div>
           )}
         </motion.div>
-      </div>
+      </motion.div>
     </div>
   );
 }
