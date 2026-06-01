@@ -9,8 +9,11 @@ const nextConfig = {
   // PDF 견적서가 한글 폰트(Pretendard OTF)를 fs로 읽도록 해당 라우트에 명시 포함한다.
   outputFileTracingIncludes: {
     '/api/quote/chat-sessions/[id]/generated-files': ['./public/fonts/Pretendard-Regular.otf'],
+    '/api/quote/generate-file': ['./public/fonts/Pretendard-Regular.otf'],
   },
-  serverExternalPackages: ['pdf-parse'],
+  // pdfkit/fontkit을 서버 외부 패키지로 두어 런타임에 node_modules에서 로드한다.
+  // (번들링 시 pdfkit 내장 폰트 메트릭 .afm 파일이 누락돼 PDF 생성이 실패하는 문제 방지)
+  serverExternalPackages: ['pdf-parse', 'pdfkit', 'fontkit'],
   experimental: {
     serverActions: {
       allowedOrigins: [

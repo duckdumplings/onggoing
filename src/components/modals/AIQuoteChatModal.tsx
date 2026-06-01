@@ -110,6 +110,13 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [online, setOnline] = useState(true);
   const recognitionRef = useRef<any>(null);
+  // 견적서 발행 옵션(사용자 희망 형태로 커스터마이즈)
+  const [docOptionsOpen, setDocOptionsOpen] = useState(false);
+  const [docRecipient, setDocRecipient] = useState('');
+  const [docRecipientContact, setDocRecipientContact] = useState('');
+  const [docValidDays, setDocValidDays] = useState(14);
+  const [docIncludeVat, setDocIncludeVat] = useState(true);
+  const [docNotes, setDocNotes] = useState('');
 
   // 직전 결과(견적/시나리오/경로 좌표)를 후속 요청 컨텍스트로 구조화 — 멀티턴 메모리.
   const conversationContext = useMemo(() => {
@@ -485,46 +492,90 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
     }
   };
 
+  /** 현재 대화 컨텍스트 + 사용자가 지정한 견적서 옵션으로 생성 입력을 구성. */
+  const buildGenerationInput = () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
+    const comparison = latestResult?.scenarioComparison;
+    const scenarios = comparison?.results?.map((r: any) => ({
+      label: r.label,
+      recommendedPlan: r.recommendedPlan,
+      oneTimePrice: r.oneTimePrice,
+      annualPrice: r.annualPrice,
+      hourlyTotal: r.plans?.hourly?.total,
+      perJobTotal: r.plans?.perJob?.total,
+      km: r.metrics?.km,
+      totalMinutes:
+        r.metrics != null ? Number(r.metrics.driveMinutes || 0) + Number(r.metrics.dwellMinutes || 0) : undefined,
+    }));
+    const firstResult = comparison?.results?.[0];
+    return {
+      sessionTitle: sessions.find((s) => s.id === currentSessionId)?.title,
+      userRequest: lastUser,
+      assistantMessage: lastAssistant,
+      quote: latestResult?.quote,
+      routeSummary: latestResult?.routeSummary,
+      extracted: latestResult?.extracted,
+      assumptions: latestResult?.assumptions || [],
+      ragSources: latestResult?.rag?.sources || [],
+      vehicleType: firstResult?.vehicleType,
+      scheduleType: firstResult?.scheduleType,
+      frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
+      scenarios,
+      recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
+      // 사용자 지정 견적서 옵션
+      recipientName: docRecipient.trim() || (latestResult?.extracted as any)?.customerName || undefined,
+      recipientContact: docRecipientContact.trim() || undefined,
+      validUntilDays: docValidDays,
+      includeVat: docIncludeVat,
+      notes: docNotes.trim() || undefined,
+    };
+  };
+
+  /** 저장 없이 파일을 즉시 받아 브라우저 다운로드(로컬/비로그인 대화용). */
+  const downloadFileDirect = async (fileType: GeneratedFile['file_type'], input: any): Promise<boolean> => {
+    const res = await fetch('/api/quote/generate-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileType, input }),
+    });
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const cd = res.headers.get('Content-Disposition') || '';
+    const matched = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = matched ? decodeURIComponent(matched[1]) : `quote.${fileType}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  };
+
   const handleGenerateFile = async (fileType: GeneratedFile['file_type']) => {
-    if (!currentSessionId || currentSessionId.startsWith('local-')) return;
     setIsGeneratingFile(true);
     try {
-      const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
-      const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
-      const comparison = latestResult?.scenarioComparison;
-      const scenarios = comparison?.results?.map((r: any) => ({
-        label: r.label,
-        recommendedPlan: r.recommendedPlan,
-        oneTimePrice: r.oneTimePrice,
-        annualPrice: r.annualPrice,
-        hourlyTotal: r.plans?.hourly?.total,
-        perJobTotal: r.plans?.perJob?.total,
-        km: r.metrics?.km,
-        totalMinutes:
-          r.metrics != null ? Number(r.metrics.driveMinutes || 0) + Number(r.metrics.dwellMinutes || 0) : undefined,
-      }));
-      const firstResult = comparison?.results?.[0];
-      const result = await generateFileApi(currentSessionId, fileType, {
-        sessionTitle: sessions.find((s) => s.id === currentSessionId)?.title,
-        userRequest: lastUser,
-        assistantMessage: lastAssistant,
-        quote: latestResult?.quote,
-        routeSummary: latestResult?.routeSummary,
-        extracted: latestResult?.extracted,
-        assumptions: latestResult?.assumptions || [],
-        ragSources: latestResult?.rag?.sources || [],
-        vehicleType: firstResult?.vehicleType,
-        scheduleType: firstResult?.scheduleType,
-        frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
-        scenarios,
-        recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
-      });
-      if (!result.success) {
-        pushAssistantMessage(`파일 생성 실패: ${result.message || '알 수 없는 오류'}`, 'system');
-        return;
+      const input = buildGenerationInput();
+      const isPersisted = Boolean(currentSessionId && !currentSessionId.startsWith('local-'));
+      if (isPersisted) {
+        const result = await generateFileApi(currentSessionId as string, fileType, input);
+        if (!result.success) {
+          pushAssistantMessage(`파일 생성 실패: ${result.message || '알 수 없는 오류'}`, 'system');
+          return;
+        }
+        await fetchGeneratedFiles(currentSessionId as string);
+        pushAssistantMessage(`요청하신 ${fileType.toUpperCase()} 견적서를 생성했습니다. 우측 패널에서 다운로드할 수 있어요.`, 'system');
+      } else {
+        const ok = await downloadFileDirect(fileType, input);
+        pushAssistantMessage(
+          ok
+            ? `${fileType.toUpperCase()} 견적서를 다운로드했어요.`
+            : '견적서 생성에 실패했어요. 잠시 후 다시 시도해 주세요.',
+          'system'
+        );
       }
-      await fetchGeneratedFiles(currentSessionId);
-      pushAssistantMessage(`요청하신 ${fileType.toUpperCase()} 파일을 생성했습니다. 우측 패널에서 다운로드할 수 있어요.`, 'system');
     } finally {
       setIsGeneratingFile(false);
     }
@@ -1669,14 +1720,80 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">생성 파일</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">견적서 발행</div>
+                <button
+                  type="button"
+                  onClick={() => setDocOptionsOpen((v) => !v)}
+                  className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
+                >
+                  {docOptionsOpen ? '옵션 접기' : '옵션 설정'}
+                </button>
+              </div>
+              {docOptionsOpen && (
+                <div className="bg-card rounded-xl border border-border p-3 shadow-sm space-y-2.5 text-xs animate-in fade-in duration-200">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">수신처 (화주사)</label>
+                    <input
+                      value={docRecipient}
+                      onChange={(e) => setDocRecipient(e.target.value)}
+                      placeholder="예: (주)한진로지스틱스"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">담당자 / 연락처</label>
+                    <input
+                      value={docRecipientContact}
+                      onChange={(e) => setDocRecipientContact(e.target.value)}
+                      placeholder="예: 구매팀 김영식 차장"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-semibold text-muted-foreground mb-1">유효기간 (일)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={docValidDays}
+                        onChange={(e) => setDocValidDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1.5 mt-4 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={docIncludeVat}
+                        onChange={(e) => setDocIncludeVat(e.target.checked)}
+                        className="rounded border-border text-indigo-600 focus:ring-indigo-200"
+                      />
+                      <span className="text-[11px] text-foreground">VAT 포함</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">비고</label>
+                    <textarea
+                      value={docNotes}
+                      onChange={(e) => setDocNotes(e.target.value)}
+                      rows={2}
+                      placeholder="견적서에 함께 표기할 메모"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100 resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground">
+                  {currentSessionId && !currentSessionId.startsWith('local-') ? '생성 후 저장됨' : '저장 없이 바로 다운로드'}
+                </span>
                 <div className="flex items-center gap-1">
                   {(['pdf', 'xlsx', 'md', 'docx', 'json'] as const).map((type) => (
                     <button
                       key={type}
                       type="button"
                       onClick={() => handleGenerateFile(type)}
-                      disabled={isGeneratingFile || !currentSessionId}
+                      disabled={isGeneratingFile}
                       className="px-2 py-1 rounded-md border border-indigo-200 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                     >
                       {type.toUpperCase()}
@@ -1808,8 +1925,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 <button
                   type="button"
                   onClick={() => handleGenerateFile('pdf')}
-                  disabled={isGeneratingFile || !currentSessionId || currentSessionId.startsWith('local-')}
-                  title={!currentSessionId || currentSessionId.startsWith('local-') ? '로그인 후 저장된 세션에서 사용할 수 있어요' : undefined}
+                  disabled={isGeneratingFile}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
                 >
                   {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
