@@ -1179,14 +1179,15 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         <div className="flex flex-1 flex-col h-full min-w-0 bg-card relative">
 
           {/* Header */}
-          <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-6 py-4 bg-card z-10">
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-5 py-3.5 bg-card/95 backdrop-blur-sm z-10">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
                 <Sparkles className="h-5 w-5" />
+                <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${online ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-foreground leading-tight">AI 텍스트 견적챗</h2>
-                <p className="text-xs text-muted-foreground font-medium">GPT-4o & Tmap 기반 실시간 계산</p>
+                <h2 className="text-[15px] font-bold leading-tight text-foreground">AI 견적 어시스턴트</h2>
+                <p className="text-[11px] font-medium text-muted-foreground">실시간 교통·요금제 기반 자동 견적</p>
               </div>
             </div>
 
@@ -1216,7 +1217,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               )}
               <button
                 onClick={handleReset}
-                className="p-2 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors hidden md:block"
+                className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-colors hidden md:block"
                 title="새 대화 시작"
               >
                 <RefreshCw className="h-5 w-5" />
@@ -1229,7 +1230,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   onClick={() => setInfoSheetOpen((v) => !v)}
                   className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                     infoSheetOpen
-                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      ? 'border-primary/30 bg-primary/10 text-primary'
                       : 'border-border bg-card text-muted-foreground hover:bg-muted'
                   }`}
                   title="견적 현황·발행"
@@ -1237,7 +1238,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   <Calculator className="h-4 w-4" />
                   <span className="hidden sm:inline">견적</span>
                   {latestResult?.quote && !infoSheetOpen && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-indigo-500" />
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary" />
                   )}
                 </button>
               )}
@@ -1269,7 +1270,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="이메일"
-                      className="w-full md:w-[240px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      className="w-full md:w-[240px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
                     />
                     <input
                       type="password"
@@ -1282,13 +1283,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                         }
                       }}
                       placeholder="비밀번호"
-                      className="w-full md:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      className="w-full md:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
                     />
                     <button
                       type="button"
                       onClick={() => void handleSignIn()}
                       disabled={isAuthLoading}
-                      className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                      className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
                     >
                       {isAuthLoading ? '로그인 중...' : '로그인'}
                     </button>
@@ -1301,7 +1302,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
           {/* Messages Scroll Area */}
           <div
-            className="relative flex-1 overflow-y-auto px-4 py-6 md:px-8 space-y-6 scroll-smooth custom-scrollbar bg-slate-50/50"
+            className="relative flex-1 overflow-y-auto px-4 py-6 md:px-7 space-y-6 scroll-smooth custom-scrollbar bg-muted/40"
             onDragOver={(e) => {
               if (e.dataTransfer?.types?.includes('Files')) {
                 e.preventDefault();
@@ -1318,8 +1319,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             }}
           >
             {isDragging && (
-              <div className="absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/80 backdrop-blur-sm pointer-events-none">
-                <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
+              <div className="absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 backdrop-blur-sm pointer-events-none">
+                <div className="flex items-center gap-2 text-sm font-semibold text-primary">
                   <Paperclip className="w-4 h-4" />
                   여기에 파일을 놓으면 첨부됩니다
                 </div>
@@ -1334,8 +1335,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
                   {/* Avatar */}
                   <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
-                    ? 'bg-slate-200 text-muted-foreground'
-                    : 'bg-indigo-100 text-indigo-600'
+                    ? 'bg-secondary text-muted-foreground'
+                    : 'bg-primary/10 text-primary'
                     }`}>
                     {msg.role === 'user' ? <span className="text-xs font-bold">나</span> : <Sparkles className="h-4 w-4" />}
                   </div>
@@ -1343,11 +1344,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   {/* Message Bubble */}
                   <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                     <div
-                      className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user'
-                        ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm'
+                      className={`relative px-4 py-3 text-[14.5px] leading-relaxed ${msg.role === 'user'
+                        ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-md shadow-sm shadow-primary/20'
                         : (msg.kind === 'system' && msg.content !== WELCOME_MESSAGE)
-                          ? 'bg-warning-muted text-warning border border-warning/20 rounded-xl'
-                          : 'bg-card text-foreground border border-border rounded-2xl rounded-tl-sm'
+                          ? 'bg-warning-muted text-warning border border-warning/20 rounded-2xl'
+                          : 'bg-card text-foreground border border-border rounded-2xl rounded-tl-md shadow-sm shadow-black/[0.03]'
                         }`}
                     >
                       {renderMessageBody(msg)}
@@ -1415,7 +1416,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                           }
                           className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
                         >
-                          <Sparkles className="w-3 h-3 text-indigo-500" />
+                          <Sparkles className="w-3 h-3 text-primary" />
                           근거/출처 보기
                           <span className="text-muted-foreground">
                             ({(msg.evidence?.sources || []).length})
@@ -1453,7 +1454,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                                             href={src.url}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="block truncate text-indigo-600 hover:underline"
+                                            className="block truncate text-primary hover:underline"
                                           >
                                             {src.label}
                                           </a>
@@ -1489,7 +1490,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                           type="button"
                           onClick={() => void submitFeedback(msg, 'positive')}
                           disabled={!!feedbackSentByMessageId[msg.id]}
-                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-indigo-600 font-bold' : 'text-muted-foreground hover:text-indigo-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
+                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-primary font-bold' : 'text-muted-foreground hover:text-primary'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
                         >
                           <ThumbsUp className="w-3 h-3" /> 도움이 됐어요
                         </button>
@@ -1512,17 +1513,17 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             {loading && (
               <div className="flex justify-start w-full">
                 <div className="flex items-start gap-3 max-w-[85%]">
-                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
                     <Loader2 className="h-4 w-4 animate-spin" />
                   </div>
-                  <div className="bg-card px-4 py-3 rounded-2xl rounded-tl-sm border border-border shadow-sm">
+                  <div className="bg-card px-4 py-3 rounded-2xl rounded-tl-md border border-border shadow-sm shadow-black/[0.03]">
                     {agentSteps.length === 0 ? (
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-muted-foreground">분석 중입니다...</span>
                         <span className="flex space-x-1">
-                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                          <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce"></span>
                         </span>
                       </div>
                     ) : (
@@ -1534,7 +1535,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                             ) : s.phase === 'error' ? (
                               <X className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
                             ) : (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500 flex-shrink-0" />
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
                             )}
                             <span className={s.phase === 'done' ? 'text-muted-foreground' : 'text-foreground'}>{s.label}</span>
                           </li>
@@ -1555,7 +1556,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 <button
                   type="button"
                   onClick={handleRegenerate}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
                   다시 생성
@@ -1574,7 +1575,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                         requestAnimationFrame(autoResize);
                       }
                     }}
-                    className="flex-shrink-0 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+                    className="flex-shrink-0 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
                   >
                     {prompt}
                   </button>
@@ -1601,16 +1602,16 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       requestAnimationFrame(autoResize);
                     }
                   }}
-                  className="flex-shrink-0 inline-flex items-center px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:border-indigo-300 hover:text-indigo-600 hover:shadow-sm transition-all whitespace-nowrap"
+                  className="flex-shrink-0 inline-flex items-center px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary hover:shadow-sm transition-all whitespace-nowrap"
                 >
-                  <Sparkles className="w-3 h-3 mr-1.5 text-indigo-400" />
+                  <Sparkles className="w-3 h-3 mr-1.5 text-primary/60" />
                   {template.length > 24 ? template.slice(0, 24) + '...' : template}
                 </button>
               ))}
             </div>
 
             <div className="relative group">
-              <div className="relative flex items-end bg-card rounded-xl shadow-lg border border-border overflow-hidden focus-within:ring-2 focus-within:ring-indigo-100 transition-shadow">
+              <div className="relative flex items-end bg-card rounded-2xl shadow-lg shadow-black/[0.04] border border-border overflow-hidden transition-shadow focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1680,7 +1681,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                     type="button"
                     onClick={() => handleSend()}
                     disabled={!input.trim()}
-                    className="absolute right-2 bottom-2 p-2.5 rounded-lg bg-indigo-600 text-white shadow-md hover:bg-indigo-700 disabled:bg-gray-200 disabled:cursor-not-allowed transition-all active:scale-95"
+                    className="absolute right-2 bottom-2 p-2.5 rounded-xl bg-primary text-primary-foreground shadow-md shadow-primary/20 hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none disabled:cursor-not-allowed transition-all active:scale-95"
                   >
                     <ArrowRight className="w-5 h-5" />
                   </button>
@@ -1738,13 +1739,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         <div
           className={
             compact
-              ? `absolute inset-y-0 right-0 z-40 flex w-[92%] max-w-[400px] flex-col border-l border-border bg-slate-50 shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
-              : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-slate-50/50'
+              ? `absolute inset-y-0 right-0 z-40 flex w-[92%] max-w-[400px] flex-col border-l border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
+              : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-muted/40'
           }
         >
 
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-white/50">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card/60 backdrop-blur-sm">
             <h3 className="font-bold text-foreground flex items-center gap-2">
               <Calculator className="w-4 h-4 text-muted-foreground" />
               실시간 견적 현황
@@ -1786,7 +1787,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                     await fetchAttachments(created.id);
                     await fetchGeneratedFiles(created.id);
                   }}
-                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="text-[11px] font-semibold text-primary hover:text-primary/80"
                 >
                   + 새 대화
                 </button>
@@ -1866,7 +1867,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 <button
                   type="button"
                   onClick={() => setDocOptionsOpen((v) => !v)}
-                  className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="text-[10px] font-semibold text-primary hover:text-primary/80"
                 >
                   {docOptionsOpen ? '옵션 접기' : '옵션 설정'}
                 </button>
@@ -1879,7 +1880,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       value={docRecipient}
                       onChange={(e) => setDocRecipient(e.target.value)}
                       placeholder="예: (주)한진로지스틱스"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                     />
                   </div>
                   <div>
@@ -1888,7 +1889,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       value={docRecipientContact}
                       onChange={(e) => setDocRecipientContact(e.target.value)}
                       placeholder="예: 구매팀 김영식 차장"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                     />
                   </div>
                   <div className="flex items-center gap-3">
@@ -1900,7 +1901,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                         max={365}
                         value={docValidDays}
                         onChange={(e) => setDocValidDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                       />
                     </div>
                     <label className="flex items-center gap-1.5 mt-4 cursor-pointer select-none">
@@ -1920,7 +1921,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       onChange={(e) => setDocNotes(e.target.value)}
                       rows={2}
                       placeholder="견적서에 함께 표기할 메모"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100 resize-none"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15 resize-none"
                     />
                   </div>
 
@@ -1980,7 +1981,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                             value={issuer.name || ''}
                             onChange={(e) => updateIssuer({ name: e.target.value })}
                             placeholder="예: 옹고잉 물류"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                           />
                         </div>
                         <div className="flex gap-2">
@@ -1990,7 +1991,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                               value={issuer.bizNumber || ''}
                               onChange={(e) => updateIssuer({ bizNumber: e.target.value })}
                               placeholder="000-00-00000"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                             />
                           </div>
                           <div className="flex-1">
@@ -1999,7 +2000,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                               value={issuer.contact || ''}
                               onChange={(e) => updateIssuer({ contact: e.target.value })}
                               placeholder="02-0000-0000"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                             />
                           </div>
                         </div>
@@ -2009,7 +2010,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                             value={issuer.email || ''}
                             onChange={(e) => updateIssuer({ email: e.target.value })}
                             placeholder="info@company.com"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                           />
                         </div>
                         <div>
@@ -2018,7 +2019,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                             value={issuer.address || ''}
                             onChange={(e) => updateIssuer({ address: e.target.value })}
                             placeholder="서울특별시 ..."
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
                           />
                         </div>
                         <p className="text-[10px] text-muted-foreground">이 기기에 저장되어 모든 견적서에 자동 반영됩니다.</p>
@@ -2153,7 +2154,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 <button
                   type="button"
                   onClick={() => handleSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
                 >
                   <Truck className="w-3.5 h-3.5" />
                   다른 차종으로 비교
@@ -2161,7 +2162,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 <button
                   type="button"
                   onClick={() => handleSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
                 >
                   <Calculator className="w-3.5 h-3.5" />
                   다른 요금제로 보기
@@ -2170,7 +2171,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   type="button"
                   onClick={() => handleGenerateFile('pdf')}
                   disabled={isGeneratingFile}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-indigo-300 hover:text-indigo-600 transition-colors disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
                 >
                   {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                   PDF 견적서
