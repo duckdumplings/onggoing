@@ -177,10 +177,11 @@ export default function ScenarioComparisonCard({
                               e.stopPropagation();
                               onSelect(r);
                             }}
-                            className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                            className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title="견적서 발행이 아니라, 이 시나리오 경로를 지도에 표시만 합니다."
                           >
                             <MapIcon className="h-3.5 w-3.5" />
-                            지도에서 보기
+                            경로 미리보기
                           </button>
                         )}
                       </td>
