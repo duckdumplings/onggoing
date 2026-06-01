@@ -187,7 +187,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             </button>
 
             <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
-              <Sparkles className="h-4 w-4 flex-none text-primary/70" />
+              <Sparkles className={`h-4 w-4 flex-none ${chatOpen ? 'text-primary' : 'text-primary/70'}`} />
               <input
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -197,7 +197,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                     submitPrompt();
                   }
                 }}
-                placeholder="어디서 어디로 보낼까요? 자연어로 물어보세요"
+                placeholder={chatOpen ? 'AI와 대화 이어가기…' : '어디서 어디로 보낼까요? 자연어로 물어보세요'}
                 className="focus-ring-inset min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground"
               />
             </div>
@@ -212,19 +212,21 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
             </button>
           </motion.div>
 
-          {/* 빠른 예시 칩 */}
-          <motion.div layout className="mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5 custom-scrollbar">
-            {QUICK_CHIPS.map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                onClick={() => sendChatPrompt(chip)}
-                className="focus-ring-inset flex-none rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
-              >
-                {chip}
-              </button>
-            ))}
-          </motion.div>
+          {/* 빠른 예시 칩 — 콜드스타트 전용(대화 시작 후 숨김) */}
+          {!chatOpen && (
+            <motion.div layout className="mt-1.5 flex gap-1.5 overflow-x-auto px-1 pb-0.5 custom-scrollbar">
+              {QUICK_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => sendChatPrompt(chip)}
+                  className="focus-ring-inset flex-none rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                >
+                  {chip}
+                </button>
+              ))}
+            </motion.div>
+          )}
         </motion.div>
       </div>
     </div>

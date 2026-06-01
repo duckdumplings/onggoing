@@ -62,10 +62,11 @@ export default function Home() {
           {isAiQuoteModalOpen && (
             <motion.aside
               key="chat-slideover"
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
+              initial={{ opacity: 0, scale: 0.96, x: 32, y: 28 }}
+              animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, x: 24, y: 20 }}
+              transition={{ duration: 0.34, ease: [0.2, 0, 0, 1] }}
+              style={{ transformOrigin: 'bottom right' }}
               className="absolute right-0 top-0 z-50 h-full w-full border-l border-border bg-card shadow-2xl sm:w-[440px] lg:w-[460px]"
             >
               <AIQuoteChatModal docked compact isOpen onClose={closeChat} />
