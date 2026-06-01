@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Compass, Sparkles } from 'lucide-react';
 
 interface TopBarProps {
@@ -17,7 +18,12 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between px-4 py-3 md:px-5 md:py-4">
       {/* 브랜드 */}
-      <div className="pointer-events-auto flex items-center gap-2.5 rounded-2xl glass-launcher px-3 py-2 shadow-sm">
+      <motion.div
+        initial={{ y: -12, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
+        className="pointer-events-auto flex items-center gap-2.5 rounded-2xl glass-launcher px-3 py-2 shadow-sm"
+      >
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
           <Compass className="h-4 w-4" />
         </div>
@@ -27,18 +33,21 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
             BETA
           </span>
         </div>
-      </div>
+      </motion.div>
 
       {/* 액션 — 챗이 열려 있으면 슬라이드오버가 덮으므로 숨긴다 */}
       {!chatOpen && (
-        <button
+        <motion.button
+          initial={{ y: -12, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.28, ease: [0.2, 0, 0, 1], delay: 0.05 }}
           type="button"
           onClick={onOpenChat}
           className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:bg-primary/90 active:scale-[0.98]"
         >
           <Sparkles className="h-4 w-4" />
           AI 견적챗
-        </button>
+        </motion.button>
       )}
     </header>
   );

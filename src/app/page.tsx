@@ -44,6 +44,10 @@ export default function Home() {
         <TmapMainMap />
       </main>
 
+      {/* 지도 가장자리 스크림 — 떠 있는 UI의 가독성과 깊이를 위해 (지도 조작은 가리지 않음) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-28 bg-gradient-to-b from-background/55 via-background/15 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-40 bg-gradient-to-t from-background/55 via-background/15 to-transparent" />
+
       {/* 떠 있는 탑바 (브랜드 + AI 견적챗) */}
       <TopBar onOpenChat={openChat} chatOpen={docked} />
 

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ArrowUp, ChevronDown, Map, Route } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowUp, ChevronDown, Map, Route, Sparkles } from 'lucide-react';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
 
@@ -70,7 +71,12 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
         )}
 
         {/* 메인 독 */}
-        <div className="rounded-3xl glass-canvas p-2 shadow-2xl">
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
+          className="rounded-3xl glass-canvas p-2 shadow-2xl"
+        >
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -85,18 +91,21 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
               <span className="hidden sm:inline">경로 입력</span>
             </button>
 
-            <input
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  submitPrompt();
-                }
-              }}
-              placeholder="어디서 어디로 보낼까요? 자연어로 물어보세요"
-              className="focus-ring-inset min-w-0 flex-1 rounded-2xl border-0 bg-transparent px-2 py-2.5 text-sm text-foreground placeholder:text-muted-foreground"
-            />
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+              <Sparkles className="h-4 w-4 flex-none text-primary/70" />
+              <input
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    submitPrompt();
+                  }
+                }}
+                placeholder="어디서 어디로 보낼까요? 자연어로 물어보세요"
+                className="focus-ring-inset min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
 
             <button
               type="button"
@@ -121,7 +130,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
