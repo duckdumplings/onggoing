@@ -83,7 +83,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             exit={{ opacity: 0, scale: 0.97, x: 24, y: 20 }}
             transition={{ duration: 0.34, ease: [0.2, 0, 0, 1] }}
             style={{ transformOrigin: 'bottom right' }}
-            className="absolute right-0 top-0 z-50 h-full w-full overflow-hidden border-l border-border bg-card shadow-2xl sm:w-[460px] lg:w-[500px]"
+            className="absolute right-0 top-0 z-50 h-full w-full overflow-hidden border-l border-border bg-card shadow-2xl sm:w-[440px] lg:w-[500px] xl:w-[560px]"
           >
             {panel}
           </motion.aside>

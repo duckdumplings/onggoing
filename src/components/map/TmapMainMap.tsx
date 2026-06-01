@@ -511,137 +511,49 @@ export default function TmapMainMap() {
 
       {/* 우측 사이드 패널 (Drawer) - 경로 정보 */}
       {multiDriverResult && multiDriverResult.success ? (
-        <div className="absolute left-4 top-[4.75rem] bottom-[6.5rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[420px] pointer-events-none">
-          <div className="glass-canvas rounded-2xl p-5 h-full flex flex-col pointer-events-auto">
-            <div className="flex-none flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg">
-                <Truck className="w-6 h-6" />
+        <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[340px] pointer-events-none">
+          <div className="glass-canvas rounded-2xl p-4 pointer-events-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
+                <Truck className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-foreground text-lg">다중 배송원 최적화</h3>
-                <p className="text-xs text-muted-foreground font-medium">{multiDriverResult.drivers.length}명 배송원</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => openWorkspace('result')}
-                className="focus-ring-inset flex-none rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
-                title="배차 결과 상세 보기"
-              >
-                상세 보기
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
-              {/* 전체 통계 */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-muted rounded-xl p-3 border border-border text-center">
-                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 거리</div>
-                  <div className="text-lg font-black text-foreground">
-                    {(multiDriverResult.summary.totalDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-muted-foreground ml-0.5">km</span>
-                  </div>
-                </div>
-                <div className="bg-muted rounded-xl p-3 border border-border text-center">
-                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">총 시간</div>
-                  <div className="text-lg font-black text-foreground">
-                    {Math.ceil(multiDriverResult.summary.totalTime / 60)}<span className="text-xs font-normal text-muted-foreground ml-0.5">분</span>
-                  </div>
-                </div>
-                <div className="bg-muted rounded-xl p-3 border border-border text-center">
-                  <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1">평균 거리</div>
-                  <div className="text-lg font-black text-foreground">
-                    {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}<span className="text-xs font-normal text-muted-foreground ml-0.5">km</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* 균형도 및 상세 정보 */}
-              <div className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <span className="text-indigo-900 font-bold text-sm">작업량 균형도</span>
-                    <div className="text-[10px] text-indigo-600/80 mt-0.5 font-medium">
-                      배송원 간 작업량 분배 비율
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-2xl font-black text-indigo-600">
-                      {(multiDriverResult.summary.balanceScore * 100).toFixed(0)}%
-                    </span>
-                    <div className="text-[10px] text-indigo-600/80 mt-0.5 font-bold uppercase tracking-wider">
-                      {multiDriverResult.summary.balanceScore >= 0.7 ? 'Balanced' : 'Unbalanced'}
-                    </div>
-                  </div>
-                </div>
-                {/* Visual Progress Bar for Balance */}
-                <div className="w-full bg-indigo-200/50 rounded-full h-2 mb-3 overflow-hidden flex">
-                  {multiDriverResult.drivers.map((driver: any, idx: number) => {
-                    const totalDist = multiDriverResult.summary.totalDistance;
-                    const widthPercent = totalDist > 0 ? (driver.totalDistance / totalDist) * 100 : 0;
-                    return (
-                      <div 
-                        key={`bar-${idx}`} 
-                        className="h-full border-r border-white/50" 
-                        style={{ width: `${widthPercent}%`, backgroundColor: DRIVER_COLORS[idx % DRIVER_COLORS.length] }}
-                      ></div>
-                    );
-                  })}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-indigo-700 font-medium">
-                  <div className="bg-white/60 rounded px-2 py-1">평균 거리: {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}km</div>
-                  <div className="bg-white/60 rounded px-2 py-1">평균 시간: {Math.round(multiDriverResult.summary.averageTime / 60)}분</div>
-                </div>
-              </div>
-
-              {/* 배송원별 상세 정보 */}
-              <div className="space-y-2 pt-2 border-t border-border">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">배송원별 작업량</div>
-                {multiDriverResult.drivers.map((driver: any, idx: number) => {
-                  const color = DRIVER_COLORS[idx % DRIVER_COLORS.length];
-                  return (
-                    <div
-                      key={driver.driverId}
-                      className="p-3 rounded-xl border transition-all hover:shadow-md bg-card hover:border-indigo-200 group"
-                      style={{ borderColor: `${color}40` }}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-2 h-2 rounded-full border"
-                            style={{ backgroundColor: color, borderColor: `${color}80` }}
-                          ></div>
-                          <span className="text-xs font-bold text-foreground group-hover:text-indigo-700 transition-colors">
-                            {driver.driverId.replace('driver-', '배송원 ')}
-                          </span>
-                        </div>
-                        <div className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
-                          {driver.destinations.length}개 경유지
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <div className="text-[10px] text-muted-foreground mb-0.5">거리</div>
-                          <div className="font-bold text-foreground">
-                            {(driver.totalDistance / 1000).toFixed(1)}km
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-muted-foreground mb-0.5">이동</div>
-                          <div className="font-bold text-foreground">
-                            {Math.round(driver.travelTime / 60)}분
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-muted-foreground mb-0.5">체류</div>
-                          <div className="font-bold text-foreground">
-                            {Math.round(driver.dwellTime / 60)}분
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                <h3 className="font-bold text-foreground text-base leading-tight">다중 배송원 배차</h3>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {multiDriverResult.drivers.length}명 · 균형 {(multiDriverResult.summary.balanceScore * 100).toFixed(0)}%
+                </p>
               </div>
             </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">총거리</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {(multiDriverResult.summary.totalDistance / 1000).toFixed(1)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">km</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">총시간</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {Math.ceil(multiDriverResult.summary.totalTime / 60)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">분</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">평균</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {(multiDriverResult.summary.averageDistance / 1000).toFixed(1)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">km</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => openWorkspace('result')}
+              className="focus-ring-inset mt-3 w-full rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
+              title="배차 결과 상세 보기"
+            >
+              배송원별 상세 보기
+            </button>
           </div>
         </div>
       ) : routeData?.summary && routeDetailOpen && (

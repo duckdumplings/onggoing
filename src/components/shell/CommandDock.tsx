@@ -85,7 +85,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   return (
     <div
       className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-5 transition-[padding] duration-300 ${
-        chatOpen ? 'md:pr-[460px] lg:pr-[520px]' : ''
+        chatOpen ? 'md:pr-[460px] lg:pr-[520px] xl:pr-[580px]' : ''
       }`}
     >
       <motion.div layout className={`pointer-events-auto w-full ${chatOpen ? 'max-w-[520px]' : 'max-w-[680px]'}`}>
