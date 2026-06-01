@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { Truck, Map, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, ChevronDown, Calculator } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Truck, Sparkles, Zap, Coins, Route, CornerUpLeft, Flag, BarChart3, Calculator } from 'lucide-react';
 import TmapMap from './TmapMap';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization.tsx';
 import {
@@ -13,7 +14,7 @@ import {
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
 import { reportActionFailure } from '@/libs/errorReporting';
-import { buildRouteQuotePrompt } from '@/domains/dispatch/utils/routeQuotePrompt';
+import { buildRouteQuotePrompt, buildRouteQuoteContext } from '@/domains/dispatch/utils/routeQuotePrompt';
 
 // 배송원별 색상 정의
 const DRIVER_COLORS = [
@@ -35,7 +36,7 @@ const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
 export default function TmapMainMap() {
-  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, routeDetailOpen, setRouteDetailOpen, openWorkspace } = useRouteOptimization();
+  const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, openWorkspace, workspaceTab, routeSlotEl } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
   const [detailTab, setDetailTab] = useState<'kpi' | 'eta'>('kpi');
   const [showRecalculateDialog, setShowRecalculateDialog] = useState(false);
@@ -49,17 +50,17 @@ export default function TmapMainMap() {
   const [roadOptionApplyError, setRoadOptionApplyError] = useState<string | null>(null);
 
   // 현재 지도 경로를 자연어로 정리해 견적챗에 주입한다("이 경로로 견적").
+  // 자연어와 함께 구조화 컨텍스트(확정 주소)를 같이 보내 에이전트의 재파싱/재지오코딩 훼손을 막는다.
   const handleQuoteFromRoute = () => {
     const summary: any = routeData?.summary || {};
-    sendChatPrompt(
-      buildRouteQuotePrompt({
-        vehicleType,
-        originAddress: (origins as any)?.address,
-        destinationAddresses: (destinations || []).map((d) => (d as any)?.address),
-        totalDistanceMeters: summary.totalDistance,
-        totalTimeSeconds: summary.totalTime,
-      }),
-    );
+    const promptInput = {
+      vehicleType,
+      originAddress: (origins as any)?.address,
+      destinationAddresses: (destinations || []).map((d) => (d as any)?.address),
+      totalDistanceMeters: summary.totalDistance,
+      totalTimeSeconds: summary.totalTime,
+    };
+    sendChatPrompt(buildRouteQuotePrompt(promptInput), buildRouteQuoteContext(promptInput));
   };
 
   const roadOptionLabelMap: Record<'time-first' | 'toll-saving' | 'free-road-first', string> = {
@@ -556,33 +557,17 @@ export default function TmapMainMap() {
             </button>
           </div>
         </div>
-      ) : routeData?.summary && routeDetailOpen && (
-        <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[380px] pointer-events-none">
-          <div className="glass-canvas rounded-2xl p-5 flex flex-col pointer-events-auto max-h-[calc(100vh-14rem)] animate-in fade-in slide-in-from-left-2 duration-200">
-            <div className="flex-none flex items-center gap-3">
-              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
-                <Map className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-foreground text-lg tracking-tight leading-none">경로 상세</h3>
-                <p className="mt-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Real-time Optimization</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRouteDetailOpen(false)}
-                className="flex-none p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                title="상세 닫기"
-                aria-label="경로 상세 닫기"
-              >
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </div>
+      ) : null}
 
+      {/* 단일경로 '경로 상세' — 우측 워크스페이스 '경로' 탭으로 portal 주입(지도 의존 로직은 여기 유지) */}
+      {routeSlotEl && workspaceTab === 'route' && routeData?.summary
+        ? createPortal(
+          <div className="flex h-full flex-col bg-muted/40 p-4">
             {(<>
             <button
               type="button"
               onClick={handleQuoteFromRoute}
-              className="flex-none mt-4 inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold shadow-lg hover:opacity-90 active:scale-[0.99] transition"
+              className="flex-none inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold shadow-lg hover:opacity-90 active:scale-[0.99] transition"
             >
               <Calculator className="w-4 h-4" />
               이 경로로 견적
@@ -872,9 +857,10 @@ export default function TmapMainMap() {
               </button>
             )}
             </>)}
-          </div>
-        </div>
-      )}
+          </div>,
+          routeSlotEl,
+        )
+        : null}
 
       {showQuoteDetailDialog && routeQuoteDetail && (
         <div

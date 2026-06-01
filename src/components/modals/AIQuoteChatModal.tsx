@@ -73,7 +73,7 @@ interface AIQuoteChatModalProps {
 }
 
 export default function AIQuoteChatModal({ isOpen, onClose, docked = false, compact = false }: AIQuoteChatModalProps) {
-  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest } = useRouteOptimization();
+  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest, clearChatPrompt } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -93,6 +93,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   // 세션 초기화(messages 세팅) 완료 여부 — "이 경로로 견적" 자동 주입 시점 게이트.
   const [initialized, setInitialized] = useState(false);
   const pendingQuoteTextRef = useRef<string | null>(null);
+  // "이 경로로 견적"과 함께 온 구조화 경로 컨텍스트(확정 주소). 자동 전송 시 함께 보낸다.
+  const pendingRouteContextRef = useRef<unknown>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [latestResult, setLatestResult] = useState<AIQuoteResponse | null>(null);
   const [isQuoteDetailOpen, setIsQuoteDetailOpen] = useState(false);
@@ -711,7 +713,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     };
   }, []);
 
-  const handleSend = async (overrideMessage?: string, opts?: { skipUserEcho?: boolean }) => {
+  const handleSend = async (
+    overrideMessage?: string,
+    opts?: { skipUserEcho?: boolean; mapRouteContext?: unknown }
+  ) => {
     const message = (typeof overrideMessage === 'string' ? overrideMessage : input).trim();
     if (!message || loading) return;
 
@@ -778,6 +783,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           sessionSummary,
           attachmentIds: attachments.map((a) => a.id),
           conversationContext,
+          mapRouteContext: opts?.mapRouteContext ?? undefined,
         }),
         signal: controller.signal,
       });
@@ -918,6 +924,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     if (chatPromptRequest.nonce === lastQuoteNonceRef.current) return;
     lastQuoteNonceRef.current = chatPromptRequest.nonce;
     pendingQuoteTextRef.current = chatPromptRequest.text?.trim() || null;
+    pendingRouteContextRef.current = chatPromptRequest.routeContext ?? null;
+    // 일회성 요청은 캡처 즉시 컨텍스트에서 비운다. 텍스트는 ref에 보존되므로
+    // 전송에는 영향이 없고, 챗을 닫았다 다시 열어도 같은 견적이 재전송되지 않는다.
+    clearChatPrompt();
   }, [chatPromptRequest?.nonce]);
 
   useEffect(() => {
@@ -925,7 +935,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     const text = pendingQuoteTextRef.current;
     if (!text) return;
     pendingQuoteTextRef.current = null;
-    handleSend(text);
+    const routeContext = pendingRouteContextRef.current;
+    pendingRouteContextRef.current = null;
+    handleSend(text, { mapRouteContext: routeContext ?? undefined });
     // handleSend는 최신 클로저로 호출하며, 트리거는 초기화 완료/로딩/신규 요청에만 반응한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialized, loading, chatPromptRequest?.nonce]);

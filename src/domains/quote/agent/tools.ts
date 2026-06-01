@@ -60,6 +60,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return {
             query: a,
             resolved: Boolean(hit?.resolved),
+            // 구/동 단위로만 해석됨 → 실제 배송 지점 아님. 정확한 주소 재확인 필요.
+            lowPrecision: Boolean(hit?.lowPrecision),
             address: hit?.address ?? a,
             latitude: hit?.latitude ?? null,
             longitude: hit?.longitude ?? null,
@@ -72,7 +74,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     optimize_route: tool({
       description:
-        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서를 반환한다. 출발지는 첫 pickup, 종착지는 마지막 drop으로 고정된다. 좌표가 없으면 내부에서 지오코딩한다.',
+        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
@@ -115,6 +117,10 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         }
         const json = await res.json();
         const summary = json?.data?.summary;
+        // 구/동 단위로만 해석돼 실제 배송 지점이 불확실한 지점을 모아 에이전트에 알린다.
+        const lowPrecisionStops = domainStops
+          .map((s) => s.address)
+          .filter((addr) => cache.get(addr.trim())?.lowPrecision);
         const out = {
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
@@ -124,6 +130,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           openStart: Boolean(summary?.openStart),
           chosenOrigin: summary?.chosenOrigin ?? null,
           originRationale: summary?.originRationale ?? null,
+          // 구/동 단위로만 해석된 지점(정확한 좌표 아님). 비어있지 않으면 거리/요금을 확정값처럼 단정하지 말 것.
+          lowPrecisionStops,
           // 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
           routeRequest: { ...payload, useRealtimeTraffic: true },
         };

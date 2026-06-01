@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowUp, Calculator, ChevronDown, ChevronUp, Map, Route, Sparkles } from 'lucide-react';
+import { ArrowUp, Calculator, ChevronDown, Map, PanelRight, Route, Sparkles } from 'lucide-react';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { buildRouteQuotePrompt } from '@/domains/dispatch/utils/routeQuotePrompt';
+import { buildRouteQuotePrompt, buildRouteQuoteContext } from '@/domains/dispatch/utils/routeQuotePrompt';
 
 function Metric({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
@@ -40,7 +40,7 @@ const QUICK_CHIPS = [
  * - result: 경로 계산 후 KPI 스트립([상세]/[이 경로로 견적])이 입력 위로 솟아남
  */
 export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDockProps) {
-  const { sendChatPrompt, routeData, destinations, origins, vehicleType, routeDetailOpen, setRouteDetailOpen } =
+  const { sendChatPrompt, routeData, destinations, origins, vehicleType, openWorkspace } =
     useRouteOptimization();
   const [prompt, setPrompt] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
@@ -71,15 +71,14 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   };
 
   const quoteFromResult = () => {
-    sendChatPrompt(
-      buildRouteQuotePrompt({
-        vehicleType,
-        originAddress: (origins as { address?: string } | undefined)?.address,
-        destinationAddresses: (destinations || []).map((d) => (d as { address?: string }).address),
-        totalDistanceMeters: summary?.totalDistance ?? null,
-        totalTimeSeconds: summary?.totalTime ?? null,
-      }),
-    );
+    const promptInput = {
+      vehicleType,
+      originAddress: (origins as { address?: string } | undefined)?.address,
+      destinationAddresses: (destinations || []).map((d) => (d as { address?: string }).address),
+      totalDistanceMeters: summary?.totalDistance ?? null,
+      totalTimeSeconds: summary?.totalTime ?? null,
+    };
+    sendChatPrompt(buildRouteQuotePrompt(promptInput), buildRouteQuoteContext(promptInput));
   };
 
   return (
@@ -158,10 +157,10 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                   <div className="ml-auto flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setRouteDetailOpen(!routeDetailOpen)}
+                      onClick={() => openWorkspace('route')}
                       className="focus-ring-inset inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
                     >
-                      {routeDetailOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                      <PanelRight className="h-3.5 w-3.5" />
                       상세
                     </button>
                     <button

@@ -33,3 +33,35 @@ export function buildRouteQuotePrompt(input: RouteQuotePromptInput): string {
   lines.push('요금제별로 비교하고 추천안도 함께 제시해줘.');
   return lines.join('\n');
 }
+
+export interface MapRouteContext {
+  source: 'map';
+  vehicleType: string;
+  origin: string | null;
+  /** 지도에 확정된 도착/경유지 주소(표시 순서). 토씨 그대로 사용해야 한다. */
+  stops: string[];
+  totalDistanceKm: number | null;
+  totalTimeMin: number | null;
+}
+
+/**
+ * 지도 경로를 자연어 프롬프트와 함께 전달할 "권위 있는 구조화 컨텍스트"로 직렬화한다.
+ * 에이전트가 NL을 재파싱/재지오코딩하며 주소를 훼손하지 않도록, 확정 주소를 그대로 넘긴다.
+ */
+export function buildRouteQuoteContext(input: RouteQuotePromptInput): MapRouteContext {
+  const { vehicleType, originAddress, destinationAddresses, totalDistanceMeters, totalTimeSeconds } = input;
+  const origin = originAddress?.trim() || null;
+  const stops = (destinationAddresses || []).map((d) => d?.trim()).filter(Boolean) as string[];
+  return {
+    source: 'map',
+    vehicleType: vehicleType || '레이',
+    origin,
+    stops,
+    totalDistanceKm: Number.isFinite(totalDistanceMeters as number)
+      ? Math.round(((totalDistanceMeters as number) / 1000) * 10) / 10
+      : null,
+    totalTimeMin: Number.isFinite(totalTimeSeconds as number)
+      ? Math.ceil((totalTimeSeconds as number) / 60)
+      : null,
+  };
+}

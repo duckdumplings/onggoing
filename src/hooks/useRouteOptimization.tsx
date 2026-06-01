@@ -243,19 +243,21 @@ export interface RouteOptimizationState {
   inputApplyRequest: { data: any; nonce: number } | null;
   requestInputApply: (data: any) => void;
   // 임의 텍스트를 견적챗으로 전송하는 요청 (지도 CTA / 커맨드 독 입력 → 챗, 단방향)
-  chatPromptRequest: { text: string; nonce: number } | null;
-  sendChatPrompt: (text: string) => void;
+  // routeContext: "이 경로로 견적"처럼 지도 경로를 권위 있게 전달할 때의 구조화 컨텍스트.
+  chatPromptRequest: { text: string; nonce: number; routeContext?: unknown } | null;
+  sendChatPrompt: (text: string, routeContext?: unknown) => void;
+  // 일회성 요청 소비 후 비운다(챗 재오픈 시 동일 프롬프트 재전송 방지).
+  clearChatPrompt: () => void;
 
-  // 경로 결과 상세 오버레이 표시 여부 (커맨드 독 상세 버튼과 지도 상세 패널이 공유)
-  routeDetailOpen: boolean;
-  setRouteDetailOpen: (open: boolean) => void;
-
-  // 우측 워크스페이스(탭 패널): 대화/배차 결과를 하나의 표면에서 전환한다.
+  // 우측 워크스페이스(탭 패널): 대화/경로/배차 결과를 하나의 표면에서 전환한다.
   workspaceOpen: boolean;
-  workspaceTab: 'chat' | 'result';
-  openWorkspace: (tab?: 'chat' | 'result') => void;
+  workspaceTab: 'chat' | 'route' | 'result';
+  openWorkspace: (tab?: 'chat' | 'route' | 'result') => void;
   closeWorkspace: () => void;
-  setWorkspaceTab: (tab: 'chat' | 'result') => void;
+  setWorkspaceTab: (tab: 'chat' | 'route' | 'result') => void;
+  // '경로' 탭 본문은 TmapMainMap이 portal로 주입한다(지도 상태 의존 로직 유지).
+  routeSlotEl: HTMLElement | null;
+  setRouteSlotEl: (el: HTMLElement | null) => void;
 }
 
 const RouteOptimizationContext = createContext<RouteOptimizationState | null>(null);
@@ -283,11 +285,11 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [dwellMinutesState, setDwellMinutesState] = useState<number[]>([]);
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
-  const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number } | null>(null);
-  const [routeDetailOpen, setRouteDetailOpen] = useState(false);
+  const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number; routeContext?: unknown } | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'result'>('chat');
-  const openWorkspace = useCallback((tab: 'chat' | 'result' = 'chat') => {
+  const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'route' | 'result'>('chat');
+  const [routeSlotEl, setRouteSlotEl] = useState<HTMLElement | null>(null);
+  const openWorkspace = useCallback((tab: 'chat' | 'route' | 'result' = 'chat') => {
     setWorkspaceTab(tab);
     setWorkspaceOpen(true);
   }, []);
@@ -302,10 +304,12 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     setInputApplyRequest({ data, nonce: inputNonceRef.current });
   }, []);
 
-  const sendChatPrompt = useCallback((text: string) => {
+  const sendChatPrompt = useCallback((text: string, routeContext?: unknown) => {
     quoteNonceRef.current += 1;
-    setChatPromptRequest({ text, nonce: quoteNonceRef.current });
+    setChatPromptRequest({ text, nonce: quoteNonceRef.current, routeContext: routeContext ?? null });
   }, []);
+
+  const clearChatPrompt = useCallback(() => setChatPromptRequest(null), []);
 
   const setOptions = useCallback((o: Partial<OptimizationOptions>) => {
     setOptionsState(prev => ({ ...prev, ...o }));
@@ -548,13 +552,14 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     requestInputApply,
     chatPromptRequest,
     sendChatPrompt,
-    routeDetailOpen,
-    setRouteDetailOpen,
+    clearChatPrompt,
     workspaceOpen,
     workspaceTab,
     openWorkspace,
     closeWorkspace,
     setWorkspaceTab,
+    routeSlotEl,
+    setRouteSlotEl,
   };
 
   return (

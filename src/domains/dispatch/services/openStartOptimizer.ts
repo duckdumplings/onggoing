@@ -40,6 +40,12 @@ export interface OpenStartInput {
   toDestDist: number[];
   /** 'auto'면 N≤10 정확해, 초과 시 fast. */
   mode?: 'exact' | 'fast' | 'auto';
+  /**
+   * 시작점으로 선택 가능한 후보 수(앞에서부터 N개). 미지정 시 전체.
+   * 픽업만 출발지가 될 수 있도록 제한할 때 사용한다(배송지/반납지가 출발지로 뽑히는 것 방지).
+   * 시작 후보가 아닌 지점도 경로상에서는 모두 방문된다(순서만 솔버가 최적화).
+   */
+  startEligibleCount?: number;
 }
 
 function totalDistForOrder(order: number[], input: OpenStartInput): number {
@@ -194,9 +200,13 @@ export function solveOpenStart(input: OpenStartInput): OpenStartSolution {
   const solver = useExact ? heldKarpFixedStart : nnTwoOptFixedStart;
   const method: 'exact' | 'fast' = useExact ? 'exact' : 'fast';
 
+  // 시작 후보를 픽업으로 제한할 수 있다(앞에서 N개). 미지정/범위초과 시 전체 후보.
+  const startMax = Math.min(input.startEligibleCount ?? n, n);
+  const eligible = startMax >= 1 ? startMax : n;
+
   // 각 시작 후보별 최적 총비용을 구해 최선/차선을 비교(근거 산출).
   const perStart: Array<{ start: number; total: number; order: number[] }> = [];
-  for (let s = 0; s < n; s++) {
+  for (let s = 0; s < eligible; s++) {
     const r = solver(n, input.time, input.toDestTime, s);
     perStart.push({ start: s, total: r.total, order: r.order });
   }

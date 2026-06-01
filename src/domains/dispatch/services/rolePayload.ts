@@ -40,18 +40,25 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
 
   const pickups = stops.filter((s) => s.role === 'pickup');
   const drops = stops.filter((s) => s.role === 'drop');
-  const originStop = pickups[0] ?? stops[0];
-  const finalDrop = drops[drops.length - 1];
-  const remaining = stops.filter((s) => s !== originStop);
-  const ordered = finalDrop ? [...remaining.filter((s) => s !== finalDrop), finalDrop] : remaining;
+  const returns = stops.filter((s) => s.role === 'return');
 
-  const openStart = !forceFixedOrigin && Boolean(finalDrop) && pickups.length >= 2;
+  // 종착 고정: 반납(return)이 있으면 항상 마지막 1회 방문지로 고정. 없으면 마지막 drop.
+  const finalStop = returns[returns.length - 1] ?? drops[drops.length - 1] ?? null;
+  const originStop = pickups[0] ?? stops.find((s) => s !== finalStop) ?? stops[0];
+
+  // 중간 경유: 픽업(출발 제외) → 배송지 순. 솔버가 순서를 최적화하되, 후보 정렬을 픽업 우선으로 둔다.
+  const otherPickups = pickups.filter((s) => s !== originStop);
+  const middleDrops = drops.filter((s) => s !== finalStop);
+  const orderedMiddle = [...otherPickups, ...middleDrops, ...returns.filter((s) => s !== finalStop)];
+  const ordered = finalStop ? [...orderedMiddle, finalStop] : orderedMiddle;
+
+  const openStart = !forceFixedOrigin && Boolean(finalStop) && pickups.length >= 2;
 
   return {
     origins: [toPoint(originStop.address)],
     destinations: ordered.map((s) => toPoint(s.address)),
-    finalDestinationAddress: finalDrop ? finalDrop.address : null,
-    useExplicitDestination: Boolean(finalDrop),
+    finalDestinationAddress: finalStop ? finalStop.address : null,
+    useExplicitDestination: Boolean(finalStop),
     vehicleType,
     optimizeOrder: true,
     returnToOrigin: false,
@@ -59,6 +66,8 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     departureAt,
     dwellMinutes: ordered.map((s) => s.dwellMinutes ?? 0),
     openStart,
+    // 출발지 후보를 픽업으로 제한(origin + 그 외 픽업). 배송지/반납지는 출발지가 될 수 없다.
+    startCandidateCount: pickups.length,
     fastOrder: openStart ? fastOrder : false,
     ...(useRealtimeTraffic !== undefined ? { useRealtimeTraffic } : {}),
   };

@@ -818,7 +818,8 @@ export async function POST(request: NextRequest) {
       isNextDayFlags = [],
       dwellMinutes = [],
       openStart = false,
-      fastOrder = false
+      fastOrder = false,
+      startCandidateCount
     } = body;
 
     console.log('=== API 요청 받음 ===');
@@ -1023,6 +1024,11 @@ export async function POST(request: NextRequest) {
           toDestTime: candidates.map((_, i) => matrix.timeSec[i][destIdx]),
           toDestDist: candidates.map((_, i) => matrix.distM[i][destIdx]),
           mode: fastOrder ? 'fast' : 'auto',
+          // 픽업만 출발지 후보로 제한(배송지/반납지가 출발지로 뽑히지 않도록). 미지정 시 전체.
+          startEligibleCount:
+            typeof startCandidateCount === 'number' && startCandidateCount >= 1
+              ? Math.min(startCandidateCount, candidates.length)
+              : undefined,
         });
 
         if (solution.order.length > 0) {

@@ -61,6 +61,24 @@ export const OPEN_START_REGRESSION_CASES: OpenStartCase[] = [
     },
   },
   {
+    name: 'startEligibleCount: 비후보(배송지/반납지)는 출발지로 선택되지 않음',
+    // P0..P3 = 30,20,10,0 / 하차지 35. 비용만 보면 P3(0)이 최적 출발지지만,
+    // startEligibleCount=2로 픽업(P0,P1)만 출발 후보로 제한하면 그 안에서만 골라야 한다.
+    run: () => {
+      const input = linearInput([30, 20, 10, 0], 35);
+      const restricted = solveOpenStart({ ...input, startEligibleCount: 2 });
+      assert(
+        restricted.chosenOriginIndex < 2,
+        `eligible 밖에서 출발지 선택됨(${restricted.chosenOriginIndex})`
+      );
+      assert(isPermutation(restricted.order, 4), `not permutation: ${restricted.order}`);
+      assert(restricted.order[0] === restricted.chosenOriginIndex, 'order[0]!=chosen');
+      // 제한이 없으면 P3가 선택되던 케이스와 대비된다.
+      const unrestricted = solveOpenStart(input);
+      assert(unrestricted.chosenOriginIndex === 3, `대조군 기대 P3, got ${unrestricted.chosenOriginIndex}`);
+    },
+  },
+  {
     name: 'order는 유효 순열이고 order[0]===chosenOriginIndex',
     run: () => {
       const input = linearInput([5, 40, 15, 0, 25], 50);

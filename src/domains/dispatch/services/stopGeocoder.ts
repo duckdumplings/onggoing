@@ -13,6 +13,23 @@ export interface GeocodedStop {
   longitude?: number;
   /** 좌표 해석 성공 여부. */
   resolved: boolean;
+  /**
+   * 구/동 단위 등 건물 미만 정밀도로만 해석된 경우 true.
+   * 좌표는 해당 행정구역 중심이라 실제 배송 지점이 아니므로, 호출측이 정확한 주소를 재확인해야 한다.
+   */
+  lowPrecision: boolean;
+}
+
+/**
+ * 쿼리가 행정구역(구/군/동 등) 단위만 담고 있어 건물 좌표를 특정할 수 없는지 판정한다.
+ * 숫자(번지/건물번호)가 있으면 상세 주소로 보고, POI명("역삼역", "노원구청")은 저정밀로 보지 않는다.
+ */
+export function isRegionOnlyQuery(q: string): boolean {
+  const s = q.trim();
+  if (!s) return false;
+  if (/\d/.test(s)) return false; // 번지/건물번호 등 숫자가 있으면 상세 주소로 간주
+  // 마지막 토큰이 행정구역 접미사(시/군/구/읍/면/동/리)면 구역 단위만 지정된 것.
+  return /(시|군|구|읍|면|동|리)$/.test(s);
 }
 
 function getTmapKey(): string | undefined {
@@ -122,8 +139,12 @@ export async function geocodeStopAddresses(
   const pending = unique.filter((a) => !cache.has(a));
   await Promise.all(
     pending.map(async (address) => {
+      const lowPrecision = isRegionOnlyQuery(address);
       const hit = await resolveStopAddress(address);
-      cache.set(address, hit ? { ...hit, resolved: true } : { address, resolved: false });
+      cache.set(
+        address,
+        hit ? { ...hit, resolved: true, lowPrecision } : { address, resolved: false, lowPrecision }
+      );
     })
   );
   return cache;
