@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
@@ -58,6 +58,9 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
   };
 }
 
+/** 입력창 최대 글자수 — 과도한 페이로드 방지용 소프트 가드. */
+const MAX_CHARS = 8000;
+
 interface AIQuoteChatModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -103,6 +106,10 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [showAuthForm, setShowAuthForm] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [online, setOnline] = useState(true);
+  const recognitionRef = useRef<any>(null);
 
   // 직전 결과(견적/시나리오/경로 좌표)를 후속 요청 컨텍스트로 구조화 — 멀티턴 메모리.
   const conversationContext = useMemo(() => {
@@ -140,6 +147,55 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
 
     return Object.keys(ctx).length ? ctx : undefined;
   }, [latestResult]);
+
+  // 음성 입력(Web Speech API) 지원 여부 + 온라인 상태 감지
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setVoiceSupported(Boolean(SpeechRecognition));
+    setOnline(navigator.onLine);
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+      try { recognitionRef.current?.stop?.(); } catch { /* noop */ }
+    };
+  }, []);
+
+  const toggleVoice = () => {
+    if (isListening) {
+      try { recognitionRef.current?.stop?.(); } catch { /* noop */ }
+      setIsListening(false);
+      return;
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((r: any) => r[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (transcript) {
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript).slice(0, MAX_CHARS));
+        requestAnimationFrame(autoResize);
+      }
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setIsListening(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -1144,7 +1200,7 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                     <div
                       className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user'
                         ? 'bg-slate-800 text-white rounded-2xl rounded-tr-sm'
-                        : msg.kind === 'system'
+                        : (msg.kind === 'system' && msg.content !== WELCOME_MESSAGE)
                           ? 'bg-warning-muted text-warning border border-warning/20 rounded-xl'
                           : 'bg-card text-foreground border border-border rounded-2xl rounded-tl-sm'
                         }`}
@@ -1394,11 +1450,22 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                 >
                   {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
                 </button>
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    onClick={toggleVoice}
+                    disabled={loading}
+                    className={`mb-2 p-2 rounded-lg transition-colors disabled:opacity-50 ${isListening ? 'bg-rose-50 text-rose-600 animate-pulse' : 'text-muted-foreground hover:bg-muted'}`}
+                    title={isListening ? '음성 입력 중지' : '음성으로 입력'}
+                  >
+                    {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                )}
                 <textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => {
-                    setInput(e.target.value);
+                    setInput(e.target.value.slice(0, MAX_CHARS));
                     autoResize();
                   }}
                   onKeyDown={(e) => {
@@ -1441,6 +1508,20 @@ export default function AIQuoteChatModal({ isOpen, onClose }: AIQuoteChatModalPr
                   </button>
                 )}
               </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 px-1">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : online ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
+                />
+                <span>{loading ? '계산 중' : online ? '연결됨' : '오프라인'}</span>
+                <span className="text-border">·</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-medium text-muted-foreground">Shift+Enter</kbd>
+                <span>줄바꿈</span>
+              </p>
+              <span className={`text-[10px] tabular-nums ${input.length >= MAX_CHARS ? 'text-rose-500 font-semibold' : 'text-muted-foreground'}`}>
+                {input.length.toLocaleString()}/{MAX_CHARS.toLocaleString()}
+              </span>
             </div>
             {!!attachments.length && (
               <div className="mt-2 flex flex-wrap gap-2">
