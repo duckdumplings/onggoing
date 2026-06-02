@@ -22,6 +22,20 @@ async function ensureOwnedSession(sessionId: string, userId: string) {
   return { ok: true as const };
 }
 
+// Supabase Storage 객체 키는 ASCII 안전 문자만 허용한다(한글 등 비ASCII는 "Invalid key" 거부).
+// 표시용 한글 파일명은 DB file_name에 그대로 보존하고, 스토리지 키만 안전하게 슬러그화한다.
+function safeStorageSegment(name: string, fileType: GeneratedFileType): string {
+  const dot = name.lastIndexOf('.');
+  const rawExt = dot > 0 ? name.slice(dot + 1) : '';
+  const ext = (rawExt.toLowerCase().replace(/[^a-z0-9]/g, '') || fileType);
+  const base = (dot > 0 ? name.slice(0, dot) : name)
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_.]+|[-_.]+$/g, '')
+    .slice(0, 60);
+  return `${base || 'quote'}.${ext}`;
+}
+
 const MIME_BY_TYPE: Record<GeneratedFileType, string> = {
   pdf: 'application/pdf',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -101,7 +115,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const generated = await generateFile(fileType, input);
     const supabase = createServerClient();
-    const path = `chat-generated/${id}/${Date.now()}-${generated.fileName}`;
+    const path = `chat-generated/${id}/${Date.now()}-${safeStorageSegment(generated.fileName, fileType)}`;
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(path, generated.buffer, {
