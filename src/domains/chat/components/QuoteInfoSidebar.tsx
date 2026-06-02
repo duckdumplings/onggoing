@@ -155,10 +155,11 @@ export default function QuoteInfoSidebar({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
-          <div className="space-y-3">
+        {/* 결과 우선 IA: 견적 결과/시나리오를 상단, 관리(대화방/첨부/발행처)를 하단으로 order 재배치. */}
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
+          <div className="order-[10] space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">대화방</div>
+              <div className="text-xs font-bold text-muted-foreground">대화방</div>
               <button
                 onClick={onNewSession}
                 className="text-[11px] font-semibold text-primary hover:text-primary/80"
@@ -218,8 +219,8 @@ export default function QuoteInfoSidebar({
             )}
           </div>
 
-          <div className="space-y-3">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">첨부 파일</div>
+          <div className="order-9 space-y-3">
+            <div className="text-xs font-bold text-muted-foreground">첨부 파일</div>
             <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-40 overflow-y-auto space-y-1">
               {attachments.map((attachment) => (
                 <div key={attachment.id} className="px-2 py-1.5 rounded-lg border border-border bg-muted">
@@ -235,9 +236,9 @@ export default function QuoteInfoSidebar({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="order-7 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">견적서 발행</div>
+              <div className="text-xs font-bold text-muted-foreground">견적서 발행</div>
               <button
                 type="button"
                 onClick={() => setDocOptionsOpen((v) => !v)}
@@ -442,28 +443,31 @@ export default function QuoteInfoSidebar({
             </div>
           </div>
 
-          {/* Status Status */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">진행 상태</div>
+          {/* Status — 결과가 생긴 뒤에만 노출(빈 상태에서 회색 점만 보이는 노이즈 제거) */}
+          {latestResult && (
+          <div className="order-8 space-y-3">
+            <div className="text-xs font-bold text-muted-foreground">진행 상태</div>
             <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
                 <span className={`text-sm ${latestResult?.extracted ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>입력 정보 분석</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
                 <span className={`text-sm ${latestResult?.routeSummary ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>경로 최적화 (Tmap)</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
                 <span className={`text-sm ${latestResult?.quote ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>최종 견적 산출</span>
               </div>
             </div>
           </div>
+          )}
 
-          {/* Extracted Info Card */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">추출 정보</div>
+          {/* Extracted Info Card — 결과가 생긴 뒤에만 노출 */}
+          {latestResult && (
+          <div className="order-6 space-y-3">
+            <div className="text-xs font-bold text-muted-foreground">추출 정보</div>
             <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-4">
               <div className="flex items-start gap-3">
                 <MapPin className="w-4 h-4 text-indigo-500 mt-0.5" />
@@ -509,11 +513,12 @@ export default function QuoteInfoSidebar({
               </div>
             </div>
           </div>
+          )}
 
           {/* Scenario Comparison (다중 시나리오: 3/5/10개 지점) */}
           {latestResult?.scenarioComparison && (
-            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">시나리오 비교</div>
+            <div className="order-2 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-xs font-bold text-muted-foreground">시나리오 비교</div>
               <ScenarioComparisonCard
                 comparison={latestResult.scenarioComparison}
                 routeErrors={latestResult.scenarioRouteErrors}
@@ -524,7 +529,7 @@ export default function QuoteInfoSidebar({
 
           {/* 결과 빠른 액션 칩 */}
           {!loading && (latestResult?.quote || latestResult?.scenarioComparison) && (
-            <div className="flex flex-wrap gap-2 animate-in fade-in duration-500">
+            <div className="order-3 flex flex-wrap gap-2 animate-in fade-in duration-500">
               <button
                 type="button"
                 onClick={() => onSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
@@ -555,7 +560,7 @@ export default function QuoteInfoSidebar({
 
           {/* 지오코딩 실패 복구: 실패한 지점의 정확한 주소를 직접 지정하도록 유도 */}
           {!loading && !!latestResult?.scenarioRouteErrors?.length && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2 animate-in fade-in duration-500">
+            <div className="order-5 rounded-lg border border-warning/30 bg-warning-muted p-3 text-xs text-warning space-y-2 animate-in fade-in duration-500">
               <div className="font-semibold">일부 지점의 좌표를 찾지 못했어요. 정확한 도로명 주소로 다시 시도해 보세요.</div>
               <div className="flex flex-wrap gap-2">
                 {latestResult.scenarioRouteErrors.map((e) => (
@@ -563,7 +568,7 @@ export default function QuoteInfoSidebar({
                     key={e.label}
                     type="button"
                     onClick={() => onFillInput(`${e.label} 시나리오에서 좌표를 못 찾은 지점의 정확한 도로명 주소를 알려줄게(예: 서울 ○○구 ○○로 12): `)}
-                    className="px-2.5 py-1 rounded-full border border-amber-300 bg-card text-amber-800 hover:bg-amber-100 transition-colors"
+                    className="px-2.5 py-1 rounded-full border border-warning/40 bg-card text-warning hover:bg-warning-muted transition-colors"
                   >
                     {e.label} 주소 직접 지정
                   </button>
@@ -574,7 +579,7 @@ export default function QuoteInfoSidebar({
 
           {/* 견적 신뢰도 배지 + 가정/전제 — 단일/시나리오 응답 공통 노출 */}
           {!loading && (latestResult?.confidence || !!latestResult?.assumptions?.length) && (
-            <div className="rounded-xl border border-border bg-card p-3 space-y-3 animate-in fade-in duration-500">
+            <div className="order-4 rounded-xl border border-border bg-card p-3 space-y-3 animate-in fade-in duration-500">
               {latestResult?.confidence && <ConfidenceBadge confidence={latestResult.confidence} />}
               {!!latestResult?.assumptions?.length && (
                 <div className="space-y-1 border-t border-border pt-2">
@@ -592,10 +597,10 @@ export default function QuoteInfoSidebar({
             </div>
           )}
 
-          {/* Quote Result Card (Highlight) */}
+          {/* Quote Result Card (Highlight) — 결과 우선 IA: 최상단 */}
           {latestResult?.quote && (
-            <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+            <div className="order-1 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-xs font-bold text-muted-foreground flex items-center justify-between">
                 <span>예상 견적</span>
                 <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium normal-case">
                   기준: {latestResult.quote.basis?.vehicleType} · {latestResult.quote.basis?.scheduleType === 'regular' ? '정기' : '비정기'}
@@ -650,7 +655,7 @@ export default function QuoteInfoSidebar({
                   <div className="mb-4 rounded-lg bg-amber-50/95 border border-amber-200 px-3 py-2 text-[11px] leading-snug text-amber-900 shadow-sm">
                     <span className="font-semibold">단가 인하 구간 안내</span>
                     <span className="block mt-0.5 text-amber-800">
-                      {latestResult.quote.hourly.advisor.message.replace(/^\u{1F4A1}\s*/u, '')}
+                      {String(latestResult.quote.hourly.advisor.message).replace(/^\s*[^\w가-힣₩(]+\s*/u, '')}
                     </span>
                   </div>
                 )}
