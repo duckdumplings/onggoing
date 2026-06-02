@@ -130,6 +130,57 @@ export const OPEN_START_REGRESSION_CASES: OpenStartCase[] = [
       assert(sol.totalTimeSec === 30, `single total=${sol.totalTimeSec}`);
     },
   },
+  {
+    name: '제약 미지정: feasible=true(기존 동작 보존)',
+    run: () => {
+      const input = linearInput([0, 10, 20], 30);
+      const sol = solveOpenStart(input);
+      assert(sol.feasible === true, 'feasible should default true');
+      assert(sol.infeasibleReason === undefined, 'no reason when feasible');
+    },
+  },
+  {
+    name: '용량: 총 적재 ≤ 한도면 feasible, 초과면 infeasible',
+    run: () => {
+      const base = linearInput([0, 10, 20], 30);
+      const ok = solveOpenStart({ ...base, constraints: { demands: [100, 100, 100], capacity: 400 } });
+      assert(ok.feasible === true, `용량 여유인데 infeasible: ${ok.infeasibleReason}`);
+      // 동일 demands여도 한도 미달이면 위반 + 경로는 표시용으로 그대로 산출.
+      const over = solveOpenStart({ ...base, constraints: { demands: [100, 100, 100], capacity: 250 } });
+      assert(over.feasible === false, '용량 초과인데 feasible');
+      assert(Boolean(over.infeasibleReason), '용량 초과 사유 없음');
+      assert(isPermutation(over.order, 3), `용량초과 표시용 경로 누락: ${over.order}`);
+    },
+  },
+  {
+    name: '시간창: 위반 순서는 배제하고 만족하는 순서를 고른다',
+    run: () => {
+      // P0..P2 = 0,10,20 / 하차지 30. 시간창 없으면 시작 P0(쓸어담기).
+      // P2에 "도착 5초 이내" 빡센 창을 주면 P0 출발(P2 도착=20초)은 위반 → P2에서 시작해야 함.
+      const base = linearInput([0, 10, 20], 30);
+      const tw = solveOpenStart({
+        ...base,
+        constraints: { windows: [null, null, { latestSec: 5 }] },
+      });
+      assert(tw.feasible === true, `시간창 만족 해가 있어야 함: ${tw.infeasibleReason}`);
+      assert(tw.chosenOriginIndex === 2, `시간창 위반 회피 실패, start=${tw.chosenOriginIndex}`);
+      assert(tw.order[0] === tw.chosenOriginIndex, 'order[0]!=chosen');
+    },
+  },
+  {
+    name: '시간창: 어떤 순서로도 만족 불가면 infeasible + 표시용 경로',
+    run: () => {
+      // 모든 픽업에 "도착 0초" 창을 주면(시작점만 0초 가능) 불가능.
+      const base = linearInput([0, 10, 20], 30);
+      const infeasible = solveOpenStart({
+        ...base,
+        constraints: { windows: [{ latestSec: 0 }, { latestSec: 0 }, { latestSec: 0 }] },
+      });
+      assert(infeasible.feasible === false, '불가능한 시간창인데 feasible');
+      assert(Boolean(infeasible.infeasibleReason), '시간창 위반 사유 없음');
+      assert(isPermutation(infeasible.order, 3), `표시용 폴백 경로 누락: ${infeasible.order}`);
+    },
+  },
 ];
 
 export function assertOpenStartRegression() {

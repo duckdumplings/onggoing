@@ -155,19 +155,8 @@ export function roundUpTo30Minutes(minutes: number): number {
   return Math.ceil(minMinutes / 30) * 30;
 }
 
-export function fuelSurchargeHourly(vehicle: Vehicle, km: number): number {
-  for (const r of FUEL_SURCHARGE_HOURLY) {
-    if (km <= r.toKm) return vehicle === 'ray' ? r.ray : r.starex;
-  }
-  // 40km 초과 시 10km 단위로 증분
-  const last = FUEL_SURCHARGE_HOURLY[FUEL_SURCHARGE_HOURLY.length - 1];
-  const stepRay = last.ray - FUEL_SURCHARGE_HOURLY[FUEL_SURCHARGE_HOURLY.length - 2].ray; // 2000
-  const stepStarex = last.starex - FUEL_SURCHARGE_HOURLY[FUEL_SURCHARGE_HOURLY.length - 2].starex; // 2800
-  const extraBins = Math.ceil((km - last.toKm) / 10);
-  return (vehicle === 'ray' ? last.ray + stepRay * extraBins : last.starex + stepStarex * extraBins);
-}
-
-// 올바른 유류할증 계산 함수 (과금시간 기반)
+// 유류할증(시간당 요금제): 과금시간×10km 포함거리, 초과분 10km당 정액(레이 2,000 / 스타렉스 2,800).
+// 시간당 요금제의 유일한 유류할증 계산 경로. (구 거리-단독 fuelSurchargeHourly는 2026-06 제거)
 export function fuelSurchargeHourlyCorrect(vehicle: Vehicle, km: number, billMinutes: number): number {
   // 기본거리 = 과금시간 × 10km
   const baseDistance = (billMinutes / 60) * 10;

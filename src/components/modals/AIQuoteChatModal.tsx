@@ -1,44 +1,34 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, MapPin, Truck, Clock, Calculator, ArrowRight, Loader2, Sparkles, Map as MapIcon, RefreshCw, Paperclip, Download, FileText, Trash2, Check, Square, ThumbsUp, ThumbsDown, Mic, MicOff } from 'lucide-react';
+import { X, Calculator, ArrowRight, Loader2, Sparkles, RefreshCw, Paperclip, FileText, Square, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
-import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
-import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
-import SingleQuoteInsights from '@/domains/dispatch/components/SingleQuoteInsights';
-import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import QuoteDetailModal from '@/domains/chat/components/QuoteDetailModal';
+import ChatMessageList from '@/domains/chat/components/ChatMessageList';
+import QuoteInfoSidebar from '@/domains/chat/components/QuoteInfoSidebar';
 import {
   createMessageId,
-  shouldRenderEvidence,
-  getDomainFromUrl,
   sanitizeRequestDataForPreview,
   WELCOME_MESSAGE,
 } from '@/domains/chat/utils';
 import {
-  fetchSessionsApi,
-  createSessionApi,
-  loadSessionMessagesApi,
-  persistMessageApi,
-  fetchAttachmentsApi,
-  fetchGeneratedFilesApi,
   uploadAttachmentApi,
   generateFileApi,
-  deleteSessionApi,
   submitFeedbackApi,
 } from '@/domains/chat/services/chatSessionApi';
 import type {
   ChatMessage,
   AIQuoteResponse,
-  ChatSession,
-  ChatAttachment,
   GeneratedFile,
   AgentStep,
   ChatStructuredPayload,
 } from '@/domains/chat/types';
 import type { QuoteIssuer } from '@/domains/quote/services/chatFileGenerator';
 import { EMPTY_ISSUER, loadIssuer, saveIssuer, toGenerationIssuer } from '@/domains/quote/services/issuerSettings';
+import { useSpeechInput } from '@/domains/chat/hooks/useSpeechInput';
+import { useOnlineStatus } from '@/domains/chat/hooks/useOnlineStatus';
+import { useChatSessions } from '@/domains/chat/hooks/useChatSessions';
 
 /** 최종 페이로드에서 구조화 카드용 데이터를 추린다(없으면 undefined). */
 function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPayload | undefined {
@@ -75,7 +65,6 @@ interface AIQuoteChatModalProps {
 export default function AIQuoteChatModal({ isOpen, onClose, docked = false, compact = false }: AIQuoteChatModalProps) {
   const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest, clearChatPrompt } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -98,12 +87,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   const abortRef = useRef<AbortController | null>(null);
   const [latestResult, setLatestResult] = useState<AIQuoteResponse | null>(null);
   const [isQuoteDetailOpen, setIsQuoteDetailOpen] = useState(false);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [isSessionLoading, setIsSessionLoading] = useState(false);
-  const [sessionPersistenceEnabled, setSessionPersistenceEnabled] = useState(true);
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isGeneratingFile, setIsGeneratingFile] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -117,10 +100,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [showAuthForm, setShowAuthForm] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [online, setOnline] = useState(true);
-  const recognitionRef = useRef<any>(null);
+  const online = useOnlineStatus();
   // 견적서 발행 옵션(사용자 희망 형태로 커스터마이즈)
   const [docOptionsOpen, setDocOptionsOpen] = useState(false);
   const [docRecipient, setDocRecipient] = useState('');
@@ -181,68 +161,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     return Object.keys(ctx).length ? ctx : undefined;
   }, [latestResult]);
 
-  // 음성 입력(Web Speech API) 지원 여부 + 온라인 상태 감지
-  useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    setVoiceSupported(Boolean(SpeechRecognition));
-    setOnline(navigator.onLine);
-    const goOnline = () => setOnline(true);
-    const goOffline = () => setOnline(false);
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
-    return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
-      try { recognitionRef.current?.stop?.(); } catch { /* noop */ }
-    };
-  }, []);
-
-  const toggleVoice = () => {
-    if (isListening) {
-      try { recognitionRef.current?.stop?.(); } catch { /* noop */ }
-      setIsListening(false);
-      return;
-    }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ko-KR';
-    recognition.interimResults = false;
-    recognition.continuous = false;
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((r: any) => r[0]?.transcript ?? '')
-        .join(' ')
-        .trim();
-      if (transcript) {
-        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript).slice(0, MAX_CHARS));
-        requestAnimationFrame(autoResize);
-      }
-    };
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-    recognitionRef.current = recognition;
-    try {
-      recognition.start();
-      setIsListening(true);
-    } catch {
-      setIsListening(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => scrollToBottom(), 100);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, loading]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const { isListening, voiceSupported, toggleVoice } = useSpeechInput((transcript) => {
+    setInput((prev) => (prev ? `${prev} ${transcript}` : transcript).slice(0, MAX_CHARS));
+    requestAnimationFrame(autoResize);
+  });
 
   const autoResize = () => {
     if (!textareaRef.current) return;
@@ -271,19 +193,42 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     ]);
   };
 
+  // 세션·첨부·생성파일 상태 + Supabase 영속 로직(모달 호출부는 동일 이름으로 구조분해해 변경 없음).
+  const {
+    sessions,
+    setSessions,
+    currentSessionId,
+    setCurrentSessionId,
+    isSessionLoading,
+    sessionPersistenceEnabled,
+    setSessionPersistenceEnabled,
+    attachments,
+    setAttachments,
+    generatedFiles,
+    setGeneratedFiles,
+    fetchSessions,
+    createNewSession,
+    loadSessionMessages,
+    persistMessage,
+    fetchAttachments,
+    fetchGeneratedFiles,
+    bootstrapServerSession,
+    handleSelectSession,
+    handleDeleteSession,
+    startNewSessionFromSidebar,
+  } = useChatSessions({
+    setMessages,
+    setLatestResult,
+    setPreviewError,
+    pushAssistantMessage,
+  });
+
   // 실패한 사용자 질문을 사용자 말풍선 중복 없이 다시 전송한다(에러 버블의 "다시 시도").
   const handleRetryMessage = (sourceUserText?: string) => {
     if (loading) return;
     const text = (sourceUserText || '').trim();
     if (!text) return;
     void handleSend(text, { skipUserEcho: true });
-  };
-
-  const renderMessageBody = (msg: ChatMessage) => {
-    if (msg.role === 'user') {
-      return <div className="whitespace-pre-wrap break-words">{msg.content}</div>;
-    }
-    return <ChatMarkdown content={msg.content} />;
   };
 
   const quickTemplates = useMemo(() => {
@@ -303,37 +248,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       '견적 의뢰 메일 붙여넣을게, 그대로 견적내줘',
     ];
   }, [latestResult?.suggestedPrompts, messages]);
-
-  const bootstrapServerSession = async () => {
-    const list = await fetchSessions();
-    if (list.length > 0) {
-      const targetId = list[0].id;
-      setCurrentSessionId(targetId);
-      await loadSessionMessages(targetId);
-      await fetchAttachments(targetId);
-      await fetchGeneratedFiles(targetId);
-      return;
-    }
-
-    const created = await createNewSession();
-    if (!created) return;
-    setMessages([
-      {
-        id: createMessageId(),
-        role: 'assistant',
-        kind: 'system',
-      content: WELCOME_MESSAGE,
-      timestamp: new Date(),
-      },
-    ]);
-    await persistMessage(
-      created.id,
-      'system',
-      WELCOME_MESSAGE
-    );
-    await fetchAttachments(created.id);
-    await fetchGeneratedFiles(created.id);
-  };
 
   const handleSignIn = async () => {
     const email = authEmail.trim();
@@ -388,111 +302,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     } finally {
       setIsAuthLoading(false);
     }
-  };
-
-  const fetchSessions = async () => {
-    try {
-      const { ok, sessions: list } = await fetchSessionsApi();
-      setSessionPersistenceEnabled(ok);
-      if (!ok) return [] as ChatSession[];
-      setSessions(list);
-      return list;
-    } catch {
-      setSessionPersistenceEnabled(false);
-      return [] as ChatSession[];
-    }
-  };
-
-  const createNewSession = async (title?: string) => {
-    const created = await createSessionApi(title || `견적 대화 ${new Date().toLocaleDateString('ko-KR')}`);
-    if (created) {
-      setSessionPersistenceEnabled(true);
-      await fetchSessions();
-      setCurrentSessionId(created.id);
-      return created;
-    }
-    const localId = `local-${Date.now()}`;
-    const localSession: ChatSession = {
-      id: localId,
-      title: title || `로컬 대화 ${new Date().toLocaleDateString('ko-KR')}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      last_summary: null,
-    };
-    setSessionPersistenceEnabled(false);
-    setSessions((prev) => [localSession, ...prev.filter((s) => !s.id.startsWith('local-'))]);
-    setCurrentSessionId(localId);
-    return localSession;
-  };
-
-  const loadSessionMessages = async (sessionId: string) => {
-    if (sessionId.startsWith('local-')) return;
-    setIsSessionLoading(true);
-    try {
-      const persisted = await loadSessionMessagesApi(sessionId);
-      if (!persisted) return;
-      if (persisted.length === 0) {
-        setMessages([
-          {
-            id: createMessageId(),
-            role: 'assistant',
-            kind: 'system',
-            content: WELCOME_MESSAGE,
-            timestamp: new Date(),
-          },
-        ]);
-        return;
-      }
-      setMessages(
-        persisted.map((m) => ({
-          ...(typeof m.metadata === 'object' && m.metadata ? { sourceUserText: String((m.metadata as Record<string, unknown>).sourceUserText || '') || undefined } : {}),
-          id: m.id || createMessageId(),
-          role: m.role === 'user' ? 'user' : 'assistant',
-          content: m.content,
-          kind: m.role === 'system' ? 'system' : 'normal',
-          timestamp: new Date(m.created_at),
-          evidence:
-            typeof m.metadata === 'object' && m.metadata
-              ? ((m.metadata as Record<string, unknown>).evidence as AIQuoteResponse['evidence']) || undefined
-              : undefined,
-          // 영속된 구조화 결과(시나리오/출발매트릭스/경로) 복원 → 카드 재표시.
-          structured:
-            typeof m.metadata === 'object' && m.metadata
-              ? ((m.metadata as Record<string, unknown>).structured as ChatStructuredPayload) || undefined
-              : undefined,
-        }))
-      );
-    } finally {
-      setIsSessionLoading(false);
-    }
-  };
-
-  const persistMessage = async (
-    sessionId: string,
-    role: 'user' | 'assistant' | 'system',
-    content: string,
-    metadata?: Record<string, unknown>
-  ) => {
-    if (!sessionPersistenceEnabled || sessionId.startsWith('local-')) return;
-    await persistMessageApi(sessionId, role, content, metadata);
-  };
-
-  const fetchAttachments = async (sessionId: string) => {
-    if (sessionId.startsWith('local-')) {
-      setAttachments([]);
-      return;
-    }
-    const list = await fetchAttachmentsApi(sessionId);
-    if (list) setAttachments(list);
-  };
-
-  const fetchGeneratedFiles = async (sessionId: string) => {
-    if (sessionId.startsWith('local-')) {
-      setGeneratedFiles([]);
-      return;
-    }
-    const list = await fetchGeneratedFilesApi(sessionId);
-    if (list) setGeneratedFiles(list);
   };
 
   const handleUploadFiles = async (files: FileList | null) => {
@@ -748,12 +557,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       // But we just called setMessages... standard React pitfall.
       // We should use the current 'messages' array (before update) as history.
 
-      const history = messages
-        .slice(-8)
-        .map((m) => ({
-          role: m.role,
-          content: m.content.slice(0, 600),
-        }));
+      // 최근 메시지는 멀티턴 맥락 유실 방지를 위해 더 길게 유지(특히 긴 주소 목록/메일 붙여넣기).
+      // 가장 최근 2개는 4000자, 그 외는 600자로 절단.
+      const recent = messages.slice(-8);
+      const history = recent.map((m, i) => ({
+        role: m.role,
+        content: m.content.slice(0, i >= recent.length - 2 ? 4000 : 600),
+      }));
       const sessionSummary = sessions.find((s) => s.id === sessionId)?.last_summary || null;
 
       // 추론 기반 견적 에이전트(tool-calling). SSE 스트리밍으로 토큰/도구 단계를 실시간 수신한다.
@@ -891,7 +701,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         });
       }
 
-      if (payload.assumptions?.length) {
+      // compact(모바일)에서는 우측 견적현황이 드로어로 숨으므로 본문에 가정을 한 줄 노출한다.
+      // 데스크톱은 QuoteInfoSidebar의 가정·신뢰도 배지로 상시 노출되어 중복을 피한다.
+      if (compact && payload.assumptions?.length) {
         pushAssistantMessage(`참고: ${payload.assumptions.join(', ')}`, 'system');
       }
 
@@ -950,81 +762,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     void handleSend(lastUser.content, { skipUserEcho: true });
   };
 
-  const handleSelectSession = async (sessionId: string) => {
-    if (sessionId === currentSessionId) return;
-    setCurrentSessionId(sessionId);
-    setLatestResult(null);
-    setPreviewError(null);
-    await loadSessionMessages(sessionId);
-    await fetchAttachments(sessionId);
-    await fetchGeneratedFiles(sessionId);
-  };
-
-  const handleDeleteSession = async (sessionId: string) => {
-    const target = sessions.find((s) => s.id === sessionId);
-    const label = target?.title || '이 대화방';
-    if (!confirm(`'${label}' 대화방을 삭제할까요? 첨부/생성 파일 및 메시지가 함께 삭제됩니다.`)) {
-      return;
-    }
-
-    if (sessionId.startsWith('local-')) {
-      const nextSessions = sessions.filter((s) => s.id !== sessionId);
-      setSessions(nextSessions);
-      if (currentSessionId === sessionId) {
-        if (nextSessions[0]) {
-          await handleSelectSession(nextSessions[0].id);
-        } else {
-          const created = await createNewSession();
-          if (created) {
-            setMessages([
-              {
-                id: createMessageId(),
-                role: 'assistant',
-                kind: 'system',
-                content: WELCOME_MESSAGE,
-                timestamp: new Date(),
-              },
-            ]);
-          }
-        }
-      }
-      return;
-    }
-
-    const deleted = await deleteSessionApi(sessionId);
-    if (!deleted.success) {
-      pushAssistantMessage(`대화방 삭제 실패: ${deleted.message || '알 수 없는 오류'}`, 'system');
-      return;
-    }
-
-    const list = await fetchSessions();
-    if (currentSessionId === sessionId) {
-      if (list.length > 0) {
-        await handleSelectSession(list[0].id);
-      } else {
-        const created = await createNewSession();
-        if (created) {
-          setMessages([
-            {
-              id: createMessageId(),
-              role: 'assistant',
-              kind: 'system',
-              content: WELCOME_MESSAGE,
-              timestamp: new Date(),
-            },
-          ]);
-          await persistMessage(
-            created.id,
-            'system',
-            WELCOME_MESSAGE
-          );
-        }
-      }
-    } else {
-      setSessions(list);
-    }
-  };
-
   const submitFeedback = async (msg: ChatMessage, type: 'positive' | 'negative') => {
     // UX: 버튼 클릭 즉시 시각적 반영(로그인/세션 유무와 무관)
     setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: type }));
@@ -1048,6 +785,15 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   const applyToPanel = (requestData: any) => {
     if (!requestData) return;
     requestInputApply(requestData);
+  };
+
+  // 입력창에 텍스트를 채우고 포커스(지오코딩 실패 복구 등 사이드바 액션용).
+  const fillInput = (text: string) => {
+    setInput(text);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+      requestAnimationFrame(autoResize);
+    }
   };
 
   // 좌표가 해석된 지점은 좌표로(재지오코딩 회피), 아니면 주소 문자열로 미리보기를 실행한다.
@@ -1168,6 +914,50 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     autoPreviewedKeyRef.current = key;
     void previewRouteOnMap(target, { closeOnSuccess: false, silent: true });
   };
+
+  // ChatMessageList의 MessageBubble memo가 스트리밍 토큰 갱신마다 깨지지 않도록
+  // 콜백 식별자를 ref로 고정한다(핸들러 본체는 매 렌더 갱신되지만 래퍼는 불변).
+  const bubbleHandlersRef = useRef({
+    handleRetryMessage,
+    handleScenarioSelect,
+    handleGenerateFile,
+    submitFeedback,
+    previewRouteOnMap,
+  });
+  bubbleHandlersRef.current = {
+    handleRetryMessage,
+    handleScenarioSelect,
+    handleGenerateFile,
+    submitFeedback,
+    previewRouteOnMap,
+  };
+  const stableOnRetry = useCallback(
+    (sourceUserText?: string) => bubbleHandlersRef.current.handleRetryMessage(sourceUserText),
+    []
+  );
+  const stableOnScenarioSelect = useCallback(
+    (label: string, routes?: Array<{ label: string; routeRequest: any }>) =>
+      bubbleHandlersRef.current.handleScenarioSelect(label, routes),
+    []
+  );
+  const stableOnGenerateFile = useCallback(
+    (type: 'pdf', override?: { structured?: ChatStructuredPayload }) =>
+      void bubbleHandlersRef.current.handleGenerateFile(type, override),
+    []
+  );
+  const stableOnFeedback = useCallback(
+    (msg: ChatMessage, type: 'positive' | 'negative') =>
+      void bubbleHandlersRef.current.submitFeedback(msg, type),
+    []
+  );
+  const stableOnPreviewRoute = useCallback(
+    (rr: any) => void bubbleHandlersRef.current.previewRouteOnMap(rr),
+    []
+  );
+  const stableOnToggleEvidence = useCallback(
+    (id: string) => setExpandedEvidenceByMessageId((prev) => ({ ...prev, [id]: !prev[id] })),
+    []
+  );
 
   if (!isOpen) return null;
 
@@ -1313,8 +1103,12 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           )}
 
           {/* Messages Scroll Area */}
-          <div
-            className="relative flex-1 overflow-y-auto px-4 py-6 md:px-7 space-y-6 scroll-smooth custom-scrollbar bg-muted/40"
+          <ChatMessageList
+            messages={messages}
+            loading={loading}
+            agentSteps={agentSteps}
+            isSessionLoading={isSessionLoading}
+            isDragging={isDragging}
             onDragOver={(e) => {
               if (e.dataTransfer?.types?.includes('Files')) {
                 e.preventDefault();
@@ -1329,245 +1123,16 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               setIsDragging(false);
               if (e.dataTransfer?.files?.length) void handleUploadFiles(e.dataTransfer.files);
             }}
-          >
-            {isSessionLoading && (
-              <div className="sticky top-0 z-10 -mt-2 mb-1 flex items-center justify-center">
-                <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  이전 대화를 불러오는 중…
-                </span>
-              </div>
-            )}
-            {isDragging && (
-              <div className="absolute inset-3 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 backdrop-blur-sm pointer-events-none">
-                <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                  <Paperclip className="w-4 h-4" />
-                  여기에 파일을 놓으면 첨부됩니다
-                </div>
-              </div>
-            )}
-            {messages.map((msg, idx) => (
-              <div
-                key={msg.id}
-                className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
-
-                  {/* Avatar */}
-                  <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
-                    ? 'bg-secondary text-muted-foreground'
-                    : 'bg-primary/10 text-primary'
-                    }`}>
-                    {msg.role === 'user' ? <span className="text-xs font-bold">나</span> : <Sparkles className="h-4 w-4" />}
-                  </div>
-
-                  {/* Message Bubble */}
-                  <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div
-                      className={`relative px-4 py-3 text-[14.5px] leading-relaxed ${msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-md shadow-sm shadow-primary/20'
-                        : (msg.kind === 'system' && msg.content !== WELCOME_MESSAGE)
-                          ? 'bg-warning-muted text-warning border border-warning/20 rounded-2xl'
-                          : 'bg-card text-foreground border border-border rounded-2xl rounded-tl-md shadow-sm shadow-black/[0.03]'
-                        }`}
-                    >
-                      {renderMessageBody(msg)}
-                    </div>
-                    {msg.role === 'assistant' && msg.structured && (
-                      <div className="mt-3 w-full space-y-3">
-                        {msg.structured.scenarioComparison && (
-                          <>
-                            <ScenarioComparisonCard
-                              comparison={msg.structured.scenarioComparison}
-                              routeErrors={msg.structured.scenarioRouteErrors}
-                              realtimeTraffic={msg.structured.realtimeTraffic}
-                              departureAt={msg.structured.departureAt}
-                              onSelect={(r) => handleScenarioSelect(r.label, msg.structured?.scenarioRoutes)}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleGenerateFile('pdf', { structured: msg.structured })}
-                              disabled={isGeneratingFile}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:opacity-90 active:scale-[0.99] transition disabled:opacity-50"
-                            >
-                              {isGeneratingFile ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-                              이 결과로 견적서 발행 (PDF)
-                            </button>
-                          </>
-                        )}
-                        {msg.structured.departureMatrix && (
-                          <DepartureMatrixCard matrix={msg.structured.departureMatrix} />
-                        )}
-                        {!msg.structured.scenarioComparison && Boolean(msg.structured.routeRequest) && (
-                          <button
-                            type="button"
-                            onClick={() => void previewRouteOnMap(msg.structured?.routeRequest)}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
-                            title="견적서 발행이 아니라, 이 경로를 지도에 표시만 합니다."
-                          >
-                            <MapIcon className="h-3.5 w-3.5" />
-                            경로 미리보기
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {msg.role === 'assistant' && msg.retryable && msg.sourceUserText && (
-                      <div className="mt-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRetryMessage(msg.sourceUserText)}
-                          disabled={loading}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50 transition-colors"
-                        >
-                          <RefreshCw className="h-3.5 w-3.5" />
-                          다시 시도
-                        </button>
-                      </div>
-                    )}
-                    {shouldRenderEvidence(msg) && (
-                      <div className="mt-2 w-full max-w-[560px]">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedEvidenceByMessageId((prev) => ({
-                              ...prev,
-                              [msg.id]: !prev[msg.id],
-                            }))
-                          }
-                          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
-                        >
-                          <Sparkles className="w-3 h-3 text-primary" />
-                          근거/출처 보기
-                          <span className="text-muted-foreground">
-                            ({(msg.evidence?.sources || []).length})
-                          </span>
-                        </button>
-                        {expandedEvidenceByMessageId[msg.id] && (
-                          <div className="mt-2 rounded-xl border border-border bg-card p-3 text-xs text-foreground shadow-sm">
-                            {!!msg.evidence?.basis?.length && (
-                              <div className="mb-2">
-                                <div className="mb-1 text-[11px] font-semibold text-muted-foreground">근거 요약</div>
-                                <div className="space-y-1">
-                                  {msg.evidence.basis.slice(0, 3).map((basis, basisIdx) => (
-                                    <div key={`${msg.id}-basis-${basisIdx}`} className="leading-relaxed">
-                                      - {basis}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {!!msg.evidence?.sources?.length && (
-                              <div>
-                                <div className="mb-1 text-[11px] font-semibold text-muted-foreground">출처</div>
-                                <div className="space-y-1.5">
-                                  {msg.evidence.sources.slice(0, 5).map((src, srcIdx) => (
-                                    <div
-                                      key={`${msg.id}-src-${srcIdx}`}
-                                      className="flex items-start gap-2 rounded-lg border border-border bg-muted px-2 py-1.5"
-                                    >
-                                      <span className="mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-foreground">
-                                        {src.type === 'web' ? '웹' : src.type === 'attachment' ? '첨부' : '내부'}
-                                      </span>
-                                      <div className="min-w-0">
-                                        {src.url ? (
-                                          <a
-                                            href={src.url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="block truncate text-primary hover:underline"
-                                          >
-                                            {src.label}
-                                          </a>
-                                        ) : (
-                                          <div className="truncate text-foreground">{src.label}</div>
-                                        )}
-                                        {src.url && (
-                                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                                            {getDomainFromUrl(src.url)}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {!!msg.evidence?.fetchedAt && (
-                              <div className="mt-2 text-[10px] text-muted-foreground">
-                                확인 시각: {new Date(msg.evidence.fetchedAt).toLocaleString('ko-KR')}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <span className="text-[10px] text-muted-foreground mt-1 px-1">
-                      {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    {msg.role === 'assistant' && msg.kind !== 'system' && (
-                      <div className="mt-1 px-1 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void submitFeedback(msg, 'positive')}
-                          disabled={!!feedbackSentByMessageId[msg.id]}
-                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'positive' ? 'text-primary font-bold' : 'text-muted-foreground hover:text-primary'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'positive' ? 'hidden' : ''}`}
-                        >
-                          <ThumbsUp className="w-3 h-3" /> 도움이 됐어요
-                        </button>
-                        {!feedbackSentByMessageId[msg.id] && <span className="text-muted-foreground text-[8px]">|</span>}
-                        <button
-                          type="button"
-                          onClick={() => void submitFeedback(msg, 'negative')}
-                          disabled={!!feedbackSentByMessageId[msg.id]}
-                          className={`text-[10px] flex items-center gap-1 ${feedbackSentByMessageId[msg.id] === 'negative' ? 'text-rose-600 font-bold' : 'text-muted-foreground hover:text-rose-600'} ${feedbackSentByMessageId[msg.id] && feedbackSentByMessageId[msg.id] !== 'negative' ? 'hidden' : ''}`}
-                        >
-                          <ThumbsDown className="w-3 h-3" /> 아쉬워요
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div className="flex justify-start w-full">
-                <div className="flex items-start gap-3 max-w-[85%]">
-                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                  <div className="bg-card px-4 py-3 rounded-2xl rounded-tl-md border border-border shadow-sm shadow-black/[0.03]">
-                    {agentSteps.length === 0 ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">분석 중입니다...</span>
-                        <span className="flex space-x-1">
-                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                          <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce"></span>
-                        </span>
-                      </div>
-                    ) : (
-                      <ul className="space-y-1.5 min-w-[180px]">
-                        {agentSteps.map((s) => (
-                          <li key={s.name} className="flex items-center gap-2 text-sm">
-                            {s.phase === 'done' ? (
-                              <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
-                            ) : s.phase === 'error' ? (
-                              <X className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
-                            ) : (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary flex-shrink-0" />
-                            )}
-                            <span className={s.phase === 'done' ? 'text-muted-foreground' : 'text-foreground'}>{s.label}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} className="h-4" />
-          </div>
+            expandedEvidenceByMessageId={expandedEvidenceByMessageId}
+            onToggleEvidence={stableOnToggleEvidence}
+            feedbackSentByMessageId={feedbackSentByMessageId}
+            onFeedback={stableOnFeedback}
+            onRetry={stableOnRetry}
+            onScenarioSelect={stableOnScenarioSelect}
+            onGenerateFile={stableOnGenerateFile}
+            isGeneratingFile={isGeneratingFile}
+            onPreviewRoute={stableOnPreviewRoute}
+          />
 
           {/* Input Area (Floating Style) */}
           <div className="flex-shrink-0 px-4 md:px-8 pb-6 pt-2 bg-gradient-to-t from-white via-white to-transparent">
@@ -1748,610 +1313,50 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         </div>
 
         {/* Info Sidebar (Right Panel) — compact 모드에서는 슬라이드 드로어로 전환 */}
-        {compact && infoSheetOpen && (
-          <button
-            type="button"
-            aria-label="견적 패널 닫기"
-            onClick={() => setInfoSheetOpen(false)}
-            className="absolute inset-0 z-30 bg-foreground/15"
-          />
-        )}
-        <div
-          className={
-            compact
-              ? `absolute inset-y-0 right-0 z-40 flex w-[92%] max-w-[400px] flex-col border-l border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
-              : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-muted/40'
-          }
-        >
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card/60 backdrop-blur-sm">
-            <h3 className="font-bold text-foreground flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-muted-foreground" />
-              실시간 견적 현황
-            </h3>
-            <button
-              onClick={() => (compact ? setInfoSheetOpen(false) : onClose())}
-              className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-muted-foreground transition-colors"
-              title={compact ? '닫기' : '견적챗 닫기'}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">대화방</div>
-                <button
-                  onClick={async () => {
-                    const created = await createNewSession();
-                    if (!created) return;
-                    setLatestResult(null);
-                    setAttachments([]);
-                    setGeneratedFiles([]);
-                    setMessages([
-                      {
-                        id: createMessageId(),
-                        role: 'assistant',
-                        kind: 'system',
-      content: WELCOME_MESSAGE,
-      timestamp: new Date(),
-                      },
-                    ]);
-                    await persistMessage(
-                      created.id,
-                      'system',
-                      WELCOME_MESSAGE
-                    );
-                    await fetchAttachments(created.id);
-                    await fetchGeneratedFiles(created.id);
-                  }}
-                  className="text-[11px] font-semibold text-primary hover:text-primary/80"
-                >
-                  + 새 대화
-                </button>
-              </div>
-              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-48 overflow-y-auto space-y-1">
-                {sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`w-full text-left px-2 py-2 rounded-lg transition-colors ${currentSessionId === session.id
-                      ? 'bg-indigo-50 text-indigo-800'
-                      : 'hover:bg-muted text-foreground'
-                      }`}
-                  >
-                    <button
-                      onClick={() => handleSelectSession(session.id)}
-                      className="w-full text-left px-1"
-                    >
-                      <div className="text-xs font-semibold truncate">{session.title}</div>
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        {new Date(session.updated_at).toLocaleString('ko-KR', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
-                    </button>
-                    <div className="mt-1 flex justify-end">
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleDeleteSession(session.id);
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-rose-600 hover:bg-rose-50"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        삭제
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {!sessions.length && (
-                  <div className="px-2 py-2 text-[11px] text-muted-foreground">저장된 대화가 없습니다.</div>
-                )}
-              </div>
-              {isSessionLoading && (
-                <div className="text-[11px] text-muted-foreground">대화를 불러오는 중...</div>
-              )}
-              {!sessionPersistenceEnabled && (
-                <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-                  서버 대화 저장이 비활성화되어 로컬 임시 대화로 동작 중입니다.
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">첨부 파일</div>
-              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-40 overflow-y-auto space-y-1">
-                {attachments.map((attachment) => (
-                  <div key={attachment.id} className="px-2 py-1.5 rounded-lg border border-border bg-muted">
-                    <div className="text-[11px] font-semibold text-foreground truncate">{attachment.file_name}</div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {attachment.file_type} · {(attachment.file_size / 1024).toFixed(1)}KB · {attachment.parse_status}
-                    </div>
-                  </div>
-                ))}
-                {!attachments.length && (
-                  <div className="px-2 py-2 text-[11px] text-muted-foreground">첨부된 파일이 없습니다.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">견적서 발행</div>
-                <button
-                  type="button"
-                  onClick={() => setDocOptionsOpen((v) => !v)}
-                  className="text-[10px] font-semibold text-primary hover:text-primary/80"
-                >
-                  {docOptionsOpen ? '옵션 접기' : '옵션 설정'}
-                </button>
-              </div>
-              {docOptionsOpen && (
-                <div className="bg-card rounded-xl border border-border p-3 shadow-sm space-y-2.5 text-xs animate-in fade-in duration-200">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">수신처 (화주사)</label>
-                    <input
-                      value={docRecipient}
-                      onChange={(e) => setDocRecipient(e.target.value)}
-                      placeholder="예: (주)한진로지스틱스"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">담당자 / 연락처</label>
-                    <input
-                      value={docRecipientContact}
-                      onChange={(e) => setDocRecipientContact(e.target.value)}
-                      placeholder="예: 구매팀 김영식 차장"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="block text-[10px] font-semibold text-muted-foreground mb-1">유효기간 (일)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={365}
-                        value={docValidDays}
-                        onChange={(e) => setDocValidDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                      />
-                    </div>
-                    <label className="flex items-center gap-1.5 mt-4 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={docIncludeVat}
-                        onChange={(e) => setDocIncludeVat(e.target.checked)}
-                        className="rounded border-border text-indigo-600 focus:ring-indigo-200"
-                      />
-                      <span className="text-[11px] text-foreground">VAT 포함</span>
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-muted-foreground mb-1">비고</label>
-                    <textarea
-                      value={docNotes}
-                      onChange={(e) => setDocNotes(e.target.value)}
-                      rows={2}
-                      placeholder="견적서에 함께 표기할 메모"
-                      className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15 resize-none"
-                    />
-                  </div>
-
-                  {/* 발행처(공급자) 설정 — 로고/사업자번호 등, localStorage 보관 */}
-                  <div className="pt-1 border-t border-border">
-                    <button
-                      type="button"
-                      onClick={() => setIssuerOpen((v) => !v)}
-                      className="w-full flex items-center justify-between py-1.5 text-[11px] font-bold text-foreground"
-                    >
-                      <span>발행처(공급자) 설정</span>
-                      <span className="text-[10px] font-semibold text-indigo-600">{issuerOpen ? '접기' : '펼치기'}</span>
-                    </button>
-                    {issuerOpen && (
-                      <div className="space-y-2.5 pt-1 animate-in fade-in duration-200">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-14 h-14 flex-none rounded-lg border border-border bg-muted overflow-hidden flex items-center justify-center">
-                            {issuer.logoDataUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={issuer.logoDataUrl} alt="발행처 로고" className="w-full h-full object-contain" />
-                            ) : (
-                              <FileText className="w-5 h-5 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0 space-y-1">
-                            <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-200 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50 cursor-pointer">
-                              <Paperclip className="w-3 h-3" />
-                              로고 업로드
-                              <input
-                                type="file"
-                                accept="image/png,image/jpeg"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-                                  const reader = new FileReader();
-                                  reader.onload = () => updateIssuer({ logoDataUrl: String(reader.result || '') });
-                                  reader.readAsDataURL(file);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-                            {issuer.logoDataUrl && (
-                              <button
-                                type="button"
-                                onClick={() => updateIssuer({ logoDataUrl: '' })}
-                                className="block text-[10px] text-muted-foreground hover:text-rose-600"
-                              >
-                                로고 제거
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">발행처명</label>
-                          <input
-                            value={issuer.name || ''}
-                            onChange={(e) => updateIssuer({ name: e.target.value })}
-                            placeholder="예: 옹고잉 물류"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="block text-[10px] font-semibold text-muted-foreground mb-1">사업자번호</label>
-                            <input
-                              value={issuer.bizNumber || ''}
-                              onChange={(e) => updateIssuer({ bizNumber: e.target.value })}
-                              placeholder="000-00-00000"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <label className="block text-[10px] font-semibold text-muted-foreground mb-1">연락처</label>
-                            <input
-                              value={issuer.contact || ''}
-                              onChange={(e) => updateIssuer({ contact: e.target.value })}
-                              placeholder="02-0000-0000"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">이메일</label>
-                          <input
-                            value={issuer.email || ''}
-                            onChange={(e) => updateIssuer({ email: e.target.value })}
-                            placeholder="info@company.com"
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-muted-foreground mb-1">주소</label>
-                          <input
-                            value={issuer.address || ''}
-                            onChange={(e) => updateIssuer({ address: e.target.value })}
-                            placeholder="서울특별시 ..."
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/15"
-                          />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground">이 기기에 저장되어 모든 견적서에 자동 반영됩니다.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground">
-                  {currentSessionId && !currentSessionId.startsWith('local-') ? '생성 후 저장됨' : '저장 없이 바로 다운로드'}
-                </span>
-                <div className="flex items-center gap-1">
-                  {(['pdf', 'xlsx', 'md', 'docx', 'json'] as const).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => handleGenerateFile(type)}
-                      disabled={isGeneratingFile}
-                      className="px-2 py-1 rounded-md border border-indigo-200 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                    >
-                      {type.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-44 overflow-y-auto space-y-1">
-                {generatedFiles.map((file) => (
-                  <a
-                    key={file.id}
-                    href={file.file_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full flex items-center justify-between px-2 py-2 rounded-lg border border-border hover:bg-muted"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-foreground truncate">{file.file_name}</div>
-                      <div className="text-[10px] text-muted-foreground">{file.file_type.toUpperCase()} · {(file.file_size / 1024).toFixed(1)}KB</div>
-                    </div>
-                    <Download className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                  </a>
-                ))}
-                {!generatedFiles.length && (
-                  <div className="px-2 py-2 text-[11px] text-muted-foreground">생성된 파일이 없습니다.</div>
-                )}
-              </div>
-            </div>
-
-            {/* Status Status */}
-            <div className="space-y-3">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">진행 상태</div>
-              <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.extracted ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>입력 정보 분석</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.routeSummary ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>경로 최적화 (Tmap)</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  <span className={`text-sm ${latestResult?.quote ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>최종 견적 산출</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Extracted Info Card */}
-            <div className="space-y-3">
-              <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">추출 정보</div>
-              <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-4">
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-4 h-4 text-indigo-500 mt-0.5" />
-                  <div className="w-full min-w-0">
-                    <div className="text-xs text-muted-foreground mb-0.5">경유지 정보</div>
-                    <div className="space-y-1.5 mt-1">
-                      <div className="flex items-center gap-2">
-                        <span className="shrink-0 text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">출발</span>
-                        <span className="text-sm font-medium text-foreground truncate">{latestResult?.extracted?.origin?.address || '-'}</span>
-                      </div>
-                      {latestResult?.extracted?.destinations?.map((d: any, idx: number) => (
-                        <div key={idx} className="flex items-center gap-2 relative">
-                          <div className="absolute -top-1.5 left-2 w-px h-1.5 bg-gray-200"></div>
-                          <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${idx === (latestResult.extracted.destinations.length - 1)
-                              ? 'bg-rose-100 text-rose-700'
-                              : 'bg-blue-100 text-blue-700'
-                            }`}>
-                            {idx === (latestResult.extracted.destinations.length - 1) ? '도착' : `경유 ${idx + 1}`}
-                          </span>
-                          <span className="text-sm font-medium text-foreground truncate">{d.address || '-'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Truck className="w-4 h-4 text-indigo-500 mt-0.5" />
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-0.5">차량 정보</div>
-                    <div className="text-sm font-medium text-foreground">
-                      {latestResult?.extracted?.vehicleType || '-'}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Clock className="w-4 h-4 text-indigo-500 mt-0.5" />
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-0.5">일정</div>
-                    <div className="text-sm font-medium text-foreground">
-                      {latestResult?.extracted?.departureTime || '-'} 출발 · {latestResult?.extracted?.scheduleType === 'regular' ? '정기' : '비정기'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Scenario Comparison (다중 시나리오: 3/5/10개 지점) */}
-            {latestResult?.scenarioComparison && (
-              <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">시나리오 비교</div>
-                <ScenarioComparisonCard
-                  comparison={latestResult.scenarioComparison}
-                  routeErrors={latestResult.scenarioRouteErrors}
-                  onSelect={(r) => handleScenarioSelect(r.label)}
-                />
-              </div>
-            )}
-
-            {/* 결과 빠른 액션 칩 */}
-            {!loading && (latestResult?.quote || latestResult?.scenarioComparison) && (
-              <div className="flex flex-wrap gap-2 animate-in fade-in duration-500">
-                <button
-                  type="button"
-                  onClick={() => handleSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  다른 차종으로 비교
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-                >
-                  <Calculator className="w-3.5 h-3.5" />
-                  다른 요금제로 보기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateFile('pdf')}
-                  disabled={isGeneratingFile}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
-                >
-                  {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                  PDF 견적서
-                </button>
-              </div>
-            )}
-
-            {/* 지오코딩 실패 복구: 실패한 지점의 정확한 주소를 직접 지정하도록 유도 */}
-            {!loading && !!latestResult?.scenarioRouteErrors?.length && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2 animate-in fade-in duration-500">
-                <div className="font-semibold">일부 지점의 좌표를 찾지 못했어요. 정확한 도로명 주소로 다시 시도해 보세요.</div>
-                <div className="flex flex-wrap gap-2">
-                  {latestResult.scenarioRouteErrors.map((e) => (
-                    <button
-                      key={e.label}
-                      type="button"
-                      onClick={() => {
-                        setInput(`${e.label} 시나리오에서 좌표를 못 찾은 지점의 정확한 도로명 주소를 알려줄게(예: 서울 ○○구 ○○로 12): `);
-                        if (textareaRef.current) {
-                          textareaRef.current.focus();
-                          requestAnimationFrame(autoResize);
-                        }
-                      }}
-                      className="px-2.5 py-1 rounded-full border border-amber-300 bg-card text-amber-800 hover:bg-amber-100 transition-colors"
-                    >
-                      {e.label} 주소 직접 지정
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Quote Result Card (Highlight) */}
-            {latestResult?.quote && (
-              <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                  <span>예상 견적</span>
-                  <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium normal-case">
-                    기준: {latestResult.quote.basis?.vehicleType} · {latestResult.quote.basis?.scheduleType === 'regular' ? '정기' : '비정기'}
-                  </span>
-                </div>
-                <div className="bg-primary rounded-2xl p-5 text-white shadow-xl">
-
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">시간당 1회</div>
-                      <div className="text-xl font-black tracking-tight">
-                        {latestResult.quote.hourly?.formatted}
-                      </div>
-                      {latestResult.quote.hourly?.tiers && (
-                        <div className="mt-1.5 space-y-0.5 text-[10px] text-indigo-100/90 leading-tight">
-                          <div>
-                            일일 <span className="font-semibold text-white">{latestResult.quote.hourly.tiers.perDay?.formatted}</span>
-                          </div>
-                          <div>
-                            20일 <span className="font-semibold text-white">{latestResult.quote.hourly.tiers.perMonth20d?.formatted}</span>
-                          </div>
-                          <div className="text-indigo-200/70 text-[9px]">유류할증 제외 · 운임표 기준</div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="w-px self-stretch bg-indigo-400/30 mx-3"></div>
-                    <div className="text-right">
-                      <div className="text-indigo-200 text-[10px] font-bold uppercase tracking-wider mb-1">단건 요금제</div>
-                      <div className="text-xl font-black tracking-tight">
-                        {latestResult.quote.perJob?.formatted}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-white/10 rounded-lg p-2">
-                      <div className="text-[10px] text-indigo-200">운행 거리</div>
-                      <div className="text-sm font-bold">{latestResult.quote.basis?.distanceKm}km</div>
-                    </div>
-                    <div className="bg-white/10 rounded-lg p-2">
-                      <div className="text-[10px] text-indigo-200">총 소요 시간</div>
-                      <div className="text-sm font-bold">
-                        {latestResult.quote.basis?.totalBillMinutes}분
-                        <div className="text-[9px] font-normal text-indigo-200/80 mt-0.5">
-                          운행 {latestResult.quote.basis?.driveMinutes}분 + 체류 {latestResult.quote.basis?.dwellTotalMinutes}분
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {latestResult.quote.hourly?.advisor?.message && (
-                    <div className="mb-4 rounded-lg bg-amber-50/95 border border-amber-200 px-3 py-2 text-[11px] leading-snug text-amber-900 shadow-sm">
-                      <span className="font-semibold">단가 인하 구간 안내</span>
-                      <span className="block mt-0.5 text-amber-800">
-                        {latestResult.quote.hourly.advisor.message.replace(/^\u{1F4A1}\s*/u, '')}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode('input-order')}
-                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'input-order'
-                            ? 'bg-card text-indigo-700 border-indigo-300'
-                            : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                          }`}
-                      >
-                        입력순 미리보기
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewMode('optimized-order')}
-                        className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition-colors ${previewMode === 'optimized-order'
-                            ? 'bg-card text-indigo-700 border-indigo-300'
-                            : 'bg-indigo-50/60 text-indigo-600 border-indigo-200 hover:bg-indigo-50'
-                          }`}
-                      >
-                        최적화순 미리보기
-                      </button>
-                    </div>
-                    <button
-                      onClick={() => void handlePreviewOnMap(false)}
-                      disabled={isPreviewLoading}
-                      className="w-full bg-card text-indigo-700 py-3 rounded-xl text-sm font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                      {isPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapIcon className="w-4 h-4" />}
-                      {isPreviewLoading ? '지도 반영 중...' : '지도에서 경로 확인하기'}
-                    </button>
-                    {previewError && (
-                      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700 space-y-2">
-                        <div>{previewError}</div>
-                        <button
-                          type="button"
-                          onClick={() => void handlePreviewOnMap(true)}
-                          disabled={isPreviewLoading}
-                          className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-card px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isPreviewLoading ? 'animate-spin' : ''}`} />
-                          자동 수정으로 재시도
-                        </button>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setIsQuoteDetailOpen(true)}
-                      className="w-full bg-indigo-100/70 text-indigo-800 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-100 transition-colors"
-                    >
-                      전체 운임 시나리오 비교
-                    </button>
-                  </div>
-                </div>
-
-                <SingleQuoteInsights
-                  vehicleType={latestResult.quote.basis?.vehicleType}
-                  distanceKm={latestResult.quote.basis?.distanceKm}
-                  driveMinutes={latestResult.quote.basis?.driveMinutes}
-                  dwellMinutes={latestResult.quote.basis?.dwellTotalMinutes}
-                />
-              </div>
-            )}
-
-          </div>
-        </div>
+        <QuoteInfoSidebar
+          compact={compact}
+          infoSheetOpen={infoSheetOpen}
+          onCloseInfoSheet={() => setInfoSheetOpen(false)}
+          onClose={onClose}
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          isSessionLoading={isSessionLoading}
+          sessionPersistenceEnabled={sessionPersistenceEnabled}
+          onNewSession={() => void startNewSessionFromSidebar()}
+          onSelectSession={(id) => void handleSelectSession(id)}
+          onDeleteSession={(id) => void handleDeleteSession(id)}
+          attachments={attachments}
+          docOptionsOpen={docOptionsOpen}
+          setDocOptionsOpen={setDocOptionsOpen}
+          docRecipient={docRecipient}
+          setDocRecipient={setDocRecipient}
+          docRecipientContact={docRecipientContact}
+          setDocRecipientContact={setDocRecipientContact}
+          docValidDays={docValidDays}
+          setDocValidDays={setDocValidDays}
+          docIncludeVat={docIncludeVat}
+          setDocIncludeVat={setDocIncludeVat}
+          docNotes={docNotes}
+          setDocNotes={setDocNotes}
+          issuer={issuer}
+          issuerOpen={issuerOpen}
+          setIssuerOpen={setIssuerOpen}
+          updateIssuer={updateIssuer}
+          generatedFiles={generatedFiles}
+          isGeneratingFile={isGeneratingFile}
+          onGenerateFile={handleGenerateFile}
+          loading={loading}
+          latestResult={latestResult}
+          onScenarioSelect={(label) => handleScenarioSelect(label)}
+          onSend={(message) => void handleSend(message)}
+          onFillInput={fillInput}
+          previewMode={previewMode}
+          setPreviewMode={setPreviewMode}
+          isPreviewLoading={isPreviewLoading}
+          previewError={previewError}
+          onPreviewOnMap={(useSanitizedFallback) => void handlePreviewOnMap(useSanitizedFallback)}
+          onOpenQuoteDetail={() => setIsQuoteDetailOpen(true)}
+        />
       </div>
       {isQuoteDetailOpen && latestResult?.quote && (
         <QuoteDetailModal quote={latestResult.quote} onClose={() => setIsQuoteDetailOpen(false)} />

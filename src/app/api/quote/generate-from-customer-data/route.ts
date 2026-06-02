@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
     }
 
     const quoteData = await quoteCalculationRes.json();
-    if (!quoteData.success || !quoteData.data) {
+    if (!quoteData.success || !quoteData.plans) {
       return NextResponse.json(
         {
           success: false,
@@ -142,6 +142,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // quote-calculation은 운임표 기반 요금제(plans.hourly/perJob)와 메타(meta)를 반환한다.
+    // 대표 견적은 "옹고잉 유리" = 두 요금제 중 높은 쪽(에이전트 calculate_quote 정책과 동일).
+    const plans = quoteData.plans;
+    const meta = quoteData.meta ?? {};
+    const hourly = plans.hourly ?? {};
+    const perJob = plans.perJob ?? {};
+    const hourlyTotal = Number(hourly.total ?? 0);
+    const perJobTotal = Number(perJob.total ?? 0);
+    const recommendedPlan: 'hourly' | 'perJob' = hourlyTotal >= perJobTotal ? 'hourly' : 'perJob';
+    const totalPrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+    const baseFare =
+      recommendedPlan === 'hourly'
+        ? Math.max(0, hourlyTotal - Number(hourly.fuelSurcharge ?? 0))
+        : Number(perJob.base ?? 0);
+    const additionalFare =
+      recommendedPlan === 'hourly' ? Number(hourly.fuelSurcharge ?? 0) : Number(perJob.stopFee ?? 0);
+    const breakdown = {
+      planName: recommendedPlan === 'hourly' ? '시간당 요금제' : '단건 요금제',
+      recommendedPlan,
+      hourly: {
+        total: hourlyTotal,
+        billMinutes: hourly.billMinutes ?? null,
+        ratePerHour: hourly.ratePerHour ?? null,
+        fuelSurcharge: hourly.fuelSurcharge ?? null,
+      },
+      perJob: {
+        total: perJobTotal,
+        base: perJob.base ?? null,
+        stopFee: perJob.stopFee ?? null,
+        scheduleType: perJob.scheduleType ?? null,
+      },
+      km: meta.km ?? null,
+      driveMinutes: meta.driveMinutes ?? null,
+      dwellTotalMinutes: meta.dwellTotalMinutes ?? null,
+      totalMinutes: meta.totalMinutes ?? null,
+    };
+
     // 3. PDF 생성 (옵션)
     let pdfUrl: string | null = null;
     try {
@@ -151,8 +188,8 @@ export async function POST(request: NextRequest) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            totalPrice: quoteData.data.totalPrice,
-            breakdown: quoteData.data.breakdown,
+            totalPrice,
+            breakdown,
             distance: totalDistance,
             time: totalTime,
             vehicleType: customerData.vehicleType,
@@ -194,9 +231,9 @@ export async function POST(request: NextRequest) {
           destination_address: customerData.destinations.map(d => d.address).join(', '),
           distance: totalDistance / 1000, // km
           estimated_time: Math.round(totalTime / 60), // minutes
-          base_fare: quoteData.data.breakdown?.baseRate || 0,
-          additional_fare: (quoteData.data.breakdown?.distanceCharge || 0) + (quoteData.data.breakdown?.timeCharge || 0),
-          total_fare: quoteData.data.totalPrice,
+          base_fare: baseFare,
+          additional_fare: additionalFare,
+          total_fare: totalPrice,
           vehicle_type: customerData.vehicleType,
           status: 'draft',
           valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7일 후
@@ -215,8 +252,8 @@ export async function POST(request: NextRequest) {
       data: {
         quoteId: savedQuote?.id || null,
         quoteNumber: quoteNumber,
-        totalPrice: quoteData.data.totalPrice,
-        breakdown: quoteData.data.breakdown,
+        totalPrice,
+        breakdown,
         routeData: routeData.data,
         distance: totalDistance,
         time: totalTime,

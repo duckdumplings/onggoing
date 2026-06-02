@@ -37,6 +37,93 @@ function won(v: number): string {
   return `₩${Math.round(v).toLocaleString('ko-KR')}`;
 }
 
+/** "HH:mm"(24h) → 자정 기준 분. 형식 오류면 null. */
+function parseHHMM(s?: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+/** KST 기준 "HH:mm"의 다음 도래 시각 ISO. Tmap 예측 교통 현실성을 위해 과거가 아닌 가까운 미래로. */
+function nextIsoAtHHMM(hhmm?: string): string {
+  const mins = parseHHMM(hhmm);
+  if (mins == null) return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 3600 * 1000);
+  const y = kstNow.getUTCFullYear();
+  const mo = kstNow.getUTCMonth();
+  const d = kstNow.getUTCDate();
+  let targetUtcMs = Date.UTC(y, mo, d, Math.floor(mins / 60) - 9, mins % 60, 0, 0);
+  if (targetUtcMs <= now.getTime()) targetUtcMs += 24 * 3600 * 1000;
+  return new Date(targetUtcMs).toISOString();
+}
+
+// ── Tmap 경로최적화 호출 정규화 TTL 캐시 ──
+// 도메인 룰 §3: 동일 입력(좌표·차종·옵션·출발 분(分))의 Tmap 중복 호출을 막는다.
+// compare_departure_times는 프리셋마다 1회씩 route-optimization을 부르는데, 프리셋 시각은
+// "now 이후 다음 해당 요일·고정시각"이라 같은 날 재호출 시 동일 ISO가 되어 캐시가 적중한다.
+type RouteOptCacheEntry = { at: number; status: number; ok: boolean; json: any };
+const ROUTE_OPT_CACHE = new Map<string, RouteOptCacheEntry>();
+const ROUTE_OPT_TTL_MS = 5 * 60 * 1000;
+const ROUTE_OPT_CACHE_MAX = 200;
+
+function roundCoord(n: unknown): number | null {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v * 1e5) / 1e5 : null; // ~1m 정밀도
+}
+
+/** 좌표는 ~1m로, 출발시각은 분 단위로 정규화해 캐시 키를 만든다(룰: 분 단위 라운딩). */
+function normalizeRouteKey(payload: any): string {
+  const pickPoint = (p: any) =>
+    p && typeof p === 'object'
+      ? { lat: roundCoord(p.latitude), lon: roundCoord(p.longitude), a: typeof p.address === 'string' ? p.address.trim() : undefined }
+      : { a: String(p ?? '').trim() };
+  const origins = Array.isArray(payload?.origins) ? payload.origins.map(pickPoint) : pickPoint(payload?.origins);
+  const destinations = Array.isArray(payload?.destinations) ? payload.destinations.map(pickPoint) : [];
+  const dep = payload?.departureAt ? new Date(payload.departureAt) : null;
+  const departureMin = dep && !Number.isNaN(dep.getTime()) ? Math.floor(dep.getTime() / 60000) : null;
+  return JSON.stringify({
+    origins,
+    destinations,
+    vehicleType: payload?.vehicleType ?? null,
+    roadOption: payload?.roadOption ?? null,
+    useRealtimeTraffic: Boolean(payload?.useRealtimeTraffic),
+    fastOrder: Boolean(payload?.fastOrder),
+    dwellMinutes: payload?.dwellMinutes ?? null,
+    departureMin,
+  });
+}
+
+/** route-optimization POST 호출(성공 응답만 TTL 캐시). 응답 JSON과 캐시 적중 여부를 반환. */
+async function postRouteOptimizationCached(
+  baseUrl: string,
+  payload: any
+): Promise<{ ok: boolean; status: number; json: any; cached: boolean }> {
+  const key = normalizeRouteKey(payload);
+  const now = Date.now();
+  const hit = ROUTE_OPT_CACHE.get(key);
+  if (hit && now - hit.at < ROUTE_OPT_TTL_MS) {
+    return { ok: hit.ok, status: hit.status, json: hit.json, cached: true };
+  }
+  const res = await fetch(new URL('/api/route-optimization', baseUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.ok) {
+    if (ROUTE_OPT_CACHE.size >= ROUTE_OPT_CACHE_MAX) {
+      const oldestKey = ROUTE_OPT_CACHE.keys().next().value;
+      if (oldestKey) ROUTE_OPT_CACHE.delete(oldestKey);
+    }
+    ROUTE_OPT_CACHE.set(key, { at: now, status: res.status, ok: res.ok, json });
+  }
+  return { ok: res.ok, status: res.status, json, cached: false };
+}
+
 export function buildQuoteAgentTools(ctx: AgentToolContext) {
   const track = (toolName: string, input: unknown, output: unknown) => {
     try {
@@ -101,21 +188,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           fastOrder: false,
         });
 
-        const res = await fetch(new URL('/api/route-optimization', ctx.baseUrl), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
+        const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
+        if (!ok) {
           const failed = body?.diagnostics?.failedAddresses;
           const message = Array.isArray(failed) && failed.length
             ? `주소를 찾지 못했어요: ${failed.map((f: any) => f?.address).filter(Boolean).join(', ')}`
-            : body?.error || body?.message || `경로 계산 실패 (HTTP ${res.status})`;
+            : body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
           track('optimize_route', payload, { error: message });
           return { error: message };
         }
-        const json = await res.json();
+        const json = body;
         const summary = json?.data?.summary;
         // 구/동 단위로만 해석돼 실제 배송 지점이 불확실한 지점을 모아 에이전트에 알린다.
         const lowPrecisionStops = domainStops
@@ -295,16 +377,10 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             };
             const payload = { ...basePayload, departureAt: preset.iso };
             try {
-              const routeRes = await fetch(new URL('/api/route-optimization', ctx.baseUrl), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-              });
-              if (!routeRes.ok) {
-                const b = await routeRes.json().catch(() => ({}));
-                return { ...base, error: b?.error || b?.message || `경로 계산 실패 (HTTP ${routeRes.status})` };
+              const { ok, status, json: routeJson } = await postRouteOptimizationCached(ctx.baseUrl, payload);
+              if (!ok) {
+                return { ...base, error: routeJson?.error || routeJson?.message || `경로 계산 실패 (HTTP ${status})` };
               }
-              const routeJson = await routeRes.json();
               const summary = routeJson?.data?.summary;
               const km = Number(summary?.totalDistance || 0) / 1000;
               const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
@@ -389,6 +465,298 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           'compare_departure_times',
           { stopCount: stops.length, presets: presets.length, deadline: deadline ?? null },
           { recommendedId: out.recommendedId, valid: valid.length, deadlineInfeasible }
+        );
+        return out;
+      },
+    }),
+
+    audit_delivery_timeline: tool({
+      description:
+        '이미 완료된 배송의 실측 타임라인과, 같은 지점들의 "이론상 최소 소요시간"을 비교해 지연이 구조적으로 불가피했는지 판정한다. 사용자가 "지연이 불가피했나/우리가 늦은 거냐/보수적으로 봐도 문제없었나" 같은 사후 진단을 물을 때 사용. 금액이 아니라 소요시간·거리·지연 판정을 돌려준다. 수치는 본문에서 만들지 말고 이 도구 결과만 써라. 사용자가 지점별 완료시각을 줬고 "경유지별 운행/체류 시간"을 원하면 stopTimeline에 방문순서대로 넣어라 — 구간별 이론 주행시간과 실측 간격을 분해한 표(legs)를 돌려준다.',
+      inputSchema: z.object({
+        stops: z.array(RouteStopSchema).min(2),
+        vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
+        startTime: z.string().optional().describe('실제 출발 시각 "HH:mm"(24h). 예 "07:40"'),
+        endTime: z.string().optional().describe('실제 마지막 배송 완료 시각 "HH:mm". 예 "13:11"'),
+        actualElapsedMinutes: z
+          .number()
+          .positive()
+          .optional()
+          .describe('실측 총 소요(분). startTime/endTime 대신 직접 줄 때.'),
+        reloadCount: z
+          .number()
+          .int()
+          .nonnegative()
+          .default(0)
+          .describe('중간 상차지 재방문(재상차) 횟수. 이론 최소값에 미반영되므로 caveat로 표기된다.'),
+        deadlines: z
+          .array(z.object({ label: z.string(), time: z.string() }))
+          .optional()
+          .describe('마감이 있는 고객사 목록 [{label, time "HH:mm"}]. 예: [{label:"호라이즌", time:"12:00"}]'),
+        stopTimeline: z
+          .array(
+            z.object({
+              label: z.string().optional().describe('상호/표시명(선택)'),
+              address: z.string().min(1).describe('지점 주소(상호 아닌 도로명/지번)'),
+              completedAt: z.string().describe('이 지점 완료(또는 출발)시각 "HH:mm"'),
+            })
+          )
+          .optional()
+          .describe(
+            '지점별 실제 타임라인(방문 순서대로). 첫 항목은 출발(상차)지점이고 completedAt은 출발시각, 이후는 각 배송 완료시각. 주어지면 경유지별 운행/체류 분해표를 산출한다.'
+          ),
+      }),
+      execute: async ({ stops, vehicleType, startTime, endTime, actualElapsedMinutes, reloadCount, deadlines, stopTimeline }) => {
+        // 경유지별 분해 경로: 실제 방문순서(고정)대로 구간 주행시간을 산출하고,
+        // 실측 완료시각 간격과 비교해 구간별 운행/체류를 분해한다.
+        if (stopTimeline && stopTimeline.length >= 2) {
+          const tlAddresses = stopTimeline.map((t) => t.address);
+          const tlCache = await geocodeStopAddresses(tlAddresses);
+          const toPt = (address: string) => {
+            const hit = tlCache.get(address.trim());
+            if (hit?.resolved && hit.latitude != null && hit.longitude != null) {
+              return { name: hit.address || address, address: hit.address || address, latitude: hit.latitude, longitude: hit.longitude };
+            }
+            return { address };
+          };
+          const departureIso = nextIsoAtHHMM(startTime || stopTimeline[0].completedAt);
+          // 실제 방문순서 그대로(optimizeOrder=false). 첫 항목=출발지, 나머지=배송지.
+          const payload = {
+            origins: [toPt(stopTimeline[0].address)],
+            destinations: stopTimeline.slice(1).map((t) => toPt(t.address)),
+            vehicleType,
+            optimizeOrder: false,
+            useRealtimeTraffic: true,
+            returnToOrigin: false,
+            departureAt: departureIso,
+            roadOption: 'time-first',
+          };
+          const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
+          if (!ok) {
+            const message = body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
+            track('audit_delivery_timeline', { mode: 'timeline', stops: stopTimeline.length }, { error: message });
+            return { error: message };
+          }
+          const waypoints: any[] = Array.isArray(body?.data?.waypoints) ? body.data.waypoints : [];
+          const depMin = parseHHMM(startTime || stopTimeline[0].completedAt);
+
+          const rows: Array<{
+            seq: number;
+            from: string;
+            to: string;
+            theoreticalDriveMin: number | null;
+            actualIntervalMin: number | null;
+            inferredDwellMin: number | null;
+          }> = [];
+          let prevDepartureMs: number | null = waypoints.length ? new Date(departureIso).getTime() : null;
+          let prevCompleted = parseHHMM(stopTimeline[0].completedAt);
+
+          for (let j = 1; j < stopTimeline.length; j++) {
+            const wp = waypoints[j - 1];
+            let theoreticalDriveMin: number | null = null;
+            if (wp?.arrivalTime && prevDepartureMs != null) {
+              theoreticalDriveMin = Math.round((new Date(wp.arrivalTime).getTime() - prevDepartureMs) / 60000);
+              if (theoreticalDriveMin < 0) theoreticalDriveMin = null;
+            }
+            // 다음 구간 기준점: 이 지점의 (이론) 출발시각.
+            prevDepartureMs = wp?.departureTime ? new Date(wp.departureTime).getTime() : prevDepartureMs;
+
+            const curCompleted = parseHHMM(stopTimeline[j].completedAt);
+            let actualIntervalMin: number | null = null;
+            if (curCompleted != null && prevCompleted != null) {
+              let d = curCompleted - prevCompleted;
+              if (d < 0) d += 24 * 60;
+              actualIntervalMin = d;
+            }
+            prevCompleted = curCompleted;
+
+            const inferredDwellMin =
+              actualIntervalMin != null && theoreticalDriveMin != null
+                ? Math.max(0, actualIntervalMin - theoreticalDriveMin)
+                : null;
+
+            rows.push({
+              seq: j,
+              from: stopTimeline[j - 1].label || stopTimeline[j - 1].address,
+              to: stopTimeline[j].label || stopTimeline[j].address,
+              theoreticalDriveMin,
+              actualIntervalMin,
+              inferredDwellMin,
+            });
+          }
+
+          const sum = (key: 'theoreticalDriveMin' | 'actualIntervalMin' | 'inferredDwellMin') =>
+            rows.reduce((acc, r) => acc + (r[key] ?? 0), 0);
+          const firstC = parseHHMM(stopTimeline[0].completedAt);
+          const lastC = parseHHMM(stopTimeline[stopTimeline.length - 1].completedAt);
+          let actualTotalMin: number | null = null;
+          if (firstC != null && lastC != null) {
+            let d = lastC - firstC;
+            if (d < 0) d += 24 * 60;
+            actualTotalMin = d;
+          }
+          const theoreticalDriveTotal = sum('theoreticalDriveMin');
+          const inferredDwellTotal = sum('inferredDwellMin');
+          const km = Number(body?.data?.summary?.totalDistance || 0) / 1000;
+          const avgDrive = rows.length ? Math.round((theoreticalDriveTotal / rows.length) * 10) / 10 : 0;
+          const avgDwell = rows.length ? Math.round((inferredDwellTotal / rows.length) * 10) / 10 : 0;
+
+          const out = {
+            mode: 'per_stop_timeline' as const,
+            legs: rows,
+            stopsCount: stopTimeline.length,
+            km: Number(km.toFixed(1)),
+            theoreticalDriveTotal,
+            inferredDwellTotal,
+            actualTotalMin,
+            avgDriveMinPerLeg: avgDrive,
+            avgDwellMinPerStop: avgDwell,
+            depMin,
+            caveats: [
+              '구간별 이론 주행시간은 실제 방문순서(재배열 없음) 기준 Tmap 예측이다. 체류시간은 실측 간격에서 이론 주행을 뺀 추정값이라, 신호/주차/엘리베이터 대기가 섞여 있다.',
+              ...(reloadCount > 0 ? [`재상차 ${reloadCount}회는 이 표에 별도 구간으로 반영되지 않았을 수 있다.`] : []),
+            ],
+            routeRequest: { ...payload, useRealtimeTraffic: true },
+          };
+          track(
+            'audit_delivery_timeline',
+            { mode: 'timeline', stops: stopTimeline.length, vehicleType },
+            { legs: rows.length, theoreticalDriveTotal, inferredDwellTotal, actualTotalMin }
+          );
+          return out;
+        }
+
+        const domainStops = toDomainStops(stops);
+        const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
+        const toPoint = (address: string) => {
+          const hit = cache.get(address.trim());
+          if (hit?.resolved && hit.latitude != null && hit.longitude != null) {
+            return { name: hit.address || address, address: hit.address || address, latitude: hit.latitude, longitude: hit.longitude };
+          }
+          return address;
+        };
+        // 다지점(수십 곳) 사후 분석이므로 정확해(Held-Karp) 대신 휴리스틱(fastOrder)으로 폭증 방지.
+        const payload = buildRolePayload({
+          stops: domainStops,
+          toPoint,
+          vehicleType,
+          roadOption: 'time-first',
+          useRealtimeTraffic: true,
+          fastOrder: true,
+          departureAt: ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        });
+        const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
+        if (!ok) {
+          const message = body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
+          track('audit_delivery_timeline', { stops: domainStops.length }, { error: message });
+          return { error: message };
+        }
+        const summary = body?.data?.summary;
+        const km = Number(summary?.totalDistance || 0) / 1000;
+        const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
+        const dwellMinutes = Math.round(Number(summary?.dwellTime || 0) / 60);
+        const theoreticalMinMinutes = driveMinutes + dwellMinutes;
+
+        const parseHM = (s?: string): number | null => {
+          const m = /^(\d{1,2}):(\d{2})$/.exec(String(s ?? '').trim());
+          if (!m) return null;
+          const h = Number(m[1]);
+          const mi = Number(m[2]);
+          if (h > 23 || mi > 59) return null;
+          return h * 60 + mi;
+        };
+
+        let actualMinutes: number | null = null;
+        if (typeof actualElapsedMinutes === 'number' && Number.isFinite(actualElapsedMinutes)) {
+          actualMinutes = Math.round(actualElapsedMinutes);
+        } else {
+          const a = parseHM(startTime);
+          const b = parseHM(endTime);
+          if (a != null && b != null) {
+            let d = b - a;
+            if (d < 0) d += 24 * 60; // 자정 넘김 보정
+            actualMinutes = d;
+          }
+        }
+
+        const lowPrecisionStops = domainStops
+          .map((s) => s.address)
+          .filter((addr) => cache.get(addr.trim())?.lowPrecision);
+
+        let deltaMinutes: number | null = null;
+        let slackRatio: number | null = null;
+        let verdict: 'tight' | 'moderate' | 'loose' | 'unknown' = 'unknown';
+        let verdictLabel = '실측 소요시간 정보(출발/완료 시각)가 없어 지연 판정을 내릴 수 없다.';
+        if (actualMinutes != null && theoreticalMinMinutes > 0) {
+          deltaMinutes = actualMinutes - theoreticalMinMinutes;
+          slackRatio = deltaMinutes / theoreticalMinMinutes;
+          const tightThreshold = Math.max(20, Math.round(theoreticalMinMinutes * 0.1));
+          if (deltaMinutes <= tightThreshold) {
+            verdict = 'tight';
+            verdictLabel =
+              '실측이 이론상 최소 소요와 거의 같다 — 매우 타이트하게 진행됐고, 1대 기준으로는 지연이 구조적으로 불가피했을 가능성이 높다.';
+          } else if (deltaMinutes <= theoreticalMinMinutes * 0.25) {
+            verdict = 'moderate';
+            verdictLabel =
+              '실측이 이론 최소보다 다소 길다 — 약간의 여유가 있었을 수 있으나, 재상차·현장 대기·실측 교통을 감안하면 정상 범위일 수 있다.';
+          } else {
+            verdict = 'loose';
+            verdictLabel =
+              '실측이 이론 최소보다 크게 길다 — 경로/운영상 단축 여지가 있었을 가능성이 있다(단, 재상차·대기·당일 교통 변수 확인 필요).';
+          }
+        }
+
+        const caveats: string[] = [];
+        if (reloadCount > 0) {
+          caveats.push(`재상차 ${reloadCount}회(중간 상차지 재방문)는 이론 최소 소요에 반영되지 않았다. 실제 운행은 그만큼 더 걸린다.`);
+        }
+        caveats.push('이론 최소 소요시간은 최적 방문순서·예측 교통 기준이며, 당일 실측 교통/엘리베이터·주차 대기/수령 지연 등 현장 변수는 포함하지 않는다.');
+        if (lowPrecisionStops.length) {
+          caveats.push(`구/동 단위로만 해석된 지점이 ${lowPrecisionStops.length}곳 있어 이론값 정밀도가 낮다.`);
+        }
+
+        // 구간별 도착시각은 제공되지 않으므로 마감은 거친 총량 신호 + 정밀 분석 경로 안내만.
+        let deadlineNote: string | null = null;
+        if (deadlines?.length) {
+          const start = parseHM(startTime);
+          const earliest = deadlines.reduce<{ label: string; t: number } | null>((min, d) => {
+            const t = parseHM(d.time);
+            if (t == null) return min;
+            return !min || t < min.t ? { label: d.label, t } : min;
+          }, null);
+          if (start != null && earliest != null) {
+            const windowMin = earliest.t - start;
+            deadlineNote =
+              `가장 이른 마감은 ${earliest.label} ${deadlines.find((d) => parseHM(d.time) === earliest.t)?.time}이며, 출발(${startTime})부터 가용시간은 약 ${windowMin}분이다. ` +
+              `전체 이론 최소 소요가 ${theoreticalMinMinutes}분인 점을 감안하면, 마감 고객사가 경로 후반부에 있을수록 1대로는 마감 준수가 구조적으로 어려웠을 수 있다. ` +
+              '지점별 정밀 도착시각·마감 충족(O/X)은 compare_departure_times(deadline)로 이어서 확인하라.';
+          } else {
+            deadlineNote = '마감 고객사가 있다. 지점별 정밀 도착시각·마감 충족 여부는 compare_departure_times(deadline)로 확인하라.';
+          }
+        }
+
+        const out = {
+          theoreticalMinMinutes,
+          driveMinutes,
+          dwellMinutes,
+          km: Number(km.toFixed(1)),
+          stopsCount: domainStops.length,
+          actualMinutes,
+          deltaMinutes,
+          slackRatio: slackRatio != null ? Number(slackRatio.toFixed(2)) : null,
+          verdict,
+          verdictLabel,
+          caveats,
+          deadlines: deadlines ?? null,
+          deadlineNote,
+          lowPrecisionStops,
+          // 지도 렌더용(감사한 최적 경로를 지도에서 확인 가능).
+          routeRequest: { ...payload, useRealtimeTraffic: true },
+        };
+        track(
+          'audit_delivery_timeline',
+          { stops: domainStops.length, vehicleType, startTime, endTime, reloadCount },
+          { verdict, theoreticalMinMinutes, actualMinutes, deltaMinutes }
         );
         return out;
       },

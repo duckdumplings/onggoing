@@ -819,7 +819,10 @@ export async function POST(request: NextRequest) {
       dwellMinutes = [],
       openStart = false,
       fastOrder = false,
-      startCandidateCount
+      startCandidateCount,
+      // 제약(optional): 적재 용량. 호출자(에이전트/UI)가 명시한 값만 사용 — 차종 kg를 임의 추정하지 않는다.
+      loadKg = [],
+      vehicleCapacityKg
     } = body;
 
     console.log('=== API 요청 받음 ===');
@@ -987,6 +990,9 @@ export async function POST(request: NextRequest) {
     let effectiveOptimizeOrder = optimizeOrder;
     let openStartRationale: OriginRationale | null = null;
     let chosenOriginAddress: string | null = null;
+    // 용량 제약 결과(open-start 솔버 산출). vehicleCapacityKg 미지정 시 항상 feasible.
+    let openStartFeasible = true;
+    let openStartInfeasibleReason: string | null = null;
 
     const hasTimeConstraints = (deliveryTimes as unknown[]).some(
       (t) => typeof t === 'string' && t.trim() !== ''
@@ -1029,7 +1035,15 @@ export async function POST(request: NextRequest) {
             typeof startCandidateCount === 'number' && startCandidateCount >= 1
               ? Math.min(startCandidateCount, candidates.length)
               : undefined,
+          // 용량 제약: 한도가 명시된 경우에만 활성(합산 검사라 인덱스 정합 불필요).
+          constraints:
+            typeof vehicleCapacityKg === 'number' && vehicleCapacityKg > 0
+              ? { demands: Array.isArray(loadKg) ? loadKg.map((v: unknown) => Number(v) || 0) : [], capacity: vehicleCapacityKg }
+              : undefined,
         });
+
+        openStartFeasible = solution.feasible;
+        openStartInfeasibleReason = solution.infeasibleReason ?? null;
 
         if (solution.order.length > 0) {
           const chosenOrigin = candidates[solution.chosenOriginIndex];
@@ -1651,6 +1665,8 @@ export async function POST(request: NextRequest) {
         openStart: canOpenStart && chosenOriginAddress != null,
         chosenOrigin: chosenOriginAddress,
         originRationale: openStartRationale,
+        capacityFeasible: openStartFeasible,
+        capacityWarning: openStartInfeasibleReason,
         validation: {
           hasErrors: validationErrors.length > 0,
           errors: validationErrors,

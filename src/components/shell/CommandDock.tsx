@@ -178,45 +178,59 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
           </AnimatePresence>
 
           <motion.div layout className="flex items-center gap-2">
-            {!chatOpen && (
+            {chatOpen ? (
+              // 챗이 열려 있으면 입력은 워크스페이스 composer 하나로 단일화한다(이중 입력 제거).
+              // 독은 대화 탭으로 되돌리는 슬림 어포던스만 남긴다.
               <button
                 type="button"
-                onClick={() => setRouteOpen((v) => !v)}
-                className={`focus-ring-inset inline-flex flex-none items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
-                  routeOpen
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-foreground hover:bg-secondary'
-                }`}
+                onClick={() => openWorkspace('chat')}
+                className="focus-ring-inset flex min-w-0 flex-1 items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
               >
-                <Route className="h-4 w-4" />
-                <span className="hidden sm:inline">경로 입력</span>
+                <Sparkles className="h-4 w-4 flex-none text-primary" />
+                <span className="truncate">AI 대화 계속하기</span>
               </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setRouteOpen((v) => !v)}
+                  className={`focus-ring-inset inline-flex flex-none items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
+                    routeOpen
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-foreground hover:bg-secondary'
+                  }`}
+                >
+                  <Route className="h-4 w-4" />
+                  <span className="hidden sm:inline">경로 입력</span>
+                </button>
+
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+                  <Sparkles className="h-4 w-4 flex-none text-primary/70" />
+                  <input
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        submitPrompt();
+                      }
+                    }}
+                    placeholder="어디서 어디로 보낼까요? 자연어로 물어보세요"
+                    aria-label="견적·경로 자연어 입력"
+                    className="focus-ring-inset min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={submitPrompt}
+                  className="focus-ring-inset flex h-10 w-10 flex-none items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/20 transition hover:bg-primary/90 active:scale-95"
+                  aria-label="견적챗으로 전송"
+                >
+                  <ArrowUp className="h-5 w-5" />
+                </button>
+              </>
             )}
-
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
-              <Sparkles className={`h-4 w-4 flex-none ${chatOpen ? 'text-primary' : 'text-primary/70'}`} />
-              <input
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    submitPrompt();
-                  }
-                }}
-                placeholder={chatOpen ? 'AI와 대화 이어가기…' : '어디서 어디로 보낼까요? 자연어로 물어보세요'}
-                className="focus-ring-inset min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={submitPrompt}
-              className="focus-ring-inset flex h-10 w-10 flex-none items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/20 transition hover:bg-primary/90 active:scale-95"
-              aria-label="견적챗으로 전송"
-            >
-              <ArrowUp className="h-5 w-5" />
-            </button>
           </motion.div>
 
           {/* 빠른 예시 칩 — 콜드스타트 전용(대화 시작 후 숨김) */}

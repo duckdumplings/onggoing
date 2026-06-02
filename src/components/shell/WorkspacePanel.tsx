@@ -32,41 +32,44 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
 
   const panel = (
     <div className="flex h-full w-full flex-col bg-card">
-      {showTabs && (
-        <div className="flex flex-none items-center gap-1 bg-card/95 px-2.5 pt-2 backdrop-blur-sm">
-          <TabButton
-            label="대화"
-            icon={<MessageSquare className="h-3.5 w-3.5" />}
-            active={activeTab === 'chat'}
-            onClick={() => setWorkspaceTab('chat')}
-          />
-          {hasRoute && (
+      {/* 헤더는 항상 렌더해 닫기(X)를 상시 노출한다(탭이 없을 때 닫기 불가 갭 방지). */}
+      <div className="flex flex-none items-center gap-1 bg-card/95 px-2.5 pt-2 backdrop-blur-sm">
+        {showTabs && (
+          <div role="tablist" aria-label="워크스페이스 탭" className="flex items-center gap-1">
             <TabButton
-              label="경로"
-              icon={<MapPin className="h-3.5 w-3.5" />}
-              active={activeTab === 'route'}
-              onClick={() => setWorkspaceTab('route')}
+              label="대화"
+              icon={<MessageSquare className="h-3.5 w-3.5" />}
+              active={activeTab === 'chat'}
+              onClick={() => setWorkspaceTab('chat')}
             />
-          )}
-          {hasResult && (
-            <TabButton
-              label="배차 결과"
-              icon={<Truck className="h-3.5 w-3.5" />}
-              active={activeTab === 'result'}
-              onClick={() => setWorkspaceTab('result')}
-            />
-          )}
-          <button
-            type="button"
-            onClick={closeWorkspace}
-            className="focus-ring-inset ml-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            aria-label="워크스페이스 닫기"
-            title="닫기"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+            {hasRoute && (
+              <TabButton
+                label="경로"
+                icon={<MapPin className="h-3.5 w-3.5" />}
+                active={activeTab === 'route'}
+                onClick={() => setWorkspaceTab('route')}
+              />
+            )}
+            {hasResult && (
+              <TabButton
+                label="배차 결과"
+                icon={<Truck className="h-3.5 w-3.5" />}
+                active={activeTab === 'result'}
+                onClick={() => setWorkspaceTab('result')}
+              />
+            )}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={closeWorkspace}
+          className="focus-ring-inset ml-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          aria-label="워크스페이스 닫기"
+          title="닫기"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
 
       <div className="relative min-h-0 flex-1">
         {/* 대화 탭 — AIQuoteChatModal은 항상 마운트해 대화 상태를 보존한다. */}
@@ -133,6 +136,8 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={`focus-ring-inset relative -mb-px inline-flex items-center gap-1.5 rounded-t-lg px-3.5 py-2 text-sm font-semibold transition ${
         active

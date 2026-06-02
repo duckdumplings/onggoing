@@ -307,6 +307,9 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const sendChatPrompt = useCallback((text: string, routeContext?: unknown) => {
     quoteNonceRef.current += 1;
     setChatPromptRequest({ text, nonce: quoteNonceRef.current, routeContext: routeContext ?? null });
+    // 진행 가시성: 어느 탭/닫힘 상태에서 보내든 대화 탭을 열어 에이전트 진행(단계 칩)을 노출한다.
+    setWorkspaceTab('chat');
+    setWorkspaceOpen(true);
   }, []);
 
   const clearChatPrompt = useCallback(() => setChatPromptRequest(null), []);

@@ -1,4 +1,5 @@
 import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
+import type { QuoteConfidence } from '@/domains/dispatch/services/scenarioInsights';
 
 /** 출발시간 매트릭스 한 행(compare_departure_times 결과). 누락 필드는 계산 실패. */
 export type DepartureMatrixRow = {
@@ -46,6 +47,10 @@ export type ChatStructuredPayload = {
   departureMatrix?: DepartureMatrixResult | null;
   departureAt?: string;
   realtimeTraffic?: boolean;
+  /** 견적 가정/전제(결정적 산출). 결과 카드와 PDF 가정 섹션에 노출. */
+  assumptions?: string[];
+  /** 견적 신뢰도(배지). 경로 산출/요금 산출/출발시간/실시간 교통 신호 기반. */
+  confidence?: QuoteConfidence;
 };
 
 export type ChatMessage = {
@@ -82,6 +87,8 @@ export type AIQuoteResponse = {
   departureMatrix?: DepartureMatrixResult | null;
   departureAt?: string | null;
   assumptions?: string[];
+  /** 견적 신뢰도(배지). 경로 산출/요금 산출/출발시간/실시간 교통 신호 기반. */
+  confidence?: QuoteConfidence;
   routeRequest?: any;
   routeRequestMeta?: {
     usedSanitizedPayload?: boolean;
