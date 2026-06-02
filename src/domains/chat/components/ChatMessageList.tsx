@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
+import AuditTimelineCard from '@/domains/dispatch/components/AuditTimelineCard';
 import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import { shouldRenderEvidence, getDomainFromUrl, WELCOME_MESSAGE } from '@/domains/chat/utils';
 import type { ChatMessage, AgentStep, ChatStructuredPayload } from '@/domains/chat/types';
@@ -126,6 +127,9 @@ const MessageBubble = React.memo(function MessageBubble({
               )}
               {msg.structured.departureMatrix && (
                 <DepartureMatrixCard matrix={msg.structured.departureMatrix} />
+              )}
+              {msg.structured.auditTimeline && (
+                <AuditTimelineCard audit={msg.structured.auditTimeline} />
               )}
               {!msg.structured.scenarioComparison && Boolean(msg.structured.routeRequest) && (
                 <button
