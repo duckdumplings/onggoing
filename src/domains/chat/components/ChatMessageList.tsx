@@ -17,6 +17,7 @@ import {
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
 import AuditTimelineCard from '@/domains/dispatch/components/AuditTimelineCard';
+import QuoteResultCard from '@/domains/dispatch/components/QuoteResultCard';
 import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import { shouldRenderEvidence, getDomainFromUrl, WELCOME_MESSAGE } from '@/domains/chat/utils';
 import type { ChatMessage, AgentStep, ChatStructuredPayload } from '@/domains/chat/types';
@@ -39,6 +40,8 @@ interface ChatMessageListProps {
   onGenerateFile: (type: 'pdf', override?: { structured?: ChatStructuredPayload }) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;
+  /** 인라인 견적 카드의 "현황·발행 열기" — compact에서 견적 드로어를 연다. */
+  onOpenQuotePanel?: () => void;
 }
 
 function renderMessageBody(msg: ChatMessage) {
@@ -60,6 +63,7 @@ interface MessageBubbleProps {
   onGenerateFile: (type: 'pdf', override?: { structured?: ChatStructuredPayload }) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;
+  onOpenQuotePanel?: () => void;
 }
 
 /**
@@ -78,6 +82,7 @@ const MessageBubble = React.memo(function MessageBubble({
   onGenerateFile,
   isGeneratingFile,
   onPreviewRoute,
+  onOpenQuotePanel,
 }: MessageBubbleProps) {
   return (
     <div className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -130,6 +135,9 @@ const MessageBubble = React.memo(function MessageBubble({
               )}
               {msg.structured.auditTimeline && (
                 <AuditTimelineCard audit={msg.structured.auditTimeline} />
+              )}
+              {!msg.structured.scenarioComparison && Boolean(msg.structured.quote) && (
+                <QuoteResultCard quote={msg.structured.quote} onOpenPanel={onOpenQuotePanel} />
               )}
               {!msg.structured.scenarioComparison && Boolean(msg.structured.routeRequest) && (
                 <button
@@ -284,6 +292,7 @@ export default function ChatMessageList({
   onGenerateFile,
   isGeneratingFile,
   onPreviewRoute,
+  onOpenQuotePanel,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -358,6 +367,7 @@ export default function ChatMessageList({
           onGenerateFile={onGenerateFile}
           isGeneratingFile={isGeneratingFile}
           onPreviewRoute={onPreviewRoute}
+          onOpenQuotePanel={onOpenQuotePanel}
         />
       ))}
 

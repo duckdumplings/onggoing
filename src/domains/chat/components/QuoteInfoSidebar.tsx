@@ -112,6 +112,16 @@ export default function QuoteInfoSidebar({
   onPreviewOnMap,
   onOpenQuoteDetail,
 }: QuoteInfoSidebarProps) {
+  // compact 드로어가 열려 있을 때 ESC로 닫는다(모달형 표면의 표준 탈출구).
+  React.useEffect(() => {
+    if (!compact || !infoSheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseInfoSheet();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [compact, infoSheetOpen, onCloseInfoSheet]);
+
   return (
     <>
       {compact && infoSheetOpen && (
@@ -125,7 +135,7 @@ export default function QuoteInfoSidebar({
       <div
         className={
           compact
-            ? `absolute inset-y-0 right-0 z-40 flex w-[92%] max-w-[400px] flex-col border-l border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
+            ? `absolute inset-y-0 right-0 z-40 flex w-[86%] max-w-[380px] flex-col border-l border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
             : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-muted/40'
         }
       >
@@ -195,7 +205,7 @@ export default function QuoteInfoSidebar({
                 </div>
               ))}
               {!sessions.length && (
-                <div className="px-2 py-2 text-[11px] text-muted-foreground">저장된 대화가 없습니다.</div>
+                <div className="px-2 py-2 text-[11px] text-muted-foreground">저장된 대화가 없어요.</div>
               )}
             </div>
             {isSessionLoading && (
@@ -220,7 +230,7 @@ export default function QuoteInfoSidebar({
                 </div>
               ))}
               {!attachments.length && (
-                <div className="px-2 py-2 text-[11px] text-muted-foreground">첨부된 파일이 없습니다.</div>
+                <div className="px-2 py-2 text-[11px] text-muted-foreground">첨부된 파일이 없어요.</div>
               )}
             </div>
           </div>
@@ -427,7 +437,7 @@ export default function QuoteInfoSidebar({
                 </a>
               ))}
               {!generatedFiles.length && (
-                <div className="px-2 py-2 text-[11px] text-muted-foreground">생성된 파일이 없습니다.</div>
+                <div className="px-2 py-2 text-[11px] text-muted-foreground">아직 생성한 견적서가 없어요.</div>
               )}
             </div>
           </div>

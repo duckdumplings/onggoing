@@ -956,6 +956,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     (rr: any) => void bubbleHandlersRef.current.previewRouteOnMap(rr),
     []
   );
+  const stableOnOpenQuotePanel = useCallback(() => {
+    // compact: 견적 현황 드로어를 연다. 데스크톱(상시 사이드바): 전체 운임 상세 모달을 연다.
+    if (compact) setInfoSheetOpen(true);
+    else setIsQuoteDetailOpen(true);
+  }, [compact]);
   const stableOnToggleEvidence = useCallback(
     (id: string) => setExpandedEvidenceByMessageId((prev) => ({ ...prev, [id]: !prev[id] })),
     []
@@ -1040,7 +1045,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   title="견적 현황·발행"
                 >
                   <Calculator className="h-4 w-4" />
-                  <span className="hidden sm:inline">견적</span>
+                  <span className="hidden sm:inline tabular-nums">
+                    {latestResult?.quote?.hourly?.formatted && !infoSheetOpen
+                      ? `견적 ${latestResult.quote.hourly.formatted}`
+                      : '견적'}
+                  </span>
                   {latestResult?.quote && !infoSheetOpen && (
                     <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary" />
                   )}
@@ -1134,6 +1143,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             onGenerateFile={stableOnGenerateFile}
             isGeneratingFile={isGeneratingFile}
             onPreviewRoute={stableOnPreviewRoute}
+            onOpenQuotePanel={stableOnOpenQuotePanel}
           />
 
           {/* Input Area (Floating Style) */}
