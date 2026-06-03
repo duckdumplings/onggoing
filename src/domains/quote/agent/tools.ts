@@ -44,6 +44,18 @@ function won(v: number): string {
   return `₩${Math.round(v).toLocaleString('ko-KR')}`;
 }
 
+/** 유가 출처를 사람이 읽을 라벨로(오피넷이면 유종/거래일 포함). */
+function fuelSourceLabelOf(
+  fuel: { source: 'manual' | 'opinet' | 'default'; tradeDate?: string },
+  vehicleKey: PricingVehicle
+): string {
+  if (fuel.source === 'opinet') {
+    return `오피넷 전국 평균(${vehicleKey === 'ray' ? '휘발유' : '경유'}${fuel.tradeDate ? ` ${fuel.tradeDate}` : ''})`;
+  }
+  if (fuel.source === 'manual') return '수동 설정 유가';
+  return '기본 가정 유가';
+}
+
 /** "HH:mm"(24h) → 자정 기준 분. 형식 오류면 null. */
 function parseHHMM(s?: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s ?? '').trim());
@@ -166,9 +178,36 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
       },
     }),
 
+    get_fuel_price: tool({
+      description:
+        '경로/견적 없이도 현재 차종별 유가(L당 원)를 조회한다. 사용자가 "지금 유가 얼마야", "기름값 얼마", "현재 휘발유/경유 가격" 등 유가 자체를 물으면 견적을 강요하지 말고 이 도구를 호출해 답하라. 유가 수치는 절대 추측하지 말고 이 도구 결과만 인용한다(출처/기준일 포함).',
+      inputSchema: z.object({
+        vehicleType: z
+          .enum(['레이', '스타렉스'])
+          .default('레이')
+          .describe('레이=휘발유, 스타렉스=경유. 차종 언급 없이 유가만 물으면 둘 다 안내해도 된다.'),
+      }),
+      execute: async ({ vehicleType }) => {
+        const vehicleKey: PricingVehicle = vehicleType === '스타렉스' ? 'starex' : 'ray';
+        const fuel = await getFuelPricePerLiter(vehicleKey);
+        const out = {
+          vehicleType,
+          fuelType: vehicleKey === 'ray' ? '휘발유' : '경유',
+          pricePerLiter: fuel.pricePerLiter,
+          source: fuel.source,
+          sourceLabel: fuelSourceLabelOf(fuel, vehicleKey),
+          tradeDate: fuel.tradeDate ?? null,
+          fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicleKey],
+          note: '유가는 일 단위로 갱신되는 참고치이며, 실제 주유 시점·지역에 따라 달라질 수 있다. 견적의 유류할증과는 별개 개념이다.',
+        };
+        track('get_fuel_price', { vehicleType }, { pricePerLiter: out.pricePerLiter, source: out.source });
+        return out;
+      },
+    }),
+
     optimize_route: tool({
       description:
-        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다. 입력(파일/메일)에 방문 시각·순번이 명확해 그 순서를 그대로 지켜야 하면 preserveOrder=true로 호출해 재정렬 없이 받은 순서대로 계산하라.',
+        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서와 Tmap 경로 실측 통행료(tollAmount/tollSource)를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다. 입력(파일/메일)에 방문 시각·순번이 명확해 그 순서를 그대로 지켜야 하면 preserveOrder=true로 호출해 재정렬 없이 받은 순서대로 계산하라. 이어서 calculate_quote를 호출할 땐 여기서 받은 tollAmount/tollSource를 그대로 넘겨 실측 통행료가 반영되게 하라.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
@@ -216,10 +255,22 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const lowPrecisionStops = domainStops
           .map((s) => s.address)
           .filter((addr) => cache.get(addr.trim())?.lowPrecision);
+        // 선택된 도로옵션의 통행료. Tmap segment fare 합산이면 'api'(실측), 폴백이면 'estimated'.
+        const selectedRoad = Array.isArray(summary?.roadComparisons)
+          ? summary.roadComparisons.find((c: any) => c?.isSelected)
+          : null;
+        const tollAmount = Number.isFinite(Number(selectedRoad?.estimatedToll))
+          ? Math.round(Number(selectedRoad.estimatedToll))
+          : null;
+        const tollSource: 'api' | 'estimated' | null =
+          selectedRoad?.tollSource === 'api' ? 'api' : selectedRoad ? 'estimated' : null;
         const out = {
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
+          // Tmap 경로 실측 통행료(있으면). calculate_quote에 tollAmount/tollSource로 그대로 넘겨라.
+          tollAmount,
+          tollSource,
           optimizedOrder: summary?.optimizationInfo?.optimizedOrder ?? null,
           // open-start로 시스템이 고른 출발지/근거(메일 순서 고정이 아님).
           openStart: Boolean(summary?.openStart),
@@ -251,8 +302,17 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .positive()
           .optional()
           .describe('사용자가 명시한 협의 시간당 단가(KRW/시간). 지정되면 시간당 요금제를 이 단가로 계산하고 추천 요금제로 삼는다. 절대 임의로 지어내지 말 것.'),
+        tollAmount: z
+          .number()
+          .nonnegative()
+          .optional()
+          .describe('optimize_route가 돌려준 통행료(원). 실측이 있으면 반드시 그대로 넘겨라(임의 추정 금지). 없으면 생략하면 거리 기반 추정으로 대체된다.'),
+        tollSource: z
+          .enum(['api', 'estimated'])
+          .optional()
+          .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'estimated'=거리 기반). tollAmount와 함께 그대로 넘겨라."),
       }),
-      execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate }) => {
+      execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
         const body = {
           distance: km * 1000,
           time: driveMinutes * 60,
@@ -309,21 +369,24 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         // 실비 참고치(요금제 청구액과 별개): 현재 유가 기준 예상 유류비 + 예상 통행료.
         // 유가는 오피넷(한국석유공사) 라이브 유종별 평균가 → 키 없으면 기본값 폴백.
         const fuel = await getFuelPricePerLiter(vehicleKey);
-        const fuelSourceLabel =
-          fuel.source === 'opinet'
-            ? `오피넷 전국 평균(${vehicleKey === 'ray' ? '휘발유' : '경유'}${fuel.tradeDate ? ` ${fuel.tradeDate}` : ''})`
-            : fuel.source === 'manual'
-              ? '수동 설정 유가'
-              : '기본 가정 유가';
+        const fuelSourceLabel = fuelSourceLabelOf(fuel, vehicleKey);
+        // 통행료: optimize_route가 Tmap 실측(tollSource='api')을 넘겼으면 그 값을 그대로 쓰고,
+        // 없으면 거리 기반 추정(highwayTollCost)으로 폴백한다.
+        const hasApiToll = tollSource === 'api' && Number.isFinite(Number(tollAmount));
+        const tollValue = hasApiToll ? Math.round(Number(tollAmount)) : highwayTollCost(distanceKm);
+        const tollSourceResolved: 'api' | 'estimated' = hasApiToll ? 'api' : 'estimated';
+        const tollSourceLabel = hasApiToll ? 'Tmap 경로 실측 통행료' : '거리 기반 추정';
         const costReference = distanceKm > 0
           ? {
               estimatedFuel: estimatedFuelCost(vehicleKey, distanceKm, fuel.pricePerLiter),
-              estimatedToll: highwayTollCost(distanceKm),
+              estimatedToll: tollValue,
+              tollSource: tollSourceResolved,
+              tollSourceLabel,
               fuelPricePerLiter: fuel.pricePerLiter,
               fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicleKey],
               fuelPriceSource: fuel.source,
               fuelPriceSourceLabel: fuelSourceLabel,
-              note: `예상 유류비는 ${fuelSourceLabel} 기준 실주행 연료비 추정(유류할증과 다른 개념), 예상 통행료는 거리 기반 추정. 둘 다 참고용이며 유가·경로에 따라 달라질 수 있다.`,
+              note: `예상 유류비는 ${fuelSourceLabel} 기준 실주행 연료비 추정(유류할증과 다른 개념), 예상 통행료는 ${tollSourceLabel}. 둘 다 참고용이며 유가·경로에 따라 달라질 수 있다.`,
             }
           : null;
 

@@ -383,6 +383,8 @@ export interface CostTransparency {
   estimatedFuel: number;
   /** 참고: 예상 통행료(원). */
   estimatedToll: number;
+  /** 통행료 출처: 'api'=Tmap 경로 실측, 'estimated'=거리 기반 추정. */
+  tollSource: 'api' | 'estimated';
   /** 유류비 추정에 쓴 유가(L당 원). */
   fuelPricePerLiter: number;
   /** 유류비 추정에 쓴 연비(km/L). */
@@ -400,17 +402,26 @@ export function buildCostTransparencyFrom(
   vehicle: PricingVehicle,
   km: number,
   chargedOneTime?: number,
-  fuelPricePerLiter: number = DEFAULT_FUEL_PRICE_PER_LITER
+  fuelPricePerLiter: number = DEFAULT_FUEL_PRICE_PER_LITER,
+  toll?: { amount: number; source: 'api' | 'estimated' }
 ): CostTransparency | null {
   if (!(km > 0)) return null;
   const price = Number.isFinite(fuelPricePerLiter) && fuelPricePerLiter > 0 ? fuelPricePerLiter : DEFAULT_FUEL_PRICE_PER_LITER;
+  // Tmap 경로 실측 통행료가 있으면 그 값을, 없으면 거리 기반 추정으로 폴백.
+  const hasApiToll = toll?.source === 'api' && Number.isFinite(toll.amount);
+  const estimatedToll = hasApiToll ? Math.round(toll!.amount) : highwayTollCost(km);
+  const tollSource: 'api' | 'estimated' = hasApiToll ? 'api' : 'estimated';
+  const includedNote = hasApiToll
+    ? '예상 통행료는 Tmap 경로 실측, 예상 유류비는 현재 유가 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).'
+    : '예상 유류비·통행료는 실주행 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).';
   return {
     chargedOneTime: Number.isFinite(chargedOneTime) ? Number(chargedOneTime) : null,
     estimatedFuel: estimatedFuelCost(vehicle, km, price),
-    estimatedToll: highwayTollCost(km),
+    estimatedToll,
+    tollSource,
     fuelPricePerLiter: price,
     fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicle],
-    includedNote: '예상 유류비·통행료는 실주행 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).',
+    includedNote,
   };
 }
 

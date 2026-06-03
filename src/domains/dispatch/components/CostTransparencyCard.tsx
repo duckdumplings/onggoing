@@ -43,7 +43,12 @@ export default function CostTransparencyCard({ cost }: CostTransparencyCardProps
         </div>
         <div className="flex items-baseline justify-between text-muted-foreground">
           <dt>참고: 예상 통행료</dt>
-          <dd className="tabular-nums">~{won(cost.estimatedToll)}</dd>
+          <dd className="tabular-nums">
+            {cost.tollSource === 'api' ? '' : '~'}{won(cost.estimatedToll)}
+          </dd>
+        </div>
+        <div className="text-[10px] text-muted-foreground/80">
+          {cost.tollSource === 'api' ? 'Tmap 경로 실측 기준' : '거리 기반 추정'}
         </div>
       </dl>
 
