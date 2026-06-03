@@ -114,19 +114,10 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
       <div
         className={
           compact
-            ? `absolute inset-x-0 bottom-0 z-40 flex max-h-[88%] flex-col rounded-t-2xl border-t border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}`
+            ? `absolute inset-y-0 right-0 z-40 flex w-[86%] max-w-[380px] flex-col border-l border-border bg-muted shadow-2xl transition-transform duration-300 ${infoSheetOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`
             : 'hidden md:flex w-[340px] lg:w-[420px] xl:w-[500px] 2xl:w-[560px] flex-shrink-0 flex-col border-l border-border bg-muted/40'
         }
       >
-        {compact && (
-          <button
-            type="button"
-            aria-label="견적 패널 닫기"
-            onClick={onCloseInfoSheet}
-            className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-muted-foreground/30 hover:bg-muted-foreground/50"
-          />
-        )}
-
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border bg-card/60 backdrop-blur-sm">
           <h3 className="font-bold text-foreground flex items-center gap-2">
