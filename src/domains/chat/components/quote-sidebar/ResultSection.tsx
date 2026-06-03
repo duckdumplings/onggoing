@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { MapPin, Truck, Clock, Calculator, Loader2, FileText } from 'lucide-react';
+import { MapPin, Truck, Clock, Calculator, Loader2, FileText, Check, ChevronDown } from 'lucide-react';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import ConfidenceBadge from '@/domains/dispatch/components/ConfidenceBadge';
 import type { AIQuoteResponse, GeneratedFile, ChatStructuredPayload } from '@/domains/chat/types';
@@ -40,6 +40,22 @@ export default function ResultSection({
   onOpenQuoteDetail,
 }: ResultSectionProps) {
   const destinations = latestResult?.extracted?.destinations;
+  const [progressOpen, setProgressOpen] = React.useState(false);
+  const allDone = Boolean(latestResult?.extracted && latestResult?.routeSummary && latestResult?.quote);
+
+  if (loading && !latestResult?.quote && !latestResult?.scenarioComparison) {
+    return (
+      <div className="space-y-3" aria-busy="true" aria-label="견적 계산 중">
+        <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+        <div className="h-28 rounded-2xl bg-muted animate-pulse" />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="h-12 rounded-lg bg-muted animate-pulse" />
+          <div className="h-12 rounded-lg bg-muted animate-pulse" />
+        </div>
+        <div className="h-20 rounded-xl bg-muted animate-pulse" />
+      </div>
+    );
+  }
 
   if (!latestResult && !loading) {
     return (
@@ -197,21 +213,37 @@ export default function ResultSection({
 
       {latestResult && (
         <div className="space-y-3">
-          <div className="text-xs font-bold text-muted-foreground">진행 상태</div>
-          <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
-              <span className={`text-sm ${latestResult?.extracted ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>입력 정보 분석</span>
+          <button
+            type="button"
+            onClick={() => setProgressOpen((v) => !v)}
+            className="flex w-full items-center gap-1.5 text-xs font-bold text-muted-foreground"
+            aria-expanded={allDone ? progressOpen : true}
+          >
+            진행 상태
+            {allDone && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-success-muted px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                <Check className="w-3 h-3" />
+                완료
+              </span>
+            )}
+            {allDone && <ChevronDown className={`w-3.5 h-3.5 transition-transform ${progressOpen ? '' : '-rotate-90'}`} />}
+          </button>
+          {(!allDone || progressOpen) && (
+            <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${latestResult?.extracted ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
+                <span className={`text-sm ${latestResult?.extracted ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>입력 정보 분석</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
+                <span className={`text-sm ${latestResult?.routeSummary ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>경로 최적화 (Tmap)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
+                <span className={`text-sm ${latestResult?.quote ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>최종 견적 산출</span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${latestResult?.routeSummary ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
-              <span className={`text-sm ${latestResult?.routeSummary ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>경로 최적화 (Tmap)</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${latestResult?.quote ? 'bg-success-500' : 'bg-muted-foreground/30'}`} />
-              <span className={`text-sm ${latestResult?.quote ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>최종 견적 산출</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Download, FileText, Paperclip } from 'lucide-react';
+import { Download, FileText, Paperclip, Check, Circle } from 'lucide-react';
 import type { QuoteIssuer } from '@/domains/quote/services/chatFileGenerator';
 import type { GeneratedFile, ChatStructuredPayload } from '@/domains/chat/types';
 
@@ -54,6 +54,13 @@ export default function IssueSection({
   onGenerateFile,
   currentSessionId,
 }: IssueSectionProps) {
+  const checklist = [
+    { label: '수신처(화주사)', done: Boolean(docRecipient?.trim()) },
+    { label: '발행처(공급자)', done: Boolean(issuer.name?.trim()) },
+    { label: '유효기간', done: docValidDays >= 1 },
+  ];
+  const sortedFiles = [...generatedFiles].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -65,6 +72,19 @@ export default function IssueSection({
         >
           {docOptionsOpen ? '옵션 접기' : '옵션 설정'}
         </button>
+      </div>
+
+      {/* 발행 준비도: 발송 전 빠진 항목 확인(차단하지 않음) */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card px-3 py-2">
+        {checklist.map((c) => (
+          <span
+            key={c.label}
+            className={`inline-flex items-center gap-1 text-[11px] font-medium ${c.done ? 'text-success' : 'text-muted-foreground'}`}
+          >
+            {c.done ? <Check className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+            {c.label}
+          </span>
+        ))}
       </div>
 
       {docOptionsOpen && (
@@ -208,7 +228,7 @@ export default function IssueSection({
       </div>
 
       <div className="bg-card rounded-xl border border-border p-2 shadow-sm max-h-44 overflow-y-auto space-y-1">
-        {generatedFiles.map((file) => (
+        {sortedFiles.map((file) => (
           <a
             key={file.id}
             href={file.file_url}
