@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, MessageSquare, Truck, X } from 'lucide-react';
+import { Calculator, MapPin, MessageSquare, Truck, X } from 'lucide-react';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
 import MultiDriverResultsPanel from '@/components/panels/MultiDriverResultsPanel';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
@@ -18,17 +18,20 @@ interface WorkspacePanelProps {
  * 동시에 보이는 큰 표면 수를 줄인다.
  */
 export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
-  const { workspaceOpen, workspaceTab, setWorkspaceTab, closeWorkspace, multiDriverResult, routeData, setRouteSlotEl } =
+  const { workspaceOpen, workspaceTab, setWorkspaceTab, closeWorkspace, multiDriverResult, routeData, setRouteSlotEl, quoteSummary } =
     useRouteOptimization();
 
   const hasResult = !!(multiDriverResult && multiDriverResult.success);
   const hasRoute = !!routeData?.summary;
+  const hasQuote = !!quoteSummary?.hasQuote;
   // 사용할 수 없는 탭이 active면 대화 탭으로 폴백한다.
   const activeTab =
-    (workspaceTab === 'result' && !hasResult) || (workspaceTab === 'route' && !hasRoute)
+    (workspaceTab === 'result' && !hasResult) ||
+    (workspaceTab === 'route' && !hasRoute) ||
+    (workspaceTab === 'quote' && !hasQuote)
       ? 'chat'
       : workspaceTab;
-  const showTabs = hasResult || hasRoute;
+  const showTabs = hasResult || hasRoute || hasQuote;
 
   const panel = (
     <div className="flex h-full w-full flex-col bg-card">
@@ -42,6 +45,14 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
               active={activeTab === 'chat'}
               onClick={() => setWorkspaceTab('chat')}
             />
+            {hasQuote && (
+              <TabButton
+                label="견적"
+                icon={<Calculator className="h-3.5 w-3.5" />}
+                active={activeTab === 'quote'}
+                onClick={() => setWorkspaceTab('quote')}
+              />
+            )}
             {hasRoute && (
               <TabButton
                 label="경로"
@@ -72,8 +83,8 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {/* 대화 탭 — AIQuoteChatModal은 항상 마운트해 대화 상태를 보존한다. */}
-        <div className={activeTab === 'chat' ? 'h-full' : 'hidden'}>
+        {/* 대화/견적 탭 — AIQuoteChatModal은 항상 마운트해 상태를 보존하고, 내부에서 대화/견적 뷰를 전환한다. */}
+        <div className={activeTab === 'chat' || activeTab === 'quote' ? 'h-full' : 'hidden'}>
           <AIQuoteChatModal docked compact isOpen onClose={closeWorkspace} />
         </div>
 

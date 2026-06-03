@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
-import { X, Calculator, ArrowRight, Loader2, Sparkles, RefreshCw, Paperclip, FileText, Square, Mic, MicOff } from 'lucide-react';
+import { X, Calculator, ChevronRight, ArrowRight, Loader2, Sparkles, RefreshCw, Paperclip, FileText, Square, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/libs/supabase-client';
 import QuoteDetailModal from '@/domains/chat/components/QuoteDetailModal';
 import ChatMessageList from '@/domains/chat/components/ChatMessageList';
@@ -65,7 +65,7 @@ interface AIQuoteChatModalProps {
 }
 
 export default function AIQuoteChatModal({ isOpen, onClose, docked = false, compact = false }: AIQuoteChatModalProps) {
-  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest, clearChatPrompt } = useRouteOptimization();
+  const { optimizeRouteWith, requestInputApply, setMultiDriverResult, chatPromptRequest, clearChatPrompt, workspaceTab, setWorkspaceTab, setQuoteSummary } = useRouteOptimization();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -113,8 +113,18 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   // 발행처(공급자) 설정 — localStorage 보관, 견적서 생성에 주입.
   const [issuer, setIssuer] = useState<QuoteIssuer>(EMPTY_ISSUER);
   const [issuerOpen, setIssuerOpen] = useState(false);
-  // compact 모드에서 우측 견적현황/발행 드로어 열림 상태
-  const [infoSheetOpen, setInfoSheetOpen] = useState(false);
+
+  // 견적 요약을 공유 훅에 publish → WorkspacePanel의 [견적] 탭/대화 peek 바가 사용.
+  useEffect(() => {
+    if (!compact) return;
+    setQuoteSummary(
+      latestResult?.quote
+        ? { hasQuote: true, hourly: latestResult.quote.hourly?.formatted, perJob: latestResult.quote.perJob?.formatted }
+        : { hasQuote: false }
+    );
+  }, [compact, latestResult, setQuoteSummary]);
+  useEffect(() => () => setQuoteSummary(null), [setQuoteSummary]);
+
   const updateIssuer = (patch: Partial<QuoteIssuer>) => {
     setIssuer((prev) => {
       const next = { ...prev, ...patch };
@@ -957,10 +967,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     []
   );
   const stableOnOpenQuotePanel = useCallback(() => {
-    // compact: 견적 현황 드로어를 연다. 데스크톱(상시 사이드바): 전체 운임 상세 모달을 연다.
-    if (compact) setInfoSheetOpen(true);
+    // compact: 워크스페이스 '견적' 탭으로 전환. 데스크톱(상시 사이드바): 전체 운임 상세 모달.
+    if (compact) setWorkspaceTab('quote');
     else setIsQuoteDetailOpen(true);
-  }, [compact]);
+  }, [compact, setWorkspaceTab]);
   const stableOnToggleEvidence = useCallback(
     (id: string) => setExpandedEvidenceByMessageId((prev) => ({ ...prev, [id]: !prev[id] })),
     []
@@ -984,8 +994,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         }
       >
 
-        {/* Main Chat Area */}
-        <div className="flex flex-1 flex-col h-full min-w-0 bg-card relative">
+        {/* Main Chat Area — compact에서 '견적' 탭일 때는 숨기고 견적 패널이 전체 폭을 차지 */}
+        <div className={`flex flex-1 flex-col h-full min-w-0 bg-card relative ${compact && workspaceTab === 'quote' ? 'hidden' : ''}`}>
 
           {/* Header */}
           <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-5 py-3.5 bg-card/95 backdrop-blur-sm z-10">
@@ -1031,30 +1041,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               >
                 <RefreshCw className="h-5 w-5" />
               </button>
-
-              {/* compact: 견적현황/발행 드로어 토글 */}
-              {compact && (
-                <button
-                  type="button"
-                  onClick={() => setInfoSheetOpen((v) => !v)}
-                  className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                    infoSheetOpen
-                      ? 'border-primary/30 bg-primary/10 text-primary'
-                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                  }`}
-                  title="견적 현황·발행"
-                >
-                  <Calculator className="h-4 w-4" />
-                  <span className="hidden sm:inline tabular-nums">
-                    {latestResult?.quote?.hourly?.formatted && !infoSheetOpen
-                      ? `견적 ${latestResult.quote.hourly.formatted}`
-                      : '견적'}
-                  </span>
-                  {latestResult?.quote && !infoSheetOpen && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary" />
-                  )}
-                </button>
-              )}
 
               {/* Mobile Close Button */}
               <button
@@ -1148,6 +1134,28 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
           {/* Input Area (Floating Style) */}
           <div className="flex-shrink-0 px-4 md:px-8 pb-6 pt-2 bg-gradient-to-t from-white via-white to-transparent">
+            {compact && latestResult?.quote && (
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('quote')}
+                className="mb-2 flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 text-left shadow-sm transition-colors hover:border-primary/40"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Calculator className="h-4 w-4 flex-none text-primary" />
+                  <span className="min-w-0">
+                    <span className="block text-[10px] font-semibold text-muted-foreground">시간당 1회 견적</span>
+                    <span className="block truncate text-sm font-black tracking-tight text-primary tabular-nums">{latestResult.quote.hourly?.formatted}</span>
+                  </span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="text-right">
+                    <span className="block text-[10px] font-semibold text-muted-foreground">단건</span>
+                    <span className="block text-xs font-bold text-foreground tabular-nums">{latestResult.quote.perJob?.formatted}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </span>
+              </button>
+            )}
             {!loading && latestResult && messages.some((m) => m.role === 'user') && (
               <div className="mb-2 flex justify-end">
                 <button
@@ -1324,12 +1332,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           </div>
         </div>
 
-        {/* Info Sidebar (Right Panel) — compact 모드에서는 슬라이드 드로어로 전환 */}
+        {/* 견적 현황 — compact는 '견적' 탭일 때 전체 폭, 그 외 숨김. 비compact는 상시 사이드바. */}
+        <div className={compact ? (workspaceTab === 'quote' ? 'flex h-full min-w-0 flex-1' : 'hidden') : 'contents'}>
         <QuoteInfoSidebar
           compact={compact}
-          infoSheetOpen={infoSheetOpen}
-          onCloseInfoSheet={() => setInfoSheetOpen(false)}
-          onClose={onClose}
           sessions={sessions}
           currentSessionId={currentSessionId}
           isSessionLoading={isSessionLoading}
@@ -1369,6 +1375,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           onPreviewOnMap={(useSanitizedFallback) => void handlePreviewOnMap(useSanitizedFallback)}
           onOpenQuoteDetail={() => setIsQuoteDetailOpen(true)}
         />
+        </div>
       </div>
       {isQuoteDetailOpen && latestResult?.quote && (
         <QuoteDetailModal quote={latestResult.quote} onClose={() => setIsQuoteDetailOpen(false)} />

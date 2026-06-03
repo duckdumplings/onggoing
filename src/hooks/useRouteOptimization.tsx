@@ -249,12 +249,15 @@ export interface RouteOptimizationState {
   // 일회성 요청 소비 후 비운다(챗 재오픈 시 동일 프롬프트 재전송 방지).
   clearChatPrompt: () => void;
 
-  // 우측 워크스페이스(탭 패널): 대화/경로/배차 결과를 하나의 표면에서 전환한다.
+  // 우측 워크스페이스(탭 패널): 대화/견적/경로/배차 결과를 하나의 표면에서 전환한다.
   workspaceOpen: boolean;
-  workspaceTab: 'chat' | 'route' | 'result';
-  openWorkspace: (tab?: 'chat' | 'route' | 'result') => void;
+  workspaceTab: 'chat' | 'quote' | 'route' | 'result';
+  openWorkspace: (tab?: 'chat' | 'quote' | 'route' | 'result') => void;
   closeWorkspace: () => void;
-  setWorkspaceTab: (tab: 'chat' | 'route' | 'result') => void;
+  setWorkspaceTab: (tab: 'chat' | 'quote' | 'route' | 'result') => void;
+  // 견적 요약 신호: AIQuoteChatModal이 latestResult로 publish, WorkspacePanel이 [견적] 탭/ peek 바에 사용.
+  quoteSummary: { hasQuote: boolean; hourly?: string; perJob?: string } | null;
+  setQuoteSummary: (s: { hasQuote: boolean; hourly?: string; perJob?: string } | null) => void;
   // '경로' 탭 본문은 TmapMainMap이 portal로 주입한다(지도 상태 의존 로직 유지).
   routeSlotEl: HTMLElement | null;
   setRouteSlotEl: (el: HTMLElement | null) => void;
@@ -287,9 +290,10 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
   const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number; routeContext?: unknown } | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'route' | 'result'>('chat');
+  const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'quote' | 'route' | 'result'>('chat');
+  const [quoteSummary, setQuoteSummary] = useState<{ hasQuote: boolean; hourly?: string; perJob?: string } | null>(null);
   const [routeSlotEl, setRouteSlotEl] = useState<HTMLElement | null>(null);
-  const openWorkspace = useCallback((tab: 'chat' | 'route' | 'result' = 'chat') => {
+  const openWorkspace = useCallback((tab: 'chat' | 'quote' | 'route' | 'result' = 'chat') => {
     setWorkspaceTab(tab);
     setWorkspaceOpen(true);
   }, []);
@@ -561,6 +565,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     openWorkspace,
     closeWorkspace,
     setWorkspaceTab,
+    quoteSummary,
+    setQuoteSummary,
     routeSlotEl,
     setRouteSlotEl,
   };
