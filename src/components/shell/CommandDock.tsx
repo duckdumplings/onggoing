@@ -52,7 +52,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   }, [chatOpen]);
 
   const summary = routeData?.summary as
-    | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number; isSelected?: boolean }> }
+    | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number | null; isSelected?: boolean }> }
     | undefined;
   const hasResult = !!summary && Number.isFinite(summary.totalDistance);
   const km = hasResult ? ((summary!.totalDistance as number) / 1000).toFixed(1) : '0';

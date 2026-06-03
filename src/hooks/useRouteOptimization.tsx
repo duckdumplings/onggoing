@@ -18,8 +18,8 @@ export interface RouteSummary {
     label: string;
     estimatedDistance: number;
     estimatedTime: number;
-    estimatedToll: number;
-    tollSource?: 'api' | 'estimated';
+    estimatedToll: number | null;
+    tollSource?: 'api' | 'unavailable';
     isSelected: boolean;
   }>;
 }

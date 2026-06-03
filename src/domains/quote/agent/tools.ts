@@ -19,7 +19,6 @@ import type { Frequency } from '@/domains/dispatch/types/routePlan';
 import { retrieveRagContext } from '@/domains/quote/services/ragRetriever';
 import {
   estimatedFuelCost,
-  highwayTollCost,
   FUEL_EFFICIENCY_KM_PER_L,
   type Vehicle as PricingVehicle,
 } from '@/domains/quote/pricing';
@@ -255,15 +254,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const lowPrecisionStops = domainStops
           .map((s) => s.address)
           .filter((addr) => cache.get(addr.trim())?.lowPrecision);
-        // 선택된 도로옵션의 통행료. Tmap segment fare 합산이면 'api'(실측), 폴백이면 'estimated'.
+        // 선택된 도로옵션의 통행료. Tmap segment fare 합산이면 'api'(실측, 무료도로 0원 포함).
+        // 실측이 없으면(주로 API 실패) 추정하지 않고 'unavailable'로 둔다(실비 정산).
         const selectedRoad = Array.isArray(summary?.roadComparisons)
           ? summary.roadComparisons.find((c: any) => c?.isSelected)
           : null;
-        const tollAmount = Number.isFinite(Number(selectedRoad?.estimatedToll))
-          ? Math.round(Number(selectedRoad.estimatedToll))
-          : null;
-        const tollSource: 'api' | 'estimated' | null =
-          selectedRoad?.tollSource === 'api' ? 'api' : selectedRoad ? 'estimated' : null;
+        const tollIsApi = selectedRoad?.tollSource === 'api' && Number.isFinite(Number(selectedRoad?.estimatedToll));
+        const tollAmount = tollIsApi ? Math.round(Number(selectedRoad.estimatedToll)) : null;
+        const tollSource: 'api' | 'unavailable' | null =
+          tollIsApi ? 'api' : selectedRoad ? 'unavailable' : null;
         const out = {
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
@@ -306,11 +305,11 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .number()
           .nonnegative()
           .optional()
-          .describe('optimize_route가 돌려준 통행료(원). 실측이 있으면 반드시 그대로 넘겨라(임의 추정 금지). 없으면 생략하면 거리 기반 추정으로 대체된다.'),
+          .describe('optimize_route가 돌려준 Tmap 실측 통행료(원, 무료도로는 0). 실측이 있으면 반드시 그대로 넘겨라. 임의 추정 금지.'),
         tollSource: z
-          .enum(['api', 'estimated'])
+          .enum(['api', 'unavailable'])
           .optional()
-          .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'estimated'=거리 기반). tollAmount와 함께 그대로 넘겨라."),
+          .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'unavailable'=산출 불가). tollAmount와 함께 그대로 넘겨라."),
       }),
       execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
         const body = {
@@ -370,12 +369,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         // 유가는 오피넷(한국석유공사) 라이브 유종별 평균가 → 키 없으면 기본값 폴백.
         const fuel = await getFuelPricePerLiter(vehicleKey);
         const fuelSourceLabel = fuelSourceLabelOf(fuel, vehicleKey);
-        // 통행료: optimize_route가 Tmap 실측(tollSource='api')을 넘겼으면 그 값을 그대로 쓰고,
-        // 없으면 거리 기반 추정(highwayTollCost)으로 폴백한다.
+        // 통행료: optimize_route의 Tmap 실측(tollSource='api', 무료도로 0원 포함)만 사용한다.
+        // 실측이 없으면 추정하지 않고 null로 둔다(통행료는 견적서 항목이 아니라 실주행 하이패스 실비 정산).
         const hasApiToll = tollSource === 'api' && Number.isFinite(Number(tollAmount));
-        const tollValue = hasApiToll ? Math.round(Number(tollAmount)) : highwayTollCost(distanceKm);
-        const tollSourceResolved: 'api' | 'estimated' = hasApiToll ? 'api' : 'estimated';
-        const tollSourceLabel = hasApiToll ? 'Tmap 경로 실측 통행료' : '거리 기반 추정';
+        const tollValue: number | null = hasApiToll ? Math.round(Number(tollAmount)) : null;
+        const tollSourceResolved: 'api' | 'unavailable' = hasApiToll ? 'api' : 'unavailable';
+        const tollSourceLabel = hasApiToll ? 'Tmap 경로 실측 통행료' : '실주행 하이패스 실비 정산(경로 기반 산출 불가)';
+        const tollNote = hasApiToll
+          ? (tollValue === 0 ? '예상 통행료는 Tmap 경로 실측 기준 0원(무료도로)' : '예상 통행료는 Tmap 경로 실측 기준')
+          : '통행료는 실주행 하이패스 실비로 정산되며, 이번 경로는 실측값을 산출하지 못해 금액을 단정하지 않는다';
         const costReference = distanceKm > 0
           ? {
               estimatedFuel: estimatedFuelCost(vehicleKey, distanceKm, fuel.pricePerLiter),
@@ -386,7 +388,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicleKey],
               fuelPriceSource: fuel.source,
               fuelPriceSourceLabel: fuelSourceLabel,
-              note: `예상 유류비는 ${fuelSourceLabel} 기준 실주행 연료비 추정(유류할증과 다른 개념), 예상 통행료는 ${tollSourceLabel}. 둘 다 참고용이며 유가·경로에 따라 달라질 수 있다.`,
+              note: `예상 유류비는 ${fuelSourceLabel} 기준 실주행 연료비 추정(유류할증과 다른 개념). ${tollNote}. 모두 참고용이며 유가·경로에 따라 달라질 수 있다.`,
             }
           : null;
 

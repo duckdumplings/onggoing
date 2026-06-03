@@ -21,10 +21,10 @@ interface SingleQuoteInsightsProps {
   chargedOneTime?: number;
   /** 현재 유가(L당 원). 미지정 시 환경변수/기본값 사용. */
   fuelPricePerLiter?: number;
-  /** Tmap 경로 실측 통행료(원). 있으면 거리 기반 추정 대신 사용. */
-  estimatedToll?: number;
-  /** 통행료 출처. 'api'면 실측값으로 표시. */
-  tollSource?: 'api' | 'estimated';
+  /** Tmap 경로 실측 통행료(원, 무료도로 0). 실측 불가 시 null. */
+  estimatedToll?: number | null;
+  /** 통행료 출처. 'api'면 실측값, 그 외엔 실비 정산 표기. */
+  tollSource?: 'api' | 'unavailable';
   departureAt?: string;
   realtimeTraffic?: boolean;
 }
@@ -61,7 +61,7 @@ export default function SingleQuoteInsights({
     { realtimeTraffic }
   );
   const tollOverride =
-    tollSource === 'api' && Number.isFinite(estimatedToll) && (estimatedToll as number) >= 0
+    tollSource === 'api' && Number.isFinite(estimatedToll as number) && (estimatedToll as number) >= 0
       ? { amount: estimatedToll as number, source: 'api' as const }
       : undefined;
   const cost = buildCostTransparencyFrom(vehicle, km, chargedOneTime, fuelPrice, tollOverride);

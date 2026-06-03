@@ -634,9 +634,9 @@ export default function TmapMainMap() {
                     <div className="flex items-center justify-between px-1">
                       <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">옵션별 비교 (현재 적용 옵션 대비)</div>
                       <div className="flex items-center gap-1.5">
-                        {comparisons.some((row: any) => row?.tollSource === 'estimated') && (
-                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5" title="일부 옵션의 통행료는 Tmap에서 제공되지 않아 거리 기반 추정값입니다.">
-                            추정 포함
+                        {comparisons.some((row: any) => row?.tollSource !== 'api') && (
+                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5" title="일부 옵션은 Tmap 통행료 실측이 없어 실주행 하이패스 실비로 정산됩니다(추정 금액을 쓰지 않습니다).">
+                            일부 실비 정산
                           </span>
                         )}
                         <button
@@ -657,8 +657,12 @@ export default function TmapMainMap() {
                     {comparisons.map((item, idx) => {
                       const isCurrent = Boolean(item.isSelected);
                       const timeDeltaSec = item.estimatedTime - (current?.estimatedTime ?? item.estimatedTime);
-                      const tollDeltaWon = item.estimatedToll - (current?.estimatedToll ?? item.estimatedToll);
-                      const isFreeRoadEstimated = item.option === 'free-road-first' && item.tollSource === 'estimated';
+                      // 통행료 실측이 양쪽 다 있을 때만 Δ를 계산한다(실측 vs 미산출 비교는 의미 없음).
+                      const bothTollApi = item.tollSource === 'api' && current?.tollSource === 'api';
+                      const tollDeltaWon = bothTollApi
+                        ? (item.estimatedToll as number) - (current?.estimatedToll as number)
+                        : 0;
+                      const tollUnavailable = item.tollSource !== 'api' || !Number.isFinite(item.estimatedToll);
                       return (
                         <button
                           type="button"
@@ -689,21 +693,21 @@ export default function TmapMainMap() {
                             )}
                           </span>
                           <span className={`col-span-4 text-right font-medium transition-colors ${item.isSelected ? 'text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}>
-                            {isFreeRoadEstimated ? (
-                              <span className="text-muted-foreground italic">확인 불가</span>
+                            {tollUnavailable ? (
+                              <span className="text-muted-foreground italic" title="Tmap 통행료 실측이 없어 실주행 하이패스 실비로 정산됩니다(추정 금액 미사용).">실비 정산</span>
                             ) : (
                               <>
-                                <span>{item.estimatedToll.toLocaleString()}원</span>
-                                {!isCurrent && (
+                                <span>{(item.estimatedToll as number) === 0 ? '무료' : `${(item.estimatedToll as number).toLocaleString()}원`}</span>
+                                {!isCurrent && bothTollApi && (
                                   <span className={`ml-1 text-[10px] font-semibold ${tollDeltaWon > 0 ? 'text-rose-500' : tollDeltaWon < 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                                     ({formatTollDelta(tollDeltaWon)})
                                   </span>
                                 )}
                                 <span
-                                  className={`ml-1 text-[9px] font-semibold px-1 py-px rounded ${item.tollSource === 'api' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}
-                                  title={item.tollSource === 'api' ? 'Tmap에서 제공한 공식 통행료입니다.' : 'Tmap에서 통행료가 제공되지 않아 거리(km×120원)로 추정한 값입니다.'}
+                                  className="ml-1 text-[9px] font-semibold px-1 py-px rounded bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  title="Tmap에서 제공한 공식 통행료입니다."
                                 >
-                                  {item.tollSource === 'api' ? 'Tmap' : '추정'}
+                                  Tmap
                                 </span>
                               </>
                             )}
@@ -1102,7 +1106,7 @@ export default function TmapMainMap() {
                   )}
                   {routeQuoteDetail.roadComparisons.map((row: any, idx: number) => (
                     <div key={`${row.option}-${idx}`}>
-                      {row.label}: {(row.estimatedDistance / 1000).toFixed(1)}km · {Math.ceil(row.estimatedTime / 60)}분 · {row.option === 'free-road-first' && row.tollSource === 'estimated' ? '통행료 확인 불가' : `${Number(row.estimatedToll || 0).toLocaleString()}원`}
+                      {row.label}: {(row.estimatedDistance / 1000).toFixed(1)}km · {Math.ceil(row.estimatedTime / 60)}분 · {row.tollSource !== 'api' ? '통행료 실비 정산' : (Number(row.estimatedToll) === 0 ? '통행료 무료' : `${Number(row.estimatedToll || 0).toLocaleString()}원`)}
                     </div>
                   ))}
                 </div>
@@ -1196,16 +1200,16 @@ export default function TmapMainMap() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-extrabold text-foreground">{row.label}</span>
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border ${row.tollSource === 'api' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                      {row.tollSource === 'api' ? '실측(API)' : '추정'}
+                      {row.tollSource === 'api' ? '실측(API)' : '실비 정산'}
                     </span>
                   </div>
                   <div className="text-[11px] text-muted-foreground leading-relaxed">
                     {row.tollSource === 'api'
-                      ? 'Tmap 경로 응답의 통행료 필드 기반으로 계산한 값입니다.'
-                      : 'Tmap 응답에 통행료 상세 필드가 없어 거리 기반으로 추정한 값입니다.'}
+                      ? 'Tmap 경로 응답의 통행료 필드 기반 실측값입니다(무료도로는 0원).'
+                      : 'Tmap 통행료 실측이 없어 실주행 하이패스 실비로 정산됩니다(추정 금액을 쓰지 않습니다).'}
                   </div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
-                    거리 {(row.estimatedDistance / 1000).toFixed(1)}km · 소요 {Math.ceil(row.estimatedTime / 60)}분 · 통행료 {row.option === 'free-road-first' && row.tollSource === 'estimated' ? '확인 불가' : `${Number(row.estimatedToll || 0).toLocaleString()}원`}
+                    거리 {(row.estimatedDistance / 1000).toFixed(1)}km · 소요 {Math.ceil(row.estimatedTime / 60)}분 · 통행료 {row.tollSource !== 'api' ? '실비 정산' : (Number(row.estimatedToll) === 0 ? '무료' : `${Number(row.estimatedToll || 0).toLocaleString()}원`)}
                   </div>
                 </div>
               ))}

@@ -10,7 +10,6 @@ import {
   PER_JOB_TABLE,
   suggestCheaperNextTier,
   estimatedFuelCost,
-  highwayTollCost,
   FUEL_EFFICIENCY_KM_PER_L,
   DEFAULT_FUEL_PRICE_PER_LITER,
   type Vehicle as PricingVehicle,
@@ -381,10 +380,10 @@ export interface CostTransparency {
   chargedOneTime: number | null;
   /** 참고: 예상 유류비(원). 현재 유가 기준 실주행 연료비 추정(유류할증과 다른 개념). */
   estimatedFuel: number;
-  /** 참고: 예상 통행료(원). */
-  estimatedToll: number;
-  /** 통행료 출처: 'api'=Tmap 경로 실측, 'estimated'=거리 기반 추정. */
-  tollSource: 'api' | 'estimated';
+  /** 참고: Tmap 경로 실측 통행료(원, 무료도로는 0). 실측 불가 시 null(추정하지 않음). */
+  estimatedToll: number | null;
+  /** 통행료 출처: 'api'=Tmap 경로 실측, 'unavailable'=산출 불가(실비 정산). */
+  tollSource: 'api' | 'unavailable';
   /** 유류비 추정에 쓴 유가(L당 원). */
   fuelPricePerLiter: number;
   /** 유류비 추정에 쓴 연비(km/L). */
@@ -407,13 +406,13 @@ export function buildCostTransparencyFrom(
 ): CostTransparency | null {
   if (!(km > 0)) return null;
   const price = Number.isFinite(fuelPricePerLiter) && fuelPricePerLiter > 0 ? fuelPricePerLiter : DEFAULT_FUEL_PRICE_PER_LITER;
-  // Tmap 경로 실측 통행료가 있으면 그 값을, 없으면 거리 기반 추정으로 폴백.
+  // 통행료는 Tmap 경로 실측(무료도로 0원 포함)만 신뢰한다. 실측이 없으면 추정하지 않고 null(실비 정산).
   const hasApiToll = toll?.source === 'api' && Number.isFinite(toll.amount);
-  const estimatedToll = hasApiToll ? Math.round(toll!.amount) : highwayTollCost(km);
-  const tollSource: 'api' | 'estimated' = hasApiToll ? 'api' : 'estimated';
+  const estimatedToll: number | null = hasApiToll ? Math.round(toll!.amount) : null;
+  const tollSource: 'api' | 'unavailable' = hasApiToll ? 'api' : 'unavailable';
   const includedNote = hasApiToll
-    ? '예상 통행료는 Tmap 경로 실측, 예상 유류비는 현재 유가 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).'
-    : '예상 유류비·통행료는 실주행 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).';
+    ? '예상 통행료는 Tmap 경로 실측이에요. 예상 유류비는 현재 유가 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).'
+    : '통행료는 실주행 하이패스 실비로 정산돼요. 예상 유류비는 현재 유가 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).';
   return {
     chargedOneTime: Number.isFinite(chargedOneTime) ? Number(chargedOneTime) : null,
     estimatedFuel: estimatedFuelCost(vehicle, km, price),

@@ -42,13 +42,17 @@ export default function CostTransparencyCard({ cost }: CostTransparencyCardProps
           유가 {cost.fuelPricePerLiter.toLocaleString('ko-KR')}원/L · 연비 {cost.fuelEfficiencyKmPerL}km/L 기준
         </div>
         <div className="flex items-baseline justify-between text-muted-foreground">
-          <dt>참고: 예상 통행료</dt>
+          <dt>참고: 통행료</dt>
           <dd className="tabular-nums">
-            {cost.tollSource === 'api' ? '' : '~'}{won(cost.estimatedToll)}
+            {cost.tollSource === 'api'
+              ? cost.estimatedToll === 0
+                ? '없음(무료도로)'
+                : won(cost.estimatedToll as number)
+              : '실비 정산'}
           </dd>
         </div>
         <div className="text-[10px] text-muted-foreground/80">
-          {cost.tollSource === 'api' ? 'Tmap 경로 실측 기준' : '거리 기반 추정'}
+          {cost.tollSource === 'api' ? 'Tmap 경로 실측 기준' : '실주행 하이패스 실비로 정산'}
         </div>
       </dl>
 

@@ -204,30 +204,8 @@ export function estimatedFuelCost(
   return Math.round(fuelConsumption * price);
 }
 
-// 실제 유료도로 하이패스 비용 계산 (견적에 포함됨)
-export function highwayTollCost(km: number): number {
-  // 고속도로 이용률 (전체 거리의 70% 가정)
-  const highwayRatio = 0.7;
-  const highwayDistance = km * highwayRatio;
-
-  // 한국 유료도로 요금 체계 (2024년 기준)
-  // - 경부선: 서울~부산 약 417km, 요금 약 25,000원 (약 60원/km)
-  // - 경부선: 서울~대구 약 325km, 요금 약 19,000원 (약 58원/km)
-  // - 중부선: 서울~대전 약 167km, 요금 약 10,000원 (약 60원/km)
-  // - 영동선: 강릉~부산 약 400km, 요금 약 24,000원 (약 60원/km)
-  // 평균적으로 km당 약 60원으로 계산
-
-  const tollPerKm = 60;
-
-  // 기본 요금 (최소 요금)
-  const baseToll = 1000;
-
-  // 거리별 요금 계산
-  const distanceToll = Math.round(highwayDistance * tollPerKm);
-
-  // 기본 요금과 거리 요금 중 높은 값 반환
-  return Math.max(baseToll, distanceToll);
-}
+// 통행료는 거리 기반 추정을 쓰지 않는다(견적서 청구 항목이 아니라 실주행 하이패스 실비 정산).
+// 표시용 통행료는 Tmap 경로 실측(route-optimization)만 사용한다.
 
 export function perJobBasePrice(vehicle: Vehicle, km: number): number {
   for (const r of PER_JOB_TABLE) {

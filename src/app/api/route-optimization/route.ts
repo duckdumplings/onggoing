@@ -1637,14 +1637,14 @@ export async function POST(request: NextRequest) {
         };
       } catch (error) {
         console.warn(`도로 옵션 비교 계산 실패(${option}):`, error);
-        const fallbackToll = Math.max(0, Math.round((totalDistance / 1000) * 120));
+        // 통행료 추정치는 쓰지 않는다(견적서 항목 아님·실비 정산). 산출 불가 시 null로 두고 표시는 '확인 불가'.
         return {
           option,
           label: roadOptionLabel[option],
           estimatedDistance: Math.round(totalDistance),
           estimatedTime: Math.round(totalTimeWithDwell),
-          estimatedToll: fallbackToll,
-          tollSource: 'estimated' as const,
+          estimatedToll: null,
+          tollSource: 'unavailable' as const,
           isSelected: option === roadOption,
         };
       }
@@ -1942,12 +1942,13 @@ async function calculateRoadComparisonMetrics(params: {
     totalDwellTime += returnDwell * 60;
   }
 
-  const estimatedToll = Math.max(0, Math.round((totalDistance / 1000) * 120));
+  // 통행료는 Tmap 실측만 신뢰한다. 무료도로는 Tmap이 totalFare:0을 명시하므로 실측으로 처리된다.
+  // 한 구간이라도 실측이 없으면(주로 API 실패) 거리 기반 추정 대신 null로 두어 '실비 정산'으로 표시한다.
   return {
     estimatedDistance: Math.round(totalDistance),
     estimatedTime: Math.round(totalDriveTime + totalDwellTime),
-    estimatedToll: allSegmentsHaveToll ? Math.round(totalTollFromApi) : estimatedToll,
-    tollSource: allSegmentsHaveToll ? 'api' as const : 'estimated' as const,
+    estimatedToll: allSegmentsHaveToll ? Math.round(totalTollFromApi) : null,
+    tollSource: allSegmentsHaveToll ? 'api' as const : 'unavailable' as const,
   };
 }
 

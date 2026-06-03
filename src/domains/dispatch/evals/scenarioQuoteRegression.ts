@@ -19,7 +19,7 @@ import {
   buildCostTransparency,
   summarizeComparison,
 } from '@/domains/dispatch/services/scenarioInsights';
-import { estimatedFuelCost, highwayTollCost } from '@/domains/quote/pricing';
+import { estimatedFuelCost } from '@/domains/quote/pricing';
 import {
   perJobBasePrice,
   perJobRegularPrice,
@@ -242,7 +242,9 @@ export const SCENARIO_QUOTE_REGRESSION_CASES: ScenarioCase[] = [
       assert(cost !== null, 'costExists');
       assertEqual(cost!.chargedOneTime, r.oneTimePrice, 'charged');
       assertEqual(cost!.estimatedFuel, estimatedFuelCost('starex', 30), 'fuel');
-      assertEqual(cost!.estimatedToll, highwayTollCost(30), 'toll');
+      // 통행료는 추정하지 않는다. Tmap 실측을 안 넘기면 null(실비 정산)이어야 한다.
+      assertEqual(cost!.estimatedToll, null, 'toll');
+      assertEqual(cost!.tollSource, 'unavailable', 'tollSource');
     },
   },
 ];
