@@ -20,6 +20,12 @@ export interface BuildRolePayloadOptions {
   forceFixedOrigin?: boolean;
   /** 출발매트릭스처럼 빠른 순서가 필요할 때 true(NN). 기본 false(정확해). */
   fastOrder?: boolean;
+  /**
+   * 입력 순서를 그대로 존중(재최적화 안 함). 기본 false.
+   * 파일/메일에 배송 시각·순번이 명확해 순서 흐름을 보존해야 할 때 true.
+   * 이 경우 첫 stop이 출발지, 나머지는 입력 순서대로 방문, 마지막이 종착지가 되며 open-start/재정렬을 적용하지 않는다.
+   */
+  preserveOrder?: boolean;
 }
 
 /**
@@ -36,7 +42,32 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     useRealtimeTraffic,
     forceFixedOrigin = false,
     fastOrder = false,
+    preserveOrder = false,
   } = opts;
+
+  // 입력 순서 존중: 역할 기반 재배치/open-start 없이 받은 순서를 그대로 경로로 사용한다.
+  // 시간·순번이 명확한 라인(파일/메일)에서 흐름을 깨지 않기 위함.
+  if (preserveOrder && stops.length >= 2) {
+    const origin = stops[0];
+    const rest = stops.slice(1);
+    const finalStop = rest[rest.length - 1] ?? null;
+    return {
+      origins: [toPoint(origin.address)],
+      destinations: rest.map((s) => toPoint(s.address)),
+      finalDestinationAddress: finalStop ? finalStop.address : null,
+      useExplicitDestination: Boolean(finalStop),
+      vehicleType,
+      optimizeOrder: false,
+      returnToOrigin: false,
+      roadOption,
+      departureAt,
+      dwellMinutes: rest.map((s) => s.dwellMinutes ?? 0),
+      openStart: false,
+      startCandidateCount: 1,
+      fastOrder: false,
+      ...(useRealtimeTraffic !== undefined ? { useRealtimeTraffic } : {}),
+    };
+  }
 
   const pickups = stops.filter((s) => s.role === 'pickup');
   const drops = stops.filter((s) => s.role === 'drop');

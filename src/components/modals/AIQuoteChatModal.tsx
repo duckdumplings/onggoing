@@ -1215,7 +1215,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   multiple
                   className="hidden"
                   onChange={(e) => handleUploadFiles(e.target.files)}
-                  accept=".pdf,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp"
+                  accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.png,.jpg,.jpeg,.gif,.webp"
                 />
                 <button
                   type="button"

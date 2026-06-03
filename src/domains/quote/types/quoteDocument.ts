@@ -1,6 +1,6 @@
 // 견적안 문서 관련 타입 정의
 
-export type DocumentFileType = 'pdf' | 'excel' | 'word' | 'image';
+export type DocumentFileType = 'pdf' | 'excel' | 'word' | 'image' | 'csv';
 
 export interface QuoteDocument {
   id: string;
@@ -42,8 +42,13 @@ export interface QuoteDocumentUploadResult {
 export function detectFileType(fileName: string, mimeType?: string): DocumentFileType | null {
   const ext = fileName.split('.').pop()?.toLowerCase();
   
+  // CSV는 확장자를 우선 신뢰한다. 브라우저가 .csv를 application/vnd.ms-excel로 보내는 경우가 있어
+  // MIME만으로 판별하면 엑셀로 오인되기 때문(파서는 xlsx로 공통 처리하나 타입 라벨은 정확히 둔다).
+  if (ext === 'csv') return 'csv';
+
   if (mimeType) {
     if (mimeType.includes('pdf')) return 'pdf';
+    if (mimeType === 'text/csv' || mimeType === 'application/csv') return 'csv';
     if (mimeType.includes('spreadsheet') || mimeType.includes('excel') || mimeType.includes('sheet')) return 'excel';
     if (mimeType.includes('word') || mimeType.includes('document') || mimeType.includes('msword')) return 'word';
     if (mimeType.startsWith('image/')) return 'image';
@@ -64,6 +69,8 @@ export const ALLOWED_MIME_TYPES = [
   'application/vnd.ms-excel', // .xls
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
   'application/msword', // .doc
+  'text/csv', // .csv
+  'application/csv', // .csv (일부 브라우저)
   'image/png',
   'image/jpeg',
   'image/jpg',

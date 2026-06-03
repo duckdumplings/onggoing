@@ -180,19 +180,28 @@ export function fuelSurchargeHourlyCorrect(vehicle: Vehicle, km: number, billMin
   return vehicle === 'ray' ? stepRay * extraBins : stepStarex * extraBins;
 }
 
-// 실제 예상 유류비 계산 (견적에 포함되지 않음)
-export function estimatedFuelCost(vehicle: Vehicle, km: number): number {
-  // 차종별 연비 (km/L)
-  const fuelEfficiency = vehicle === 'ray' ? 8 : 6; // 레이 8km/L, 스타렉스 6km/L
+// 차종별 연비 (km/L). 레이 8km/L, 스타렉스 6km/L.
+export const FUEL_EFFICIENCY_KM_PER_L: Record<Vehicle, number> = {
+  ray: 8,
+  starex: 6,
+};
 
-  // 현재 유류가 (L당 1,700원)
-  const fuelPricePerLiter = 1700;
+// 기본 유가(L당 원). 운영팀이 현재 유가로 갱신할 수 있도록 단일 진실원으로 둔다.
+// 호출부는 NEXT_PUBLIC_FUEL_PRICE_PER_LITER 등으로 현재 유가를 주입할 수 있다.
+// 라이브 유가(오피넷) 연동 전까지 쓰는 고정 가정값.
+export const DEFAULT_FUEL_PRICE_PER_LITER = 2000;
 
-  // 소모 연료량 (L)
+// 실제 예상 유류비 계산 (요금제 청구액과 별개의 운영 참고치 — 유류할증과 다른 개념).
+// 현재 유가(fuelPricePerLiter)를 주입하면 그 유가 기준으로 실주행 연료비를 추정한다.
+export function estimatedFuelCost(
+  vehicle: Vehicle,
+  km: number,
+  fuelPricePerLiter: number = DEFAULT_FUEL_PRICE_PER_LITER
+): number {
+  const fuelEfficiency = FUEL_EFFICIENCY_KM_PER_L[vehicle];
+  const price = Number.isFinite(fuelPricePerLiter) && fuelPricePerLiter > 0 ? fuelPricePerLiter : DEFAULT_FUEL_PRICE_PER_LITER;
   const fuelConsumption = km / fuelEfficiency;
-
-  // 예상 유류비
-  return Math.round(fuelConsumption * fuelPricePerLiter);
+  return Math.round(fuelConsumption * price);
 }
 
 // 실제 유료도로 하이패스 비용 계산 (견적에 포함됨)

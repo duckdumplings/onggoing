@@ -18,6 +18,13 @@ import { resolveDeparturePresets, assessDeadlineFeasibility } from '@/domains/di
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
 import { retrieveRagContext } from '@/domains/quote/services/ragRetriever';
 import {
+  estimatedFuelCost,
+  highwayTollCost,
+  FUEL_EFFICIENCY_KM_PER_L,
+  type Vehicle as PricingVehicle,
+} from '@/domains/quote/pricing';
+import { getFuelPricePerLiter } from '@/domains/quote/services/fuelPriceProvider';
+import {
   FrequencySchema,
   QuoteScenarioSchema,
   RouteStopSchema,
@@ -161,13 +168,17 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     optimize_route: tool({
       description:
-        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다.',
+        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다. 입력(파일/메일)에 방문 시각·순번이 명확해 그 순서를 그대로 지켜야 하면 preserveOrder=true로 호출해 재정렬 없이 받은 순서대로 계산하라.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         roadOption: z.enum(['time-first', 'free-first', 'highway-first']).default('time-first'),
+        preserveOrder: z
+          .boolean()
+          .default(false)
+          .describe('입력 순서를 그대로 존중(재최적화 안 함). 배송 시각/순번이 명확한 라인일 때만 true. 첫 stop=출발, 마지막=종착으로 고정된다.'),
       }),
-      execute: async ({ stops, vehicleType, roadOption }) => {
+      execute: async ({ stops, vehicleType, roadOption, preserveOrder }) => {
         const domainStops = toDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
@@ -178,6 +189,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return address;
         };
         // 출발지/순서/open-start 규칙은 buildRolePayload로 단일화. 일반 경로는 정확해(fastOrder=false).
+        // preserveOrder=true면 입력 순서를 그대로 존중(재정렬/open-start 없음).
         const payload = buildRolePayload({
           stops: domainStops,
           toPoint,
@@ -186,6 +198,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           // 견적 산정과 지도 미리보기 결과 일치를 위해 출발 시각을 고정.
           departureAt: ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           fastOrder: false,
+          preserveOrder,
         });
 
         const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
@@ -274,12 +287,54 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             ? 'hourly'
             : 'perJob';
         const representative = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+
+        // 견적 카드(거리/시간/차종)와 실비 투명성 카드가 채워지도록 basis를 결정적으로 구성한다.
+        const vehicleKey: PricingVehicle = vehicleType === '스타렉스' ? 'starex' : 'ray';
+        const meta = json?.meta ?? {};
+        const distanceKm = Number(meta.km ?? km);
+        const driveMins = Number(meta.driveMinutes ?? driveMinutes);
+        const dwellTotalMinutes = Number(meta.dwellTotalMinutes ?? (dwellMinutes?.reduce((a, b) => a + b, 0) ?? 0));
+        const totalBillMinutes = Number(json?.plans?.hourly?.billMinutes ?? 0);
+        const destinationCount = Math.max(1, (stopsCount ?? dwellMinutes?.length ?? 0) + 1);
+        const basis = {
+          vehicleType,
+          scheduleType,
+          distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(1)) : 0,
+          driveMinutes: driveMins,
+          dwellTotalMinutes,
+          totalBillMinutes,
+          destinationCount,
+        };
+
+        // 실비 참고치(요금제 청구액과 별개): 현재 유가 기준 예상 유류비 + 예상 통행료.
+        // 유가는 오피넷(한국석유공사) 라이브 유종별 평균가 → 키 없으면 기본값 폴백.
+        const fuel = await getFuelPricePerLiter(vehicleKey);
+        const fuelSourceLabel =
+          fuel.source === 'opinet'
+            ? `오피넷 전국 평균(${vehicleKey === 'ray' ? '휘발유' : '경유'}${fuel.tradeDate ? ` ${fuel.tradeDate}` : ''})`
+            : fuel.source === 'manual'
+              ? '수동 설정 유가'
+              : '기본 가정 유가';
+        const costReference = distanceKm > 0
+          ? {
+              estimatedFuel: estimatedFuelCost(vehicleKey, distanceKm, fuel.pricePerLiter),
+              estimatedToll: highwayTollCost(distanceKm),
+              fuelPricePerLiter: fuel.pricePerLiter,
+              fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicleKey],
+              fuelPriceSource: fuel.source,
+              fuelPriceSourceLabel: fuelSourceLabel,
+              note: `예상 유류비는 ${fuelSourceLabel} 기준 실주행 연료비 추정(유류할증과 다른 개념), 예상 통행료는 거리 기반 추정. 둘 다 참고용이며 유가·경로에 따라 달라질 수 있다.`,
+            }
+          : null;
+
         const out = {
           plans: json?.plans ?? null,
           recommendedPlan,
           rateOverride,
           oneTimePrice: representative,
           annualPrice: annualizePrice(representative, freq),
+          basis,
+          costReference,
           hourly: {
             total: hourlyTotal,
             ratePerHour: Number(json?.plans?.hourly?.ratePerHour ?? 0),

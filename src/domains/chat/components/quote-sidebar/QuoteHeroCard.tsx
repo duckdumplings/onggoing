@@ -143,6 +143,7 @@ export default function QuoteHeroCard({
         distanceKm={quote.basis?.distanceKm}
         driveMinutes={quote.basis?.driveMinutes}
         dwellMinutes={quote.basis?.dwellTotalMinutes}
+        fuelPricePerLiter={quote.costReference?.fuelPricePerLiter}
       />
     </div>
   );

@@ -11,6 +11,8 @@ import {
   suggestCheaperNextTier,
   estimatedFuelCost,
   highwayTollCost,
+  FUEL_EFFICIENCY_KM_PER_L,
+  DEFAULT_FUEL_PRICE_PER_LITER,
   type Vehicle as PricingVehicle,
 } from '@/domains/quote/pricing';
 import {
@@ -373,41 +375,54 @@ export function buildEtaBand(
   };
 }
 
-/** 운임 vs 실비 투명성. "청구 운임에 유류·통행료 포함, 숨은 추가비 없음"을 보여준다. */
+/** 운임 vs 실비 투명성. 실주행 기준 예상 유류비·통행료를 참고치로 보여준다. */
 export interface CostTransparency {
   /** 청구 1회 운임(원). 모를 경우 null(투명성 안내만 표시). */
   chargedOneTime: number | null;
-  /** 참고: 예상 유류비(원, 청구에 포함). */
+  /** 참고: 예상 유류비(원). 현재 유가 기준 실주행 연료비 추정(유류할증과 다른 개념). */
   estimatedFuel: number;
-  /** 참고: 예상 통행료(원, 청구에 포함). */
+  /** 참고: 예상 통행료(원). */
   estimatedToll: number;
+  /** 유류비 추정에 쓴 유가(L당 원). */
+  fuelPricePerLiter: number;
+  /** 유류비 추정에 쓴 연비(km/L). */
+  fuelEfficiencyKmPerL: number;
   /** 안내 문구. */
   includedNote: string;
 }
 
 /**
  * 차종·거리(·선택적 청구액)로 실비(예상 유류비·통행료)를 추정해 투명성 데이터를 만든다.
- * 실비 수치는 참고용이며 청구 운임에 이미 포함된다(별도 청구 없음).
+ * 수치는 운영 참고용 추정치이며(유가·경로에 따라 변동), 요금제 청구액과 별개다.
+ * fuelPricePerLiter를 주면 현재 유가 기준으로 유류비를 추정한다.
  */
 export function buildCostTransparencyFrom(
   vehicle: PricingVehicle,
   km: number,
-  chargedOneTime?: number
+  chargedOneTime?: number,
+  fuelPricePerLiter: number = DEFAULT_FUEL_PRICE_PER_LITER
 ): CostTransparency | null {
   if (!(km > 0)) return null;
+  const price = Number.isFinite(fuelPricePerLiter) && fuelPricePerLiter > 0 ? fuelPricePerLiter : DEFAULT_FUEL_PRICE_PER_LITER;
   return {
     chargedOneTime: Number.isFinite(chargedOneTime) ? Number(chargedOneTime) : null,
-    estimatedFuel: estimatedFuelCost(vehicle, km),
+    estimatedFuel: estimatedFuelCost(vehicle, km, price),
     estimatedToll: highwayTollCost(km),
-    includedNote: '청구 운임에 유류비·통행료가 포함되어 별도 추가 청구가 없어요.',
+    fuelPricePerLiter: price,
+    fuelEfficiencyKmPerL: FUEL_EFFICIENCY_KM_PER_L[vehicle],
+    includedNote: '예상 유류비·통행료는 실주행 기준 참고 추정치예요(유가·경로에 따라 달라질 수 있어요).',
   };
 }
 
-/** 시나리오 견적 결과로 투명성 데이터를 만든다(원시값 빌더 위임). */
-export function buildCostTransparency(result: ScenarioQuoteResult): CostTransparency | null {
+/** 시나리오 견적 결과로 투명성 데이터를 만든다(원시값 빌더 위임). 유가 미지정 시 result.fuelPricePerLiter 사용. */
+export function buildCostTransparency(
+  result: ScenarioQuoteResult,
+  fuelPricePerLiter?: number
+): CostTransparency | null {
   return buildCostTransparencyFrom(
     toVehicleKey(result.vehicleType),
     result.metrics.km,
-    result.oneTimePrice
+    result.oneTimePrice,
+    fuelPricePerLiter ?? result.fuelPricePerLiter
   );
 }

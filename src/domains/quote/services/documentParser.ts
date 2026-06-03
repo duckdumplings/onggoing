@@ -118,51 +118,67 @@ export async function parsePDF(fileBuffer: Buffer): Promise<ParsedDocument> {
 }
 
 /**
+ * XLSX 워크북을 행 순서를 보존한 탭 구분 텍스트로 변환한다.
+ * 행/열 순서를 그대로 유지해, 시간·순번이 있는 물류 표의 흐름을 후속 추론이 존중할 수 있게 한다.
+ */
+function workbookToText(workbook: XLSX.WorkBook): ParsedDocument {
+  const sheetNames = workbook.SheetNames;
+  const textParts: string[] = [];
+
+  for (const sheetName of sheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '', header: 1 }) as any[][];
+
+    textParts.push(`=== 시트: ${sheetName} ===\n`);
+
+    if (jsonData.length > 0) {
+      const header = jsonData[0];
+      if (Array.isArray(header)) {
+        textParts.push(header.join('\t') + '\n');
+      }
+      for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (Array.isArray(row)) {
+          textParts.push(row.map((cell) => String(cell || '')).join('\t') + '\n');
+        }
+      }
+    }
+
+    textParts.push('\n');
+  }
+
+  return {
+    text: textParts.join(''),
+    metadata: { sheetNames },
+  };
+}
+
+/**
  * Excel 파일 파싱 (.xlsx, .xls)
  */
 export async function parseExcel(fileBuffer: Buffer): Promise<ParsedDocument> {
   try {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const sheetNames = workbook.SheetNames;
-
-    // 모든 시트의 데이터를 텍스트로 변환
-    const textParts: string[] = [];
-
-    for (const sheetName of sheetNames) {
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '', header: 1 }) as any[][];
-
-      // 시트 이름 추가
-      textParts.push(`=== 시트: ${sheetName} ===\n`);
-
-      // 헤더가 있다면 포함
-      if (jsonData.length > 0) {
-        const header = jsonData[0];
-        if (Array.isArray(header)) {
-          textParts.push(header.join('\t') + '\n');
-        }
-
-        // 데이터 행 추가
-        for (let i = 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (Array.isArray(row)) {
-            textParts.push(row.map(cell => String(cell || '')).join('\t') + '\n');
-          }
-        }
-      }
-
-      textParts.push('\n');
-    }
-
-    return {
-      text: textParts.join(''),
-      metadata: {
-        sheetNames,
-      },
-    };
+    return workbookToText(workbook);
   } catch (error) {
     console.error('Excel 파싱 오류:', error);
     throw new Error(`Excel 파싱에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+  }
+}
+
+/**
+ * CSV 파일 파싱 (.csv) — 새 의존성 없이 이미 있는 xlsx로 처리.
+ * UTF-8(BOM 포함)로 디코딩 후 워크북으로 읽어 행 순서를 보존한 탭 구분 텍스트로 변환한다.
+ */
+export async function parseCsv(fileBuffer: Buffer): Promise<ParsedDocument> {
+  try {
+    // BOM 제거 후 UTF-8 텍스트로 해석. (한글 CSV는 UTF-8 저장을 권장)
+    const raw = fileBuffer.toString('utf-8').replace(/^\uFEFF/, '');
+    const workbook = XLSX.read(raw, { type: 'string', raw: true });
+    return workbookToText(workbook);
+  } catch (error) {
+    console.error('CSV 파싱 오류:', error);
+    throw new Error(`CSV 파싱에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
   }
 }
 
@@ -264,6 +280,8 @@ export async function parseDocument(
       return parsePDF(fileBuffer);
     case 'excel':
       return parseExcel(fileBuffer);
+    case 'csv':
+      return parseCsv(fileBuffer);
     case 'word':
       return parseWord(fileBuffer);
     case 'image':

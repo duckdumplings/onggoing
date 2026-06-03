@@ -127,6 +127,8 @@ export interface ScenarioQuoteResult {
     fuelSurcharge: number;
     annualVisits: number;
   };
+  /** 실비 투명성용 현재 유가(L당 원). 오피넷 라이브 또는 폴백. 서버에서 차종별로 부착. */
+  fuelPricePerLiter?: number;
 }
 
 export function toVehicleKey(label: VehicleLabel | string | undefined): Vehicle {

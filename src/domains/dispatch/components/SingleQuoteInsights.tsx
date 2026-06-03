@@ -9,6 +9,9 @@ import {
 import EtaConfidenceCard from './EtaConfidenceCard';
 import CostTransparencyCard from './CostTransparencyCard';
 
+/** 현재 유가(L당 원). 빌드 시 NEXT_PUBLIC_FUEL_PRICE_PER_LITER로 주입(미설정 시 pricing 기본값). */
+const ENV_FUEL_PRICE = Number(process.env.NEXT_PUBLIC_FUEL_PRICE_PER_LITER);
+
 interface SingleQuoteInsightsProps {
   vehicleType?: VehicleLabel | string;
   distanceKm?: number;
@@ -16,6 +19,8 @@ interface SingleQuoteInsightsProps {
   dwellMinutes?: number;
   /** 청구 1회 운임(원). 알면 투명성 카드에 함께 표시. */
   chargedOneTime?: number;
+  /** 현재 유가(L당 원). 미지정 시 환경변수/기본값 사용. */
+  fuelPricePerLiter?: number;
   departureAt?: string;
   realtimeTraffic?: boolean;
 }
@@ -30,6 +35,7 @@ export default function SingleQuoteInsights({
   driveMinutes,
   dwellMinutes,
   chargedOneTime,
+  fuelPricePerLiter,
   departureAt,
   realtimeTraffic,
 }: SingleQuoteInsightsProps) {
@@ -37,12 +43,18 @@ export default function SingleQuoteInsights({
   const drive = Number(driveMinutes) || 0;
   const dwell = Number(dwellMinutes) || 0;
   const vehicle = toVehicleKey(vehicleType);
+  const fuelPrice =
+    Number.isFinite(fuelPricePerLiter) && (fuelPricePerLiter as number) > 0
+      ? fuelPricePerLiter
+      : Number.isFinite(ENV_FUEL_PRICE) && ENV_FUEL_PRICE > 0
+        ? ENV_FUEL_PRICE
+        : undefined;
 
   const etaBand = buildEtaBand(
     { km, driveMinutes: drive, dwellMinutes: dwell, stopsCount: 0 },
     { realtimeTraffic }
   );
-  const cost = buildCostTransparencyFrom(vehicle, km, chargedOneTime);
+  const cost = buildCostTransparencyFrom(vehicle, km, chargedOneTime, fuelPrice);
 
   if (!etaBand && !cost) return null;
 

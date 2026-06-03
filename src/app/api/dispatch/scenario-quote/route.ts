@@ -8,12 +8,15 @@ import {
   type GeocodedStop,
 } from '@/domains/dispatch/services/stopGeocoder';
 import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
-import type {
-  QuoteScenario,
-  RouteMetrics,
-  RouteStop,
-  StopRole,
+import {
+  toVehicleKey,
+  type QuoteScenario,
+  type RouteMetrics,
+  type RouteStop,
+  type StopRole,
 } from '@/domains/dispatch/types/routePlan';
+import { getFuelPricePerLiter } from '@/domains/quote/services/fuelPriceProvider';
+import type { Vehicle } from '@/domains/quote/pricing';
 
 /**
  * 다중 시나리오 병렬 견적 API.
@@ -197,6 +200,19 @@ export async function POST(request: NextRequest) {
     );
 
     const comparison = compareScenarios(scenarios, metricsByLabel, sortKey);
+
+    // 실비 투명성 카드가 한국 실시간 유가(오피넷)를 반영하도록 차종별 유가를 1회 조회(캐시)해 부착.
+    const usedVehicles = Array.from(new Set(comparison.results.map((r) => toVehicleKey(r.vehicleType))));
+    const fuelByVehicle: Partial<Record<Vehicle, number>> = {};
+    await Promise.all(
+      usedVehicles.map(async (v) => {
+        fuelByVehicle[v] = (await getFuelPricePerLiter(v)).pricePerLiter;
+      })
+    );
+    comparison.results = comparison.results.map((r) => ({
+      ...r,
+      fuelPricePerLiter: fuelByVehicle[toVehicleKey(r.vehicleType)],
+    }));
 
     // comparison.results 순서에 맞춰 scenarioRoutes를 정렬(라벨 매칭).
     const orderedRoutes = comparison.results

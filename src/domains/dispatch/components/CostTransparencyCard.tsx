@@ -38,6 +38,9 @@ export default function CostTransparencyCard({ cost }: CostTransparencyCardProps
           <dt>참고: 예상 유류비</dt>
           <dd className="tabular-nums">~{won(cost.estimatedFuel)}</dd>
         </div>
+        <div className="text-[10px] text-muted-foreground/80">
+          유가 {cost.fuelPricePerLiter.toLocaleString('ko-KR')}원/L · 연비 {cost.fuelEfficiencyKmPerL}km/L 기준
+        </div>
         <div className="flex items-baseline justify-between text-muted-foreground">
           <dt>참고: 예상 통행료</dt>
           <dd className="tabular-nums">~{won(cost.estimatedToll)}</dd>
