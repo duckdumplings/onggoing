@@ -2,7 +2,25 @@
 // 기존엔 tools.ts(optimize_route, compare_departure_times)와 scenario-quote route에
 // 동일 로직(originStop = pickups[0], finalDrop 고정)이 3곳 중복돼 있었다. 단일화 + open-start 기본 규칙 적용.
 
-import type { RouteStop } from '@/domains/dispatch/types/routePlan';
+import type { RouteStop, StopRole } from '@/domains/dispatch/types/routePlan';
+
+/**
+ * 역할별 기본 체류(상하차/작업) 시간(분). 미지정 stop에 적용.
+ * 과거엔 0으로 보내 route-optimization이 일괄 10분으로 처리 → 대량/급식 배송이 비현실적으로 짧게 나왔다.
+ * 에이전트가 stop별 dwellMinutes를 주면 그 값이 우선한다(대량 배송은 15~20분 권장).
+ */
+function defaultDwellForRole(role: StopRole): number {
+  switch (role) {
+    case 'pickup':
+      return 15; // 출발지 적재
+    case 'drop':
+      return 12; // 배송 하차
+    case 'return':
+      return 8; // 반납
+    default:
+      return 5; // 단순 경유
+  }
+}
 
 export type RoutePointInput =
   | string
@@ -61,7 +79,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
       returnToOrigin: false,
       roadOption,
       departureAt,
-      dwellMinutes: rest.map((s) => s.dwellMinutes ?? 0),
+      dwellMinutes: rest.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
       openStart: false,
       startCandidateCount: 1,
       fastOrder: false,
@@ -95,7 +113,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     returnToOrigin: false,
     roadOption,
     departureAt,
-    dwellMinutes: ordered.map((s) => s.dwellMinutes ?? 0),
+    dwellMinutes: ordered.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
     openStart,
     // 출발지 후보를 픽업으로 제한(origin + 그 외 픽업). 배송지/반납지는 출발지가 될 수 없다.
     startCandidateCount: pickups.length,

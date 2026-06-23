@@ -1320,6 +1320,10 @@ export async function POST(request: NextRequest) {
     let validationErrors: string[] = [];
     let validationWarnings: string[] = [];
     let tmapFallbackUsed = false;
+    // 예측(타임머신) 실패로 현재 교통(routes, departureAt 없음)으로 대체한 구간 수.
+    // >0이면 그 구간은 "호출 시점" 교통이라 출발시각 예측이 아니다(여유가 부풀려질 수 있음).
+    let predictionFallbackSegments = 0;
+    let predictionAttemptedSegments = 0;
 
     let current = startLocation;
     let currentTime = departureAt ? new Date(departureAt) : new Date();
@@ -1387,6 +1391,10 @@ export async function POST(request: NextRequest) {
       console.log('trafficInfo:', usedTraffic);
       console.log('vehicleTypeCode:', vehicleTypeCode);
       console.log('====================');
+
+      // 출발시각 + time-first면 getTmapRoute가 예측(타임머신) 경로를 시도한다.
+      const segUsesPrediction = Boolean(segmentDepartureTime) && (roadOption || 'time-first') === 'time-first';
+      if (segUsesPrediction) predictionAttemptedSegments += 1;
 
       const seg = await getTmapRoute(
         { x: current.longitude, y: current.latitude },
@@ -1487,6 +1495,7 @@ export async function POST(request: NextRequest) {
 
           // routes 대체 사용 경고만 남김
           tmapFallbackUsed = true;
+          if (segUsesPrediction) predictionFallbackSegments += 1;
           validationWarnings.push(`예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`);
 
           // 시간 업데이트(체류 포함), 검증시계(체류 미포함)
@@ -1660,6 +1669,10 @@ export async function POST(request: NextRequest) {
         dwellTime: totalDwellTime, // 체류시간
         optimizeOrder: effectiveOptimizeOrder,
         usedTraffic,
+        // 예측(타임머신) 적용 현황: fallback>0이면 그만큼 출발시각 예측이 아니라 호출시점 교통이다.
+        predictionAttemptedSegments,
+        predictionFallbackSegments,
+        usedPrediction: predictionAttemptedSegments > 0 && predictionFallbackSegments < predictionAttemptedSegments,
         departureAt: departureAt ?? null,
         vehicleTypeCode,
         optimizationInfo,

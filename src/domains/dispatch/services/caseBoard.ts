@@ -84,6 +84,10 @@ export interface CaseBoardCaseResult {
   km?: number;
   driveMinutes?: number;
   dwellMinutes?: number;
+  /** 출발시각 예측(타임머신)을 시도한 구간 수. */
+  predictionAttemptedSegments?: number;
+  /** 예측 실패로 호출시점 교통으로 대체한 구간 수(>0이면 그만큼 소요가 비예측). */
+  predictionFallbackSegments?: number;
   deadline?: string | null;
   deadlineTarget?: DeadlineTarget;
   /** 마지막 배송 완료 시각(마감 기본 기준). */
@@ -199,6 +203,8 @@ async function computeCase(
     const km = Number(summary?.totalDistance || 0) / 1000;
     const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
     const dwellMinutes = Math.round(Number(summary?.dwellTime || 0) / 60);
+    const predictionAttemptedSegments = Number(summary?.predictionAttemptedSegments ?? 0) || 0;
+    const predictionFallbackSegments = Number(summary?.predictionFallbackSegments ?? 0) || 0;
     const stopsCount = Math.max(0, payload.destinations.length - (payload.useExplicitDestination ? 1 : 0));
 
     const quoteRes = await fetch(new URL('/api/quote-calculation', baseUrl), {
@@ -264,6 +270,8 @@ async function computeCase(
       km: Number(km.toFixed(1)),
       driveMinutes,
       dwellMinutes,
+      predictionAttemptedSegments,
+      predictionFallbackSegments,
       deadline: c.deadline ?? null,
       deadlineTarget: target,
       deliveryArrival: kstHHmm(deliveryArrivalIso),

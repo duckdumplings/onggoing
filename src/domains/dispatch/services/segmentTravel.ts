@@ -97,17 +97,18 @@ export async function getTmapRoute(
       }
       const url = 'https://apis.openapi.sk.com/tmap/routes/prediction?version=1';
 
-      // ISO 8601 형식으로 변환 (예: 2024-12-01T14:00:00+0900)
-      // 입력된 시간을 한국 시간대로 직접 변환
-      const departureDate = new Date(departureAtValue);
-
-      // 한국 시간대로 변환 (YYYY-MM-DDTHH:MM:SS+0900)
-      const year = departureDate.getFullYear();
-      const month = String(departureDate.getMonth() + 1).padStart(2, '0');
-      const day = String(departureDate.getDate()).padStart(2, '0');
-      const hours = String(departureDate.getHours()).padStart(2, '0');
-      const minutes = String(departureDate.getMinutes()).padStart(2, '0');
-      const seconds = String(departureDate.getSeconds()).padStart(2, '0');
+      // 출발 instant를 KST(+0900) 벽시계로 포맷한다.
+      // 주의: getFullYear/getHours 등은 "서버 로컬 시간대"를 따른다. Vercel 등 UTC 서버에서는
+      // 09:00 KST(=00:00Z) 출발이 00:00으로 해석돼 Tmap이 새벽(빈 도로) 교통을 예측하는 버그가 났다.
+      // instant + 9시간 후 getUTC*를 쓰면 서버 TZ와 무관하게 항상 KST 벽시계가 나온다.
+      const departureInstant = new Date(departureAtValue);
+      const kst = new Date(departureInstant.getTime() + 9 * 3600 * 1000);
+      const year = kst.getUTCFullYear();
+      const month = String(kst.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(kst.getUTCDate()).padStart(2, '0');
+      const hours = String(kst.getUTCHours()).padStart(2, '0');
+      const minutes = String(kst.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(kst.getUTCSeconds()).padStart(2, '0');
 
       const predictionTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+0900`;
 

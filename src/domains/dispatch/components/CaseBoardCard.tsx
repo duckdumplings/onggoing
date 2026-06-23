@@ -134,6 +134,15 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
         {c.returnArrival && (
           <span className="text-[10px] text-muted-foreground">반납완료 {c.returnArrival}</span>
         )}
+        {Boolean(c.predictionFallbackSegments && c.predictionFallbackSegments > 0) && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-warning-muted px-2 py-0.5 text-[10px] font-medium text-warning"
+            title="이 케이스 일부 구간은 출발시각 예측 대신 호출 시점 교통으로 계산됐어요. 정체를 덜 반영했을 수 있어 소요시간이 실제보다 짧게 나올 수 있어요."
+          >
+            <AlertTriangle className="h-3 w-3" />
+            교통 예측 일부 미반영 {c.predictionFallbackSegments}/{c.predictionAttemptedSegments ?? '?'}
+          </span>
+        )}
       </div>
 
       <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
