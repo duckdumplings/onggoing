@@ -17,6 +17,7 @@ import {
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCard';
 import AuditTimelineCard from '@/domains/dispatch/components/AuditTimelineCard';
+import CaseBoardCard from '@/domains/dispatch/components/CaseBoardCard';
 import QuoteResultCard from '@/domains/dispatch/components/QuoteResultCard';
 import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import { shouldRenderEvidence, getDomainFromUrl, WELCOME_MESSAGE } from '@/domains/chat/utils';
@@ -136,10 +137,13 @@ const MessageBubble = React.memo(function MessageBubble({
               {msg.structured.auditTimeline && (
                 <AuditTimelineCard audit={msg.structured.auditTimeline} />
               )}
+              {msg.structured.caseBoard && (
+                <CaseBoardCard board={msg.structured.caseBoard} onPreviewRoute={onPreviewRoute} />
+              )}
               {!msg.structured.scenarioComparison && Boolean(msg.structured.quote) && (
                 <QuoteResultCard quote={msg.structured.quote} onOpenPanel={onOpenQuotePanel} />
               )}
-              {!msg.structured.scenarioComparison && Boolean(msg.structured.routeRequest) && (
+              {!msg.structured.scenarioComparison && !msg.structured.caseBoard && Boolean(msg.structured.routeRequest) && (
                 <button
                   type="button"
                   onClick={() => onPreviewRoute(msg.structured?.routeRequest)}

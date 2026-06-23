@@ -36,6 +36,7 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
     Boolean(payload.scenarioComparison) ||
     Boolean(payload.departureMatrix) ||
     Boolean(payload.auditTimeline) ||
+    Boolean(payload.caseBoard) ||
     Boolean(payload.routeRequest) ||
     Boolean(payload.quote);
   if (!hasAny) return undefined;
@@ -47,6 +48,7 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
     routeRequest: payload.routeRequest ?? undefined,
     departureMatrix: payload.departureMatrix ?? undefined,
     auditTimeline: payload.auditTimeline ?? undefined,
+    caseBoard: payload.caseBoard ?? undefined,
     departureAt: payload.departureAt ?? undefined,
     realtimeTraffic: true,
   };

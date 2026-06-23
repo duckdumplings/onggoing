@@ -1,5 +1,8 @@
 import type { ScenarioComparison } from '@/domains/dispatch/services/scenarioComparison';
 import type { QuoteConfidence } from '@/domains/dispatch/services/scenarioInsights';
+import type { CaseBoardResult } from '@/domains/dispatch/services/caseBoard';
+
+export type { CaseBoardResult, CaseBoardCaseResult } from '@/domains/dispatch/services/caseBoard';
 
 /** 출발시간 매트릭스 한 행(compare_departure_times 결과). 누락 필드는 계산 실패. */
 export type DepartureMatrixRow = {
@@ -17,7 +20,12 @@ export type DepartureMatrixRow = {
   formattedOneTime?: string;
   annualPrice?: number;
   formattedAnnual?: string;
+  /** 마감 기준 도착(deadlineTarget 기준, 기본=마지막 배송 완료). */
   arrivalLabel?: string;
+  /** 마지막 배송 완료 시각(마감 기본 기준). */
+  deliveryArrivalLabel?: string;
+  /** 반납 완료(=업무 종료) 시각. 반납 없으면 미존재. 마감 대상 아님. */
+  returnArrivalLabel?: string;
   meetsDeadline?: boolean;
   deadlineSlackMinutes?: number;
   error?: string;
@@ -29,6 +37,8 @@ export type DepartureMatrixResult = {
   recommendedId: string | null;
   frequencyLabel?: string | null;
   deadline?: string | null;
+  /** 마감 판정 기준 지점. delivery=마지막 배송 완료(기본)/return=반납 완료/final=최종 도착. */
+  deadlineTarget?: 'delivery' | 'return' | 'final';
   deadlineInfeasible?: boolean;
   deadlineNote?: string | null;
   basis?: string;
@@ -84,6 +94,8 @@ export type ChatStructuredPayload = {
   departureMatrix?: DepartureMatrixResult | null;
   /** 사후 지연 진단 결과(있으면 AuditTimelineCard 렌더). */
   auditTimeline?: AuditTimelineResult | null;
+  /** 멀티 케이스 견적 보드(있으면 CaseBoardCard 렌더). */
+  caseBoard?: CaseBoardResult | null;
   departureAt?: string;
   realtimeTraffic?: boolean;
   /** 견적 가정/전제(결정적 산출). 결과 카드와 PDF 가정 섹션에 노출. */
@@ -125,6 +137,7 @@ export type AIQuoteResponse = {
   scenarioRoutes?: Array<{ label: string; routeRequest: any }>;
   departureMatrix?: DepartureMatrixResult | null;
   auditTimeline?: AuditTimelineResult | null;
+  caseBoard?: CaseBoardResult | null;
   departureAt?: string | null;
   assumptions?: string[];
   /** 견적 신뢰도(배지). 경로 산출/요금 산출/출발시간/실시간 교통 신호 기반. */

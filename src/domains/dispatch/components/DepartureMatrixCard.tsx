@@ -25,6 +25,14 @@ export default function DepartureMatrixCard({ matrix }: DepartureMatrixCardProps
   const rows = matrix.matrix ?? [];
   if (!rows.length) return null;
   const hasDeadline = Boolean(matrix.deadline);
+  const targetLabel =
+    matrix.deadlineTarget === 'return'
+      ? '반납 완료'
+      : matrix.deadlineTarget === 'final'
+        ? '최종 도착'
+        : '배송 완료';
+  // 반납이 마감 대상이 아닐 때(기본 delivery) 반납완료 시각을 보조로 보여줄지.
+  const showReturn = matrix.deadlineTarget !== 'return' && rows.some((r) => r.returnArrivalLabel);
 
   return (
     <div className="glass-panel p-4 w-full">
@@ -35,7 +43,7 @@ export default function DepartureMatrixCard({ matrix }: DepartureMatrixCardProps
         </div>
         {hasDeadline && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-            마감 {matrix.deadline}
+            마감 {matrix.deadline} · {targetLabel} 기준
           </span>
         )}
       </div>
@@ -49,7 +57,7 @@ export default function DepartureMatrixCard({ matrix }: DepartureMatrixCardProps
             <tr className="text-left text-muted-foreground border-b border-border">
               <th className="py-2 pr-3 font-medium">출발</th>
               <th className="py-2 px-3 font-medium text-right">소요</th>
-              {hasDeadline && <th className="py-2 px-3 font-medium text-center">도착/마감</th>}
+              {hasDeadline && <th className="py-2 px-3 font-medium text-center">{targetLabel}/마감</th>}
               <th className="py-2 pl-3 font-medium text-right">1회 운임</th>
             </tr>
           </thead>
@@ -97,8 +105,15 @@ export default function DepartureMatrixCard({ matrix }: DepartureMatrixCardProps
                             ) : (
                               <X className="h-3.5 w-3.5 text-error-600" />
                             )}
-                            <span className="text-foreground/80">{row.arrivalLabel ?? '-'}</span>
+                            <span className="text-foreground/80">
+                              {row.deliveryArrivalLabel ?? row.arrivalLabel ?? '-'}
+                            </span>
                           </span>
+                          {showReturn && row.returnArrivalLabel && (
+                            <div className="text-[10px] text-muted-foreground/80">
+                              반납완료 {row.returnArrivalLabel}
+                            </div>
+                          )}
                         </td>
                       )}
                       <td className="py-2 pl-3 text-right font-semibold text-foreground tabular-nums">

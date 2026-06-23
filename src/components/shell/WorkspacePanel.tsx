@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calculator, MapPin, MessageSquare, Truck, X } from 'lucide-react';
+import { Calculator, MapPin, MessageSquare, Truck, X, Maximize2, Minimize2 } from 'lucide-react';
 import AIQuoteChatModal from '@/components/modals/AIQuoteChatModal';
 import MultiDriverResultsPanel from '@/components/panels/MultiDriverResultsPanel';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
@@ -20,6 +20,8 @@ interface WorkspacePanelProps {
 export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
   const { workspaceOpen, workspaceTab, setWorkspaceTab, closeWorkspace, multiDriverResult, routeData, setRouteSlotEl, quoteSummary } =
     useRouteOptimization();
+  // 정보 밀도가 높은 화면(케이스 보드/비교표)에서 패널을 넓게 펼친다. 데스크톱 전용.
+  const [expanded, setExpanded] = React.useState(false);
 
   const hasResult = !!(multiDriverResult && multiDriverResult.success);
   const hasRoute = !!routeData?.summary;
@@ -71,10 +73,22 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             )}
           </div>
         )}
+        {isDesktop && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="focus-ring-inset ml-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label={expanded ? '패널 좁히기' : '패널 넓히기'}
+            aria-pressed={expanded}
+            title={expanded ? '패널 좁히기' : '패널 넓히기'}
+          >
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+        )}
         <button
           type="button"
           onClick={closeWorkspace}
-          className="focus-ring-inset ml-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          className={`focus-ring-inset mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground ${isDesktop ? '' : 'ml-auto'}`}
           aria-label="워크스페이스 닫기"
           title="닫기"
         >
@@ -119,7 +133,9 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             exit={{ opacity: 0, scale: 0.97, x: 24, y: 20 }}
             transition={{ duration: 0.34, ease: [0.2, 0, 0, 1] }}
             style={{ transformOrigin: 'bottom right' }}
-            className="absolute right-0 top-0 z-50 h-full w-full overflow-hidden border-l border-border bg-card shadow-2xl sm:w-[440px] lg:w-[500px] xl:w-[560px]"
+            className={`absolute right-0 top-0 z-50 h-full w-full overflow-hidden border-l border-border bg-card shadow-2xl transition-[width] duration-300 ${
+              expanded ? 'sm:w-[680px] lg:w-[820px] xl:w-[960px]' : 'sm:w-[440px] lg:w-[500px] xl:w-[560px]'
+            }`}
           >
             {panel}
           </motion.aside>
