@@ -31,6 +31,11 @@ type RenderPayload = {
   payloadHash: string;
 };
 
+function getTargetOrigin() {
+  if (typeof window === 'undefined') return '*';
+  return window.location.origin;
+}
+
 interface TmapMapProps {
   center?: { lat: number; lng: number };
   zoom?: number;
@@ -123,7 +128,7 @@ export default function TmapMap({
 
     inflightRequestIdRef.current = payload.requestId;
     setRenderStatus('waiting-ack');
-    win.postMessage(payload, '*');
+    win.postMessage(payload, getTargetOrigin());
 
     clearAckTimer();
     ackTimerRef.current = window.setTimeout(() => {
@@ -176,7 +181,7 @@ export default function TmapMap({
         setError(null);
         isMapReadyRef.current = false;
         setIsMapReadyState(false);
-        iframe.contentWindow?.postMessage({ type: 'init', center }, '*');
+        iframe.contentWindow?.postMessage({ type: 'init', center }, getTargetOrigin());
         clearMapReadyFallbackTimer();
         mapReadyFallbackTimerRef.current = window.setTimeout(() => {
           if (isMapReadyRef.current) return;
@@ -200,7 +205,7 @@ export default function TmapMap({
     const handleFrameMessage = (event: MessageEvent) => {
       const sameSource = event.source === iframeRef.current?.contentWindow;
       const sameOrigin = event.origin === window.location.origin;
-      if (!sameSource && !sameOrigin) return;
+      if (!sameSource || !sameOrigin) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
 
@@ -300,16 +305,15 @@ export default function TmapMap({
     if (!ready || !iframeRef.current || !focusedWaypoint) return;
     iframeRef.current.contentWindow?.postMessage(
       { type: 'focusWaypoint', waypoint: focusedWaypoint },
-      '*'
+      getTargetOrigin()
     );
   }, [ready, focusedWaypoint]);
 
   return (
-    <div className={`${className} ${height} map-container`} style={{ height: '100vh', margin: 0, padding: 0 }}>
+    <div className={`relative ${className} ${height} map-container`}>
       <div
         ref={containerRef}
         className="w-full h-full"
-        style={{ height: '100vh', margin: 0, padding: 0 }}
       />
       {ready && (
         <div className="absolute top-2 right-2 rounded bg-white/80 px-2 py-1 text-xs text-gray-600">

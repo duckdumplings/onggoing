@@ -1,19 +1,9 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  // 환경변수 디버깅 강화
   const nextPublicKey = process.env.NEXT_PUBLIC_TMAP_API_KEY
   const tmapKey = process.env.TMAP_API_KEY
   const appKey = nextPublicKey || tmapKey || ''
-
-  // 디버깅용 로그 (프로덕션에서는 제거 필요)
-  console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY exists:', !!nextPublicKey)
-  console.log('[tmap-embed] NEXT_PUBLIC_TMAP_API_KEY length:', nextPublicKey?.length || 0)
-  console.log('[tmap-embed] TMAP_API_KEY exists:', !!tmapKey)
-  console.log('[tmap-embed] TMAP_API_KEY length:', tmapKey?.length || 0)
-  console.log('[tmap-embed] Final key exists:', !!appKey)
-  console.log('[tmap-embed] Final key length:', appKey.length)
-  console.log('[tmap-embed] All env keys:', Object.keys(process.env).filter(k => k.includes('TMAP')))
 
   if (!appKey) {
     console.error('[tmap-embed] TMAP API key not found in any environment variable')
@@ -71,6 +61,7 @@ export async function GET() {
             let lastSegmentKey = null; // 토글 상태 추적용
             let lastRenderRequestId = null;
             let lastPayloadHash = null;
+            const parentOrigin = window.location.origin;
             
             // 전역 디버그 노출 (초기 no-op)
             try { window.toggleNearest = function(){ console.log('[TmapEmbed] toggleNearest noop (not ready)'); }; } catch(e){}
@@ -123,19 +114,22 @@ export async function GET() {
                 window.addEventListener('message', handleMessage);
                 
                 // 초기화 완료 메시지
-                window.parent.postMessage({ type: 'mapReady' }, '*');
+                window.parent.postMessage({ type: 'mapReady' }, parentOrigin);
                 // 전역 인터랙션 설치
                 try { installGlobalInteraction(true); } catch (e) { console.warn('[TmapEmbed] installGlobalInteraction failed at init', e); }
                 try { console.log('[TmapEmbed] After init, toggleNearest type =', typeof window.toggleNearest); } catch(e){}
                 
               } catch (error) {
                 console.error('[TmapEmbed] Map initialization failed:', error);
-                window.parent.postMessage({ type: 'mapError', error: error.message }, '*');
+                window.parent.postMessage({ type: 'mapError', error: error.message }, parentOrigin);
               }
             }
             
             function handleMessage(event) {
               try {
+                if (event.origin !== parentOrigin) {
+                  return;
+                }
                 console.log('[TmapEmbed] Message received:', event.data);
                 const { type, routeData, center, waypoints, multiDriverMode, requestId, payloadHash } = event.data;
                 
@@ -176,7 +170,7 @@ export async function GET() {
                       requestId: lastRenderRequestId,
                       payloadHash: lastPayloadHash,
                       applied: renderApplied
-                    }, '*');
+                    }, parentOrigin);
                     break;
 
                   case 'focusWaypoint':
@@ -221,6 +215,28 @@ export async function GET() {
               try { window.segmentInteracts = segmentInteracts; window.markerInteracts = markerInteracts; } catch(e){}
               if (overlayBadge) { try { overlayBadge.remove(); } catch(e){} overlayBadge = null; }
               if (overlayTip) { try { overlayTip.remove(); } catch(e){} overlayTip = null; }
+            }
+
+            function formatTimeLabel(value) {
+              if (!value) return '';
+              if (typeof value === 'string' && /^\\d{2}:\\d{2}$/.test(value)) return value;
+              const d = new Date(value);
+              if (Number.isNaN(d.getTime())) return '';
+              const h = String(d.getHours()).padStart(2, '0');
+              const m = String(d.getMinutes()).padStart(2, '0');
+              return h + ':' + m;
+            }
+
+            function formatMarkerTip(point) {
+              const head = (point.address || '') + (point.label ? ' · ' + point.label : '');
+              const arrival = point.etaLabel || formatTimeLabel(point.arrivalTime);
+              const departure = formatTimeLabel(point.departureTime);
+              const dwell = Number.isFinite(Number(point.dwellTime)) ? Math.round(Number(point.dwellTime)) + '분 체류' : '';
+              const parts = [];
+              if (arrival) parts.push('도착 ' + arrival);
+              if (departure) parts.push('출발 ' + departure);
+              if (dwell) parts.push(dwell);
+              return parts.length ? head + ' / ' + parts.join(' · ') : head;
             }
 
             // 다중 배송원 경로 그리기
@@ -321,6 +337,10 @@ export async function GET() {
                           position: tipPos, 
                           address: wpAddress, 
                           label: tipLabel,
+                          etaLabel: wp.etaLabel || '',
+                          arrivalTime: wp.arrivalTime || '',
+                          departureTime: wp.departureTime || '',
+                          dwellTime: wp.dwellTime,
                           driverIndex: driverIndex,
                           color: wpColor
                         });
@@ -356,7 +376,14 @@ export async function GET() {
                               tip.style.boxShadow = '0 2px 8px rgba(0,0,0,.3)';
                               tip.style.whiteSpace = 'nowrap';
                               tip.style.zIndex = '1000';
-                              tip.textContent = tipLabel;
+                              tip.textContent = formatMarkerTip({
+                                address: wpAddress,
+                                label: tipLabel,
+                                etaLabel: wp.etaLabel,
+                                arrivalTime: wp.arrivalTime,
+                                departureTime: wp.departureTime,
+                                dwellTime: wp.dwellTime
+                              });
                               layer.appendChild(tip);
                             }
                             
@@ -606,14 +633,20 @@ export async function GET() {
                       markers.push(marker);
                       console.log('[TmapEmbed] 핀 ' + (index + 1) + ' 추가됨:', { lat: point.lat, lng: point.lng, label: point.label });
 
-                      // 핀 클릭/롱프레스 툴팁 (주소/라벨)
+                      // 핀 클릭/롱프레스 툴팁 (주소/라벨/ETA)
                       try {
-                        const tipHtml = '<div style="background:#111;color:#fff;padding:6px 8px;border-radius:8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);white-space:nowrap">' +
-                          (point.address ? point.address : '') + (point.label ? ' · ' + point.label : '') +
-                          '</div>';
                         const tipPos = new Tmapv2.LatLng(point.lat, point.lng);
                         // 전역 인터랙션용 목록 저장 (툴팁은 DOM으로 표시)
-                        markerInteracts.push({ marker: marker, position: tipPos, address: point.address || '', label: point.label || '' });
+                        markerInteracts.push({
+                          marker: marker,
+                          position: tipPos,
+                          address: point.address || '',
+                          label: point.label || '',
+                          etaLabel: point.etaLabel || '',
+                          arrivalTime: point.arrivalTime || '',
+                          departureTime: point.departureTime || '',
+                          dwellTime: point.dwellTime
+                        });
 
                         const bind = (target, type, handler) => { try { if (Tmapv2.Event && typeof Tmapv2.Event.addListener === 'function') { Tmapv2.Event.addListener(target, type, handler); return true; } } catch(e){} return false; };
                         const toggleTip = () => {
@@ -624,7 +657,7 @@ export async function GET() {
                             if (!layer) return;
                             let tip = layer.querySelector('._markerTip');
                             if (!tip) { tip = document.createElement('div'); tip.className = '_markerTip'; tip.style.position = 'absolute'; tip.style.transform = 'translate(-50%, -120%)'; tip.style.background = '#111'; tip.style.color = '#fff'; tip.style.padding = '6px 8px'; tip.style.borderRadius = '8px'; tip.style.fontSize = '12px'; tip.style.boxShadow = '0 2px 8px rgba(0,0,0,.25)'; layer.appendChild(tip); }
-                            tip.textContent = (point.address || '') + (point.label ? ' · ' + point.label : '');
+                            tip.textContent = formatMarkerTip(point);
                             const rect = container.getBoundingClientRect();
                             const zoom = (typeof map.getZoom === 'function') ? map.getZoom() : 14;
                             const center = (typeof map.getCenter === 'function') ? map.getCenter() : { getLat: () => 37.5665, getLng: () => 126.978 };
@@ -1114,7 +1147,7 @@ export async function GET() {
                     if (d < bestMd) { bestMd = d; bestM = markerInteracts[i]; bestMPx = pp; }
                   }
                   if (bestM && bestMd < 48) {
-                    overlayTip.textContent = (bestM.address || '') + (bestM.label ? ' · ' + bestM.label : '');
+                    overlayTip.textContent = formatMarkerTip(bestM);
                     overlayTip.style.left = bestMPx.x + 'px';
                     overlayTip.style.top = bestMPx.y + 'px';
                     overlayTip.style.display = 'block';
@@ -1204,7 +1237,7 @@ export async function GET() {
                       overlayTip.style.display = 'none'; 
                       lastMarkerKey = null; return;
                     }
-                    overlayTip.textContent = (bestM.address || '') + (bestM.label ? ' · ' + bestM.label : '');
+                    overlayTip.textContent = formatMarkerTip(bestM);
                     overlayTip.style.left = bestMPx.x + 'px'; overlayTip.style.top = bestMPx.y + 'px'; overlayTip.style.display = 'block';
                     lastMarkerKey = key;
                     return; // 마커 우선 토글

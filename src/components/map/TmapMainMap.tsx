@@ -225,40 +225,39 @@ export default function TmapMainMap() {
         dwellTime?: number;
       }>;
 
-      destinations.forEach((dest, index) => {
-        const isLastDestination = index === destinations.length - 1;
-        const hasExplicitDestination = Boolean(
-          (routeData.summary as any)?.useExplicitDestination ||
-          (routeData.summary as any)?.finalDestinationAddress ||
-          options?.useExplicitDestination
-        );
-        const isDestinationNode = isLastDestination && hasExplicitDestination;
-        const matched = routeWaypoints.find((wp) =>
-          Math.abs(wp.latitude - dest.lat) < 0.0001 &&
-          Math.abs(wp.longitude - dest.lng) < 0.0001
-        ) || routeWaypoints[index];
-
-        let label, color, priority;
-
-        if (isDestinationNode) {
-          // 최종 도착지
-          label = '도착';
-          color = '#EF4444'; // 빨간색
-          priority = 3;
-        } else {
-          // 경유지들 (최적화된 순서 번호 표시)
-          label = String(index + 1);
-          color = '#3B82F6'; // 파란색
-          priority = 2;
-        }
-
-        points.push({
+      const hasExplicitDestination = Boolean(
+        (routeData.summary as any)?.useExplicitDestination ||
+        (routeData.summary as any)?.finalDestinationAddress ||
+        options?.useExplicitDestination
+      );
+      const orderedStops = routeWaypoints.length
+        ? routeWaypoints.map((wp) => ({
+          lat: wp.latitude,
+          lng: wp.longitude,
+          address: wp.address || '',
+          waypoint: wp,
+        }))
+        : destinations.map((dest, index) => ({
           lat: dest.lat,
           lng: dest.lng,
+          address: (dest as any).address || '',
+          waypoint: routeWaypoints[index],
+        }));
+
+      orderedStops.forEach((stop, index) => {
+        const isDestinationNode = hasExplicitDestination && index === orderedStops.length - 1;
+        const matched = stop.waypoint;
+        const label = isDestinationNode ? '도착' : String(index + 1);
+        const color = isDestinationNode ? '#EF4444' : '#3B82F6';
+        const priority = isDestinationNode ? 3 : 2;
+
+        points.push({
+          lat: stop.lat,
+          lng: stop.lng,
           label,
           color,
           priority,
-          address: (dest as any).address || matched?.address || '',
+          address: stop.address || matched?.address || '',
           arrivalTime: matched?.arrivalTime,
           departureTime: matched?.departureTime,
           dwellTime: matched?.dwellTime,
