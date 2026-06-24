@@ -13,7 +13,10 @@ interface ResultSectionProps {
   onScenarioSelect: (label: string) => void;
   onSend: (message: string) => void;
   onFillInput: (text: string) => void;
-  onGenerateFile: (type: GeneratedFile['file_type'], override?: { structured?: ChatStructuredPayload }) => void;
+  onGenerateFile: (
+    type: GeneratedFile['file_type'],
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+  ) => void;
   isGeneratingFile: boolean;
   previewMode: 'input-order' | 'optimized-order';
   setPreviewMode: React.Dispatch<React.SetStateAction<'input-order' | 'optimized-order'>>;
@@ -96,33 +99,59 @@ export default function ResultSection({
         </div>
       )}
 
-      {!loading && (latestResult?.quote || latestResult?.scenarioComparison) && (
+      {!loading && (latestResult?.quote || latestResult?.scenarioComparison || latestResult?.caseBoard) && (
         <div className="flex flex-wrap gap-2 animate-in fade-in duration-500">
+          {!latestResult?.caseBoard && (
+            <>
+              <button
+                type="button"
+                onClick={() => onSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+              >
+                <Truck className="w-3.5 h-3.5" />
+                다른 차종으로 비교
+              </button>
+              <button
+                type="button"
+                onClick={() => onSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                다른 요금제로 보기
+              </button>
+            </>
+          )}
           <button
             type="button"
-            onClick={() => onSend('같은 조건으로 레이와 스타렉스를 모두 비교해줘')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-          >
-            <Truck className="w-3.5 h-3.5" />
-            다른 차종으로 비교
-          </button>
-          <button
-            type="button"
-            onClick={() => onSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-          >
-            <Calculator className="w-3.5 h-3.5" />
-            다른 요금제로 보기
-          </button>
-          <button
-            type="button"
-            onClick={() => onGenerateFile('pdf')}
+            onClick={() => onGenerateFile('pdf', latestResult?.caseBoard ? { documentView: 'customer-summary' } : undefined)}
             disabled={isGeneratingFile}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
           >
             {isGeneratingFile ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-            PDF 견적서
+            {latestResult?.caseBoard ? '고객용 PDF' : 'PDF 견적서'}
           </button>
+          {latestResult?.caseBoard && (
+            <>
+              <button
+                type="button"
+                onClick={() => onGenerateFile('pdf', { documentView: 'calculation-basis' })}
+                disabled={isGeneratingFile}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                상세 근거 PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => onGenerateFile('pdf', { documentView: 'internal-risk' })}
+                disabled={isGeneratingFile}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                내부 리스크 PDF
+              </button>
+            </>
+          )}
         </div>
       )}
 

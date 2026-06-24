@@ -65,6 +65,28 @@ interface RouteWaypoint {
   isNextDay?: boolean;
 }
 
+interface RouteTimelineEntry {
+  seq: number;
+  address: string;
+  role: 'pickup' | 'drop' | 'return' | 'waypoint';
+  arrivalTime: string;
+  departureTime: string;
+  dwellTime: number;
+}
+
+interface RouteSegmentSummary {
+  seq: number;
+  from: string;
+  to: string;
+  departureTime: string;
+  arrivalTime: string;
+  driveSeconds: number;
+  distanceMeters: number;
+  dwellMinutes: number;
+  predictionAttempted: boolean;
+  predictionFallback: boolean;
+}
+
 interface OptimizationParams {
   alpha: number; // 거리 가중치 (기본값: 1.0)
   beta: number;  // 시간제약 위반 패널티 가중치 (기본값: 1000.0)
@@ -821,6 +843,7 @@ export async function POST(request: NextRequest) {
       deliveryTimes = [],
       isNextDayFlags = [],
       dwellMinutes = [],
+      originDwellMinutes = 0,
       openStart = false,
       fastOrder = false,
       startCandidateCount,
@@ -1315,6 +1338,8 @@ export async function POST(request: NextRequest) {
 
     const segmentFeatures: any[] = [];
     const waypoints: RouteWaypoint[] = [];
+    const routeTimeline: RouteTimelineEntry[] = [];
+    const segmentSummary: RouteSegmentSummary[] = [];
     let totalDistance = 0;
     let totalTime = 0;
     let validationErrors: string[] = [];
@@ -1327,6 +1352,30 @@ export async function POST(request: NextRequest) {
 
     let current = startLocation;
     let currentTime = departureAt ? new Date(departureAt) : new Date();
+    const normalizedOriginDwellMinutes = Number.isFinite(Number(originDwellMinutes)) ? Math.max(0, Number(originDwellMinutes)) : 0;
+    if (normalizedOriginDwellMinutes > 0) {
+      routeTimeline.push({
+        seq: 1,
+        address: startLocation.address,
+        role: 'pickup',
+        arrivalTime: new Date(currentTime.getTime() - normalizedOriginDwellMinutes * 60 * 1000).toISOString(),
+        departureTime: currentTime.toISOString(),
+        dwellTime: normalizedOriginDwellMinutes,
+      });
+    }
+
+    const destinationDwell = (index: number) => {
+      const direct = dwellMinutes[index];
+      const legacy = dwellMinutes[index + 1];
+      const value = dwellMinutes.length === orderedDestinations.length ? direct : legacy;
+      return Number.isFinite(Number(value)) ? Number(value) : 10;
+    };
+    const returnDwellValue = () => {
+      const direct = dwellMinutes[orderedDestinations.length];
+      const legacy = dwellMinutes[orderedDestinations.length + 1];
+      const value = dwellMinutes.length === orderedDestinations.length ? 0 : (direct ?? legacy);
+      return Number.isFinite(Number(value)) ? Number(value) : 0;
+    };
 
     // 주소 → 시간제약 매핑 (최종 순서에서도 정확한 매칭 보장)
     const constraintByAddress = new Map<string, { deliveryTime: string; isNextDay: boolean }>();
@@ -1453,9 +1502,21 @@ export async function POST(request: NextRequest) {
         }
 
         // 다음 구간을 위한 현재 시간 업데이트 (이동시간 + 체류시간)
-        const dwellTime = dwellMinutes[i + 1] || 10; // 경유지 체류시간
+        const dwellTime = destinationDwell(i); // 경유지 체류시간
         const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
         currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
+        segmentSummary.push({
+          seq: segmentSummary.length + 1,
+          from: current.address,
+          to: dest.address,
+          departureTime: segmentDepartureTime.toISOString(),
+          arrivalTime: arrivalTime.toISOString(),
+          driveSeconds: segmentTime,
+          distanceMeters: segmentDistance,
+          dwellMinutes: dwellTime,
+          predictionAttempted: segUsesPrediction,
+          predictionFallback: false,
+        });
 
         // 검증용 시계 업데이트: 체류 미고려(운전시간만)
         validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
@@ -1467,6 +1528,14 @@ export async function POST(request: NextRequest) {
         waypoint.dwellTime = dwellTime;
         waypoint.deliveryTime = cForDest?.deliveryTime || null;
         waypoint.isNextDay = cForDest?.isNextDay || false;
+        routeTimeline.push({
+          seq: routeTimeline.length + 1,
+          address: dest.address,
+          role: 'drop',
+          arrivalTime: waypoint.arrivalTime,
+          departureTime: waypoint.departureTime,
+          dwellTime,
+        });
       } else {
         // 예측 실패 → 일반 routes 재시도
         const routesSeg = await getTmapRoute(
@@ -1499,10 +1568,22 @@ export async function POST(request: NextRequest) {
           validationWarnings.push(`예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`);
 
           // 시간 업데이트(체류 포함), 검증시계(체류 미포함)
-          const dwellTime = dwellMinutes[i + 1] || 10;
+          const dwellTime = destinationDwell(i);
           const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
           currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
           validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
+          segmentSummary.push({
+            seq: segmentSummary.length + 1,
+            from: current.address,
+            to: dest.address,
+            departureTime: segmentDepartureTime.toISOString(),
+            arrivalTime: arrivalTime.toISOString(),
+            driveSeconds: segmentTime,
+            distanceMeters: segmentDistance,
+            dwellMinutes: dwellTime,
+            predictionAttempted: segUsesPrediction,
+            predictionFallback: true,
+          });
 
           // 경유지별 도착시간 저장
           const waypoint = waypoints[waypoints.length - 1];
@@ -1511,6 +1592,14 @@ export async function POST(request: NextRequest) {
           waypoint.dwellTime = dwellTime;
           waypoint.deliveryTime = cForDest?.deliveryTime || null;
           waypoint.isNextDay = cForDest?.isNextDay || false;
+          routeTimeline.push({
+            seq: routeTimeline.length + 1,
+            address: dest.address,
+            role: 'drop',
+            arrivalTime: waypoint.arrivalTime,
+            departureTime: waypoint.departureTime,
+            dwellTime,
+          });
         } else {
           // 모든 시도 실패 → 하드 에러(폴백 미사용)
           throw new Error(`TMAP_UNAVAILABLE: ${current.address} → ${dest.address}`);
@@ -1544,8 +1633,20 @@ export async function POST(request: NextRequest) {
         totalDistance += returnDistance;
         totalTime += returnTime;
         const returnArrival = new Date(currentTime.getTime() + returnTime * 1000);
-        const returnDwell = dwellMinutes[orderedDestinations.length + 1] || 0;
+        const returnDwell = returnDwellValue();
         const returnDeparture = new Date(returnArrival.getTime() + returnDwell * 60 * 1000);
+        segmentSummary.push({
+          seq: segmentSummary.length + 1,
+          from: current.address,
+          to: startLocation.address,
+          departureTime: currentTime.toISOString(),
+          arrivalTime: returnArrival.toISOString(),
+          driveSeconds: returnTime,
+          distanceMeters: returnDistance,
+          dwellMinutes: returnDwell,
+          predictionAttempted: Boolean(currentTime) && (roadOption || 'time-first') === 'time-first',
+          predictionFallback: false,
+        });
         waypoints.push({
           latitude: startLocation.latitude,
           longitude: startLocation.longitude,
@@ -1556,6 +1657,14 @@ export async function POST(request: NextRequest) {
           deliveryTime: null,
           isNextDay: false
         });
+        routeTimeline.push({
+          seq: routeTimeline.length + 1,
+          address: startLocation.address,
+          role: 'return',
+          arrivalTime: returnArrival.toISOString(),
+          departureTime: returnDeparture.toISOString(),
+          dwellTime: returnDwell,
+        });
         currentTime = returnDeparture;
         returnedToOrigin = true;
       } else {
@@ -1564,7 +1673,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 체류시간 계산 (실제 waypoints에서 계산)
-    let totalDwellTime = 0;
+    let totalDwellTime = normalizedOriginDwellMinutes * 60;
     if (waypoints && waypoints.length > 0) {
       waypoints.forEach((wp: any) => {
         if (wp.dwellTime) {
@@ -1674,6 +1783,7 @@ export async function POST(request: NextRequest) {
         predictionFallbackSegments,
         usedPrediction: predictionAttemptedSegments > 0 && predictionFallbackSegments < predictionAttemptedSegments,
         departureAt: departureAt ?? null,
+        originDwellMinutes: normalizedOriginDwellMinutes,
         vehicleTypeCode,
         optimizationInfo,
         roadOptionApplied: roadOption,
@@ -1691,6 +1801,8 @@ export async function POST(request: NextRequest) {
         }
       },
       waypoints,
+      timeline: routeTimeline,
+      segmentSummary,
     };
 
     return NextResponse.json({

@@ -219,6 +219,18 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
               </div>
             </>
           )}
+          {c.riskReason && (
+            <>
+              <div className="text-muted-foreground">리스크 사유</div>
+              <div className="text-right text-foreground">{c.riskReason}</div>
+            </>
+          )}
+          {c.recommendedAction && (
+            <>
+              <div className="text-muted-foreground">권장 대응</div>
+              <div className="text-right text-foreground">{c.recommendedAction}</div>
+            </>
+          )}
           <div className="text-muted-foreground">시간당</div>
           <div className="text-right tabular-nums text-foreground">{won(c.hourlyTotal)}</div>
           <div className="text-muted-foreground">단건</div>
@@ -300,6 +312,7 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
   if (!cases.length) return null;
 
   const r = board.rollup;
+  const quotePackage = board.quotePackage;
   const showGroupLabel = groups.length > 1 || (groups.length === 1 && groups[0].key !== '기타');
 
   return (
@@ -337,12 +350,60 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
         </div>
       )}
 
+      {quotePackage?.operatingBasis?.length ? (
+        <div className="mb-3 rounded-lg border border-border bg-card px-2.5 py-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            월 운영 기준
+          </div>
+          <div className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+            {quotePackage.operatingBasis.map((basis) => (
+              <span key={`${basis.weekdaysLabel ?? 'basis'}-${basis.monthlyVisits ?? 'n'}`} className="rounded-md bg-muted px-2 py-1">
+                {basis.weekdaysLabel ?? '운영일'} · 월 {basis.monthlyVisits ?? '-'}회
+                {basis.includeHolidays === true ? ' · 공휴일 포함' : basis.includeHolidays === false ? ' · 공휴일 제외' : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {quotePackage?.groupRollups?.length ? (
+        <div className="mb-3 overflow-hidden rounded-lg border border-border bg-card">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border bg-muted px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground">
+            <span>권역</span>
+            <span className="text-right">월 견적</span>
+            <span className="text-right">상태</span>
+          </div>
+          {quotePackage.groupRollups.map((g) => (
+            <div key={g.group} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border px-2.5 py-1.5 text-[11px] last:border-b-0">
+              <span className="truncate font-medium text-foreground">{g.group}</span>
+              <span className="text-right tabular-nums text-foreground">{won(g.monthlyTotal)}</span>
+              <span className="text-right text-muted-foreground">{g.riskLabel}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {r.infeasibleLabels.length > 0 && (
         <div className="mb-3 inline-flex items-start gap-1.5 rounded-lg bg-error-muted/50 px-2.5 py-1.5 text-[11px] text-error-600">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <span>마감 초과 케이스: {r.infeasibleLabels.join(', ')} — 출발을 앞당기거나 지점 분할 검토가 필요해요.</span>
         </div>
       )}
+
+      {quotePackage?.risks?.length ? (
+        <div className="mb-3 space-y-1.5 rounded-lg border border-warning/30 bg-warning-muted/30 px-2.5 py-2">
+          <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-warning">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            확인 필요한 라인
+          </div>
+          {quotePackage.risks.map((risk) => (
+            <div key={risk.caseId} className="text-[11px] leading-relaxed text-foreground">
+              <span className="font-semibold">{risk.label}</span>
+              <span className="text-muted-foreground"> · {risk.labelText} · {risk.reason} {risk.recommendedAction}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {groups.map((g) => (

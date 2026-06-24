@@ -80,6 +80,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
       roadOption,
       departureAt,
       dwellMinutes: rest.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
+      originDwellMinutes: origin.dwellMinutes ?? defaultDwellForRole(origin.role),
       openStart: false,
       startCandidateCount: 1,
       fastOrder: false,
@@ -114,6 +115,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     roadOption,
     departureAt,
     dwellMinutes: ordered.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
+    originDwellMinutes: originStop.dwellMinutes ?? defaultDwellForRole(originStop.role),
     openStart,
     // 출발지 후보를 픽업으로 제한(origin + 그 외 픽업). 배송지/반납지는 출발지가 될 수 없다.
     startCandidateCount: pickups.length,

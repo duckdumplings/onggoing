@@ -46,7 +46,10 @@ interface QuoteInfoSidebarProps {
   // 생성 파일
   generatedFiles: GeneratedFile[];
   isGeneratingFile: boolean;
-  onGenerateFile: (type: GeneratedFile['file_type'], override?: { structured?: ChatStructuredPayload }) => void;
+  onGenerateFile: (
+    type: GeneratedFile['file_type'],
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+  ) => void;
   // 결과
   loading: boolean;
   latestResult: AIQuoteResponse | null;

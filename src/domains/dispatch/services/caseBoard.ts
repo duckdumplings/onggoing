@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
 import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
 import { postRouteOptimizationCached } from '@/domains/dispatch/services/routeOptCache';
+import { buildQuotePackage, buildRiskAction, buildRiskReason } from '@/domains/dispatch/services/quotePackageBuilder';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
 import {
   type DeadlineTarget,
@@ -25,12 +26,14 @@ import {
 } from '@/domains/dispatch/utils/deliveryDeadline';
 import {
   type OperatingPattern,
+  countAverageMonthlyOperatingDays,
   countOperatingDays,
   consecutiveMonths,
   describeWeekdays,
 } from '@/domains/dispatch/utils/monthlyBasis';
 import type { Frequency, StopRole } from '@/domains/dispatch/types/routePlan';
 import { FrequencySchema, RouteStopSchema, toDomainStops } from '@/domains/quote/agent/workingMemory';
+import type { QuotePackage, QuotePackageGroupRollup } from '@/domains/dispatch/types/quotePackage';
 
 const CASE_CONCURRENCY = 4;
 
@@ -70,6 +73,8 @@ export type CaseBoardCaseInput = z.infer<typeof CaseBoardCaseInputSchema>;
 export interface CaseBoardInput {
   cases: CaseBoardCaseInput[];
   contractMonths?: number;
+  /** 월 산정 기준: calendar=대상 월 실제 달력, average=연간 평균 주수 기반 월 평균. */
+  monthlyBasis?: 'calendar' | 'average';
   /** 월 고정 견적 기준 월("YYYY-MM"). 이 달의 실제 달력으로 운행 횟수를 센다. 없으면 다음 달. */
   targetMonth?: string;
   /** 케이스에 출발시각이 없을 때 쓸 폴백 ISO(견적-지도 일치용 고정 스냅샷). */
@@ -146,6 +151,9 @@ export interface CaseBoardCaseResult {
   includeHolidays?: boolean;
   /** 마감 리스크 등급(현장 변수 여지 반영). */
   riskGrade?: DeadlineRiskGrade;
+  /** 리스크 사유와 운영 대응(내부/고객용 문서가 같은 문구를 사용). */
+  riskReason?: string;
+  recommendedAction?: string;
   /** Tmap 증빙: 견적 산출(조회) 시각 ISO. */
   queriedAt?: string;
   frequencyLabel?: string | null;
@@ -169,13 +177,18 @@ export interface CaseBoardResult {
     contractTotal: number | null;
     /** 월 고정 견적 기준 월("YYYY-MM"). */
     targetMonth: string | null;
+    /** 월 산정 기준. */
+    monthlyBasis?: 'calendar' | 'average';
     /** 계약 기간 각 월의 영업일/금액 분해(월별 영업일 상이 반영). */
     contractBreakdown?: Array<{ month: string; total: number }>;
+    /** 권역별 월 합계(VAT 포함/리스크 텍스트 포함). */
+    groupRollups?: QuotePackageGroupRollup[];
     /** 마감을 지정한 케이스가 모두 충족하는지. 마감 지정 케이스가 없으면 null. */
     allMeetDeadline: boolean | null;
     infeasibleLabels: string[];
   };
   basis: string;
+  quotePackage?: QuotePackage;
 }
 
 /** 동시성 제한 map(외부 API 버스트 방지). */
@@ -201,6 +214,7 @@ async function computeCase(
   c: CaseBoardCaseInput,
   departureFallback: string,
   targetMonth: string,
+  monthlyBasis: 'calendar' | 'average',
   idx: number
 ): Promise<CaseBoardCaseResult> {
   const id = `case-${idx + 1}`;
@@ -291,12 +305,18 @@ async function computeCase(
     const pattern: OperatingPattern | null = hasPattern
       ? { weekdays: c.operatingWeekdays as number[], includeHolidays: c.includeHolidays ?? true }
       : null;
-    const monthCount = pattern ? countOperatingDays(targetMonth, pattern) : null;
+    const monthCount = pattern
+      ? monthlyBasis === 'average'
+        ? countAverageMonthlyOperatingDays(pattern)
+        : countOperatingDays(targetMonth, pattern)
+      : null;
     const monthlyVisits = monthCount ? monthCount.operatingDays : c.monthlyVisits;
     const monthlyTotal = monthlyVisits ? oneTimePrice * monthlyVisits : undefined;
     const operatingWeekdaysLabel = pattern ? describeWeekdays(pattern.weekdays) : null;
     const monthBasisLabel = monthCount
-      ? `${targetMonth} 실제 달력 · 운행 ${monthCount.operatingDays}일${monthCount.excludedHolidays ? ` (공휴일 ${monthCount.excludedHolidays}일 제외)` : ''}`
+      ? monthlyBasis === 'average'
+        ? `월 평균 운영일수 · ${monthCount.operatingDays}회`
+        : `${targetMonth} 실제 달력 · 운행 ${monthCount.operatingDays}일${monthCount.excludedHolidays ? ` (공휴일 ${monthCount.excludedHolidays}일 제외)` : ''}`
       : c.monthlyVisits
         ? `월 ${c.monthlyVisits}회(직접 지정)`
         : null;
@@ -304,10 +324,12 @@ async function computeCase(
     const annualPrice = monthlyTotal != null ? monthlyTotal * 12 : freq ? annualizePrice(oneTimePrice, freq) : undefined;
 
     // 경유지별 타임라인(역할 포함) — route-optimization 실측 도착/출발 시각 그대로.
-    const timeline: CaseTimelineEntry[] = waypoints.map((w, i) => ({
-      seq: i + 1,
+    const routeTimeline: any[] = Array.isArray(body?.data?.timeline) ? body.data.timeline : [];
+    const timelineSource = routeTimeline.length ? routeTimeline : waypoints;
+    const timeline: CaseTimelineEntry[] = timelineSource.map((w, i) => ({
+      seq: Number.isFinite(Number(w?.seq)) ? Number(w.seq) : i + 1,
       address: w?.address ?? null,
-      role: (w?.address ? roleMap.get(String(w.address).trim()) : undefined) ?? null,
+      role: w?.role ?? ((w?.address ? roleMap.get(String(w.address).trim()) : undefined) ?? null),
       arrival: kstHHmm(w?.arrivalTime),
       departure: kstHHmm(w?.departureTime),
       dwellMinutes: Number.isFinite(Number(w?.dwellTime)) ? Number(w.dwellTime) : null,
@@ -331,7 +353,7 @@ async function computeCase(
       .map((s) => s.address)
       .filter((addr) => cache.get(addr.trim())?.lowPrecision);
 
-    return {
+    const result: CaseBoardCaseResult = {
       ...baseInfo,
       departureLabel: kstHHmm(departureIso),
       km: Number(km.toFixed(1)),
@@ -368,6 +390,11 @@ async function computeCase(
       routeRequest: { ...payload, useRealtimeTraffic: true },
       lowPrecisionStops,
     };
+    return {
+      ...result,
+      riskReason: buildRiskReason(result),
+      recommendedAction: buildRiskAction(result),
+    };
   } catch (e) {
     return { ...baseInfo, error: e instanceof Error ? e.message : '계산 중 오류' };
   }
@@ -389,8 +416,9 @@ function defaultTargetMonth(): string {
 export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): Promise<CaseBoardResult> {
   const departureFallback = input.departureFallback ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const targetMonth = input.targetMonth ?? defaultTargetMonth();
+  const monthlyBasis = input.monthlyBasis ?? 'calendar';
   const results = await mapPool(input.cases, CASE_CONCURRENCY, (c, idx) =>
-    computeCase(baseUrl, c, departureFallback, targetMonth, idx)
+    computeCase(baseUrl, c, departureFallback, targetMonth, monthlyBasis, idx)
   );
 
   const valid = results.filter((r) => !r.error && typeof r.oneTimePrice === 'number');
@@ -411,7 +439,13 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
     const patternCases = valid.filter(
       (r) => Array.isArray(r.operatingWeekdays) && r.operatingWeekdays.length > 0 && typeof r.oneTimePrice === 'number'
     );
-    if (patternCases.length) {
+    if (monthlyBasis === 'average' && monthlyTotal != null) {
+      contractTotal = monthlyTotal * contractMonths;
+      contractBreakdown = Array.from({ length: contractMonths }, (_, idx) => ({
+        month: `평균 ${idx + 1}개월차`,
+        total: monthlyTotal,
+      }));
+    } else if (patternCases.length) {
       contractBreakdown = months.map((month) => {
         const total = patternCases.reduce((acc, r) => {
           const days = countOperatingDays(month, {
@@ -433,7 +467,7 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
   const infeasibleLabels = deadlineCases.filter((r) => r.meetsDeadline === false).map((r) => r.label);
   const allMeetDeadline = deadlineCases.length ? infeasibleLabels.length === 0 : null;
 
-  return {
+  const baseResult: CaseBoardResult = {
     cases: results,
     rollup: {
       oneTimeTotal,
@@ -442,10 +476,20 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
       contractMonths,
       contractTotal,
       targetMonth,
+      monthlyBasis,
       contractBreakdown,
       allMeetDeadline,
       infeasibleLabels,
     },
-    basis: `${targetMonth} 실제 달력 기준 월 운행 횟수 · 교통 반영(Tmap 예측) 소요시간 · 마감은 마지막 배송 완료 기준(반납 복귀는 업무 종료, 마감 없음) · 옹고잉 요금엔 심야/주말 할증 없음`,
+    basis: `${monthlyBasis === 'average' ? '월 평균 운영일수' : `${targetMonth} 실제 달력`} 기준 월 운행 횟수 · 교통 반영(Tmap 예측) 소요시간 · 마감은 마지막 배송 완료 기준(반납 복귀는 업무 종료, 마감 없음) · 옹고잉 요금엔 심야/주말 할증 없음`,
+  };
+  const quotePackage = buildQuotePackage(baseResult);
+  return {
+    ...baseResult,
+    rollup: {
+      ...baseResult.rollup,
+      groupRollups: quotePackage.groupRollups,
+    },
+    quotePackage,
   };
 }

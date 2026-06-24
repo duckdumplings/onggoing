@@ -60,6 +60,15 @@ export interface MonthOperatingCount {
   dates: string[];
 }
 
+export interface AverageMonthlyOperatingCount {
+  /** 월 평균 환산 기준. */
+  month: 'average';
+  /** 주당 운행 요일 × 52.142857주 / 12개월. */
+  operatingDays: number;
+  excludedHolidays: 0;
+  dates: [];
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -98,6 +107,13 @@ export function countOperatingDays(yearMonth: string, pattern: OperatingPattern)
     dates.push(iso);
   }
   return { month: yearMonth, operatingDays: dates.length, excludedHolidays, dates };
+}
+
+/** 특정 월이 아니라 연간 평균 주수(365/7/12)로 월 평균 운행 횟수를 환산한다. */
+export function countAverageMonthlyOperatingDays(pattern: OperatingPattern): AverageMonthlyOperatingCount {
+  const weeklyRuns = new Set(pattern.weekdays).size;
+  const operatingDays = Math.round(weeklyRuns * (365 / 7 / 12) * 100) / 100;
+  return { month: 'average', operatingDays, excludedHolidays: 0, dates: [] };
 }
 
 /** targetMonth부터 연속 N개월의 "YYYY-MM" 목록. 계약 기간(실제 월별 영업일 상이) 합산용. */

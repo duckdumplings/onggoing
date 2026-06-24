@@ -38,7 +38,10 @@ interface ChatMessageListProps {
   onFeedback: (msg: ChatMessage, type: 'positive' | 'negative') => void;
   onRetry: (sourceUserText?: string) => void;
   onScenarioSelect: (label: string, routes?: Array<{ label: string; routeRequest: any }>) => void;
-  onGenerateFile: (type: 'pdf', override?: { structured?: ChatStructuredPayload }) => void;
+  onGenerateFile: (
+    type: 'pdf',
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+  ) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;
   /** 인라인 견적 카드의 "현황·발행 열기" — compact에서 견적 드로어를 연다. */
@@ -61,7 +64,10 @@ interface MessageBubbleProps {
   onFeedback: (msg: ChatMessage, type: 'positive' | 'negative') => void;
   onRetry: (sourceUserText?: string) => void;
   onScenarioSelect: (label: string, routes?: Array<{ label: string; routeRequest: any }>) => void;
-  onGenerateFile: (type: 'pdf', override?: { structured?: ChatStructuredPayload }) => void;
+  onGenerateFile: (
+    type: 'pdf',
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+  ) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;
   onOpenQuotePanel?: () => void;

@@ -24,7 +24,10 @@ interface IssueSectionProps {
   updateIssuer: (patch: Partial<QuoteIssuer>) => void;
   generatedFiles: GeneratedFile[];
   isGeneratingFile: boolean;
-  onGenerateFile: (type: GeneratedFile['file_type'], override?: { structured?: ChatStructuredPayload }) => void;
+  onGenerateFile: (
+    type: GeneratedFile['file_type'],
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+  ) => void;
   currentSessionId: string | null;
 }
 

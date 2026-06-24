@@ -352,10 +352,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
   /** 현재 대화 컨텍스트 + 사용자가 지정한 견적서 옵션으로 생성 입력을 구성.
    *  override.structured가 있으면 해당 결과 카드 기준으로 시나리오를 구성한다(카드 원클릭 발행용). */
-  const buildGenerationInput = (override?: { structured?: ChatStructuredPayload }) => {
+  const buildGenerationInput = (override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }) => {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content;
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')?.content;
     const comparison = override?.structured?.scenarioComparison ?? latestResult?.scenarioComparison;
+    const caseBoard = override?.structured?.caseBoard ?? latestResult?.caseBoard ?? null;
     const scenarios = comparison?.results?.map((r: any) => ({
       label: r.label,
       recommendedPlan: r.recommendedPlan,
@@ -382,6 +383,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       frequencyLabel: firstResult?.frequencyLabel ?? comparison?.results?.[0]?.frequencyLabel,
       scenarios,
       recommendedScenarioLabel: comparison?.recommendedLabel ?? null,
+      caseBoard: caseBoard ?? undefined,
+      quotePackage: caseBoard?.quotePackage ?? undefined,
+      documentView: override?.documentView,
       // 사용자 지정 견적서 옵션
       recipientName: docRecipient.trim() || (latestResult?.extracted as any)?.customerName || undefined,
       recipientContact: docRecipientContact.trim() || undefined,
@@ -416,7 +420,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
   const handleGenerateFile = async (
     fileType: GeneratedFile['file_type'],
-    override?: { structured?: ChatStructuredPayload }
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
   ) => {
     setIsGeneratingFile(true);
     try {
@@ -955,7 +959,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     []
   );
   const stableOnGenerateFile = useCallback(
-    (type: 'pdf', override?: { structured?: ChatStructuredPayload }) =>
+    (type: 'pdf', override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }) =>
       void bubbleHandlersRef.current.handleGenerateFile(type, override),
     []
   );

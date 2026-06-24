@@ -3,6 +3,9 @@ import fs from 'fs';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { buildQuotePackage } from '@/domains/dispatch/services/quotePackageBuilder';
+import type { CaseBoardResult } from '@/domains/dispatch/services/caseBoard';
+import type { QuoteDocumentView, QuotePackage } from '@/domains/dispatch/types/quotePackage';
 
 /**
  * pdfkit 기본 폰트(Helvetica)는 한글 글리프가 없어 PDF에서 한글이 깨진다.
@@ -82,6 +85,11 @@ export type GenerationInput = {
   taxRate?: number;
   /** 부가세 표기 여부(기본 true). */
   includeVat?: boolean;
+  /** 멀티 케이스 견적 보드 기반 문서 생성. */
+  caseBoard?: CaseBoardResult;
+  quotePackage?: QuotePackage;
+  /** QuotePackage PDF 템플릿 선택. 기본은 customer-summary. */
+  documentView?: QuoteDocumentView;
 };
 
 const won = (v: unknown): string => {
@@ -267,8 +275,156 @@ const PDF_LINE = '#e2e8f0';
 const PDF_ACCENT = '#4f46e5';
 const PDF_ACCENT_SOFT = '#eef2ff';
 const PDF_HEAD = '#f1f5f9';
+const PDF_WHITE = '#ffffff';
+
+function formatWon(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? `${Math.round(n).toLocaleString('ko-KR')}원` : '-';
+}
+
+function resolveQuotePackage(input: GenerationInput): QuotePackage | null {
+  if (input.quotePackage) return input.quotePackage;
+  if (input.caseBoard) return input.caseBoard.quotePackage ?? buildQuotePackage(input.caseBoard);
+  return null;
+}
+
+type PdfTableCol = { w: number; text: string; align?: 'left' | 'right' | 'center'; color?: string };
+
+async function generateQuotePackagePdf(input: GenerationInput, pkg: QuotePackage): Promise<GeneratedFile> {
+  const baseName = defaultBaseName(input);
+  const view = input.documentView ?? 'customer-summary';
+  const isCustomer = view === 'customer-summary';
+  const doc = new PDFDocument({ margin: 36, size: 'A4', layout: isCustomer ? 'landscape' : 'portrait' });
+  const chunks: Buffer[] = [];
+  const pageW = isCustomer ? 841.89 : 595.28;
+  const pageH = isCustomer ? 595.28 : 841.89;
+  const margin = 36;
+  const contentW = pageW - margin * 2;
+
+  await new Promise<void>((resolve, reject) => {
+    doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    doc.on('end', resolve);
+    doc.on('error', reject);
+
+    const koreanFont = loadKoreanFont();
+    if (koreanFont) {
+      doc.registerFont('KR', koreanFont);
+      doc.font('KR');
+    }
+
+    let y = margin;
+    const paintWhite = () => doc.rect(0, 0, pageW, pageH).fill(PDF_WHITE);
+    paintWhite();
+    const ensure = (need: number) => {
+      if (y + need > pageH - margin) {
+        doc.addPage();
+        y = margin;
+        paintWhite();
+      }
+    };
+    const text = (value: string, x: number, yy: number, opts: { width?: number; align?: 'left' | 'right' | 'center'; size?: number; color?: string } = {}) => {
+      doc.fontSize(opts.size ?? 9).fillColor(opts.color ?? PDF_INK);
+      doc.text(value, x, yy, { width: opts.width, align: opts.align, lineBreak: opts.width != null });
+    };
+    const row = (cols: PdfTableCol[], opts: { fill?: string; size?: number; h?: number } = {}) => {
+      const size = opts.size ?? 9;
+      const h = opts.h ?? Math.max(26, ...cols.map((c) => doc.fontSize(size).heightOfString(c.text, { width: c.w - 12 }) + 12));
+      ensure(h);
+      if (opts.fill) doc.rect(margin, y, cols.reduce((sum, c) => sum + c.w, 0), h).fill(opts.fill);
+      let x = margin;
+      for (const c of cols) {
+        doc.fontSize(size).fillColor(c.color ?? PDF_INK);
+        doc.text(c.text, x + 6, y + 7, { width: c.w - 12, align: c.align ?? 'left', lineGap: 1 });
+        x += c.w;
+      }
+      doc.rect(margin, y, cols.reduce((sum, c) => sum + c.w, 0), h).lineWidth(0.5).strokeColor(PDF_LINE).stroke();
+      y += h;
+    };
+    const section = (label: string) => {
+      ensure(30);
+      text(label, margin, y, { size: 12, color: PDF_INK });
+      y += 20;
+    };
+
+    if (isCustomer) {
+      text(input.sessionTitle || '월 기준 배송 견적서', margin, y, { size: 20, color: PDF_INK });
+      text('고객용 요약 견적 · 세부 주행/체류/과금 산식 제외', margin, y + 26, { size: 9, color: PDF_MUTED });
+      y += 52;
+
+      const cardW = contentW / 3;
+      const cards = [
+        ['월 견적 / VAT 별도', pkg.summary.monthlyTotal],
+        [`부가세 ${Math.round(pkg.summary.vatRate * 100)}%`, pkg.summary.vatAmount],
+        ['월 견적 / VAT 포함', pkg.summary.monthlyTotalWithVat],
+      ] as const;
+      cards.forEach(([label, value], idx) => {
+        const x = margin + cardW * idx;
+        doc.rect(x, y, cardW, 58).fillAndStroke(PDF_HEAD, PDF_LINE);
+        text(label, x + 12, y + 10, { width: cardW - 24, size: 8.5, color: PDF_MUTED, align: 'center' });
+        text(formatWon(value), x + 12, y + 30, { width: cardW - 24, size: 15, color: PDF_INK, align: 'center' });
+      });
+      y += 78;
+
+      section('견적 기준');
+      const basis = [
+        ['운영 요일', pkg.operatingBasis.map((b) => b.weekdaysLabel).filter(Boolean).join(' / ') || '-'],
+        ['운영 회차', pkg.operatingBasis.map((b) => `${b.weekdaysLabel ?? '운영일'} 월 ${b.monthlyVisits ?? '-'}회`).join(' · ') || '-'],
+        ['산정 방식', '월 평균 운영일수 기준 · 공휴일 포함 여부 반영'],
+      ];
+      basis.forEach(([k, v]) => row([{ w: 95, text: k, color: PDF_MUTED }, { w: contentW - 95, text: v }], { h: 26 }));
+      y += 18;
+
+      section('라인별 월 견적');
+      row([
+        { w: contentW * 0.26, text: '라인', color: PDF_WHITE },
+        { w: contentW * 0.13, text: '운영요일', color: PDF_WHITE },
+        { w: contentW * 0.12, text: '구분', color: PDF_WHITE },
+        { w: contentW * 0.18, text: '월 견적', align: 'right', color: PDF_WHITE },
+        { w: contentW * 0.18, text: 'VAT 포함', align: 'right', color: PDF_WHITE },
+        { w: contentW * 0.13, text: '특이사항', color: PDF_WHITE },
+      ], { fill: PDF_INK, h: 28 });
+      pkg.customerRows.forEach((r) => row([
+        { w: contentW * 0.26, text: r.group },
+        { w: contentW * 0.13, text: r.operatingDays },
+        { w: contentW * 0.12, text: r.slot },
+        { w: contentW * 0.18, text: formatWon(r.monthlyTotal), align: 'right' },
+        { w: contentW * 0.18, text: formatWon(r.monthlyTotalWithVat), align: 'right' },
+        { w: contentW * 0.13, text: r.note },
+      ]));
+      y += 12;
+      text('월 평균 운영일수와 공휴일 포함 조건을 반영한 사전 견적입니다. 최종 운행 조건 확정 후 조정될 수 있습니다.', margin, y, { width: contentW, size: 8.5, color: PDF_MUTED });
+    } else {
+      text(view === 'internal-risk' ? '내부 리스크 시트' : '상세 산출 근거', margin, y, { size: 18, color: PDF_INK });
+      text(input.sessionTitle || 'QuotePackage 기반 문서', margin, y + 24, { size: 9, color: PDF_MUTED });
+      y += 50;
+      section('요약');
+      row([{ w: contentW * 0.55, text: '월 견적(VAT 별도)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.monthlyTotal), align: 'right' }]);
+      row([{ w: contentW * 0.55, text: '월 견적(VAT 포함)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.monthlyTotalWithVat), align: 'right' }]);
+      y += 14;
+      section(view === 'internal-risk' ? '리스크 및 대응' : '권역별 산출');
+      const rows = view === 'internal-risk'
+        ? pkg.risks.map((r) => [r.label, r.labelText, `${r.reason} ${r.recommendedAction}`])
+        : pkg.groupRollups.map((r) => [r.group, formatWon(r.monthlyTotal), r.riskLabel]);
+      row([{ w: contentW * 0.34, text: '항목', color: PDF_WHITE }, { w: contentW * 0.2, text: view === 'internal-risk' ? '등급' : '월 견적', color: PDF_WHITE }, { w: contentW * 0.46, text: '내용', color: PDF_WHITE }], { fill: PDF_INK });
+      rows.forEach(([a, b, c]) => row([{ w: contentW * 0.34, text: a }, { w: contentW * 0.2, text: b }, { w: contentW * 0.46, text: c }]));
+    }
+    doc.end();
+  });
+
+  const suffix = view === 'customer-summary' ? '고객용_견적서' : view === 'internal-risk' ? '내부_리스크시트' : '상세_산출근거';
+  return {
+    fileType: 'pdf',
+    fileName: `${baseName}_${suffix}.pdf`,
+    mimeType: 'application/pdf',
+    buffer: Buffer.concat(chunks),
+  };
+}
 
 async function generatePdf(input: GenerationInput): Promise<GeneratedFile> {
+  const quotePackage = resolveQuotePackage(input);
+  if (quotePackage) {
+    return generateQuotePackagePdf(input, quotePackage);
+  }
   const baseName = defaultBaseName(input);
   const now = new Date();
   const issuer = resolveIssuer(input.issuer);
