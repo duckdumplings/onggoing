@@ -23,6 +23,12 @@ import {
   pickTargetArrivalIso,
   judgeDeadline,
 } from '@/domains/dispatch/utils/deliveryDeadline';
+import {
+  type OperatingPattern,
+  countOperatingDays,
+  consecutiveMonths,
+  describeWeekdays,
+} from '@/domains/dispatch/utils/monthlyBasis';
 import type { Frequency, StopRole } from '@/domains/dispatch/types/routePlan';
 import { FrequencySchema, RouteStopSchema, toDomainStops } from '@/domains/quote/agent/workingMemory';
 
@@ -43,11 +49,19 @@ export const CaseBoardCaseInputSchema = z.object({
   deadline: z.string().optional().describe('마감 시각 "HH:mm". 기준은 deadlineTarget(기본=마지막 배송 완료).'),
   deadlineTarget: z.enum(['delivery', 'return', 'final']).default('delivery'),
   frequency: FrequencySchema.optional(),
+  operatingWeekdays: z
+    .array(z.number().int().min(0).max(6))
+    .optional()
+    .describe('이 라인이 운행하는 요일(0=일,1=월,...,6=토). 예: 월~토 점심=[1,2,3,4,5,6], 월~금 저녁=[1,2,3,4,5], 월요일만(반납없음 케이스)=[1]. 월 운행 횟수는 targetMonth 달력으로 시스템이 센다.'),
+  includeHolidays: z
+    .boolean()
+    .optional()
+    .describe('공휴일에도 운행하면 true(공휴일 포함). false면 운행 요일이어도 공휴일은 빼고 센다. 사용자가 "공휴일 포함"이라 하면 true.'),
   monthlyVisits: z
     .number()
     .positive()
     .optional()
-    .describe('이 케이스의 월간 운행 횟수(요일 패턴 반영). 예: 평일 점심+저녁이면 그 달 운행 합. 월간 합계 산출에 쓰인다.'),
+    .describe('월간 운행 횟수 직접 지정(권장하지 않음). operatingWeekdays+targetMonth가 있으면 그 달력 계산이 우선한다. 둘 다 없을 때의 폴백.'),
   preserveOrder: z.boolean().default(false),
 });
 
@@ -56,8 +70,22 @@ export type CaseBoardCaseInput = z.infer<typeof CaseBoardCaseInputSchema>;
 export interface CaseBoardInput {
   cases: CaseBoardCaseInput[];
   contractMonths?: number;
+  /** 월 고정 견적 기준 월("YYYY-MM"). 이 달의 실제 달력으로 운행 횟수를 센다. 없으면 다음 달. */
+  targetMonth?: string;
   /** 케이스에 출발시각이 없을 때 쓸 폴백 ISO(견적-지도 일치용 고정 스냅샷). */
   departureFallback?: string;
+}
+
+export type DeadlineRiskGrade = 'safe' | 'caution' | 'danger' | 'recheck' | 'infeasible' | 'none';
+
+/** 마감 여유(분) → 운영 리스크 등급. 단순 O/X 대신 현장 변수 여지를 등급으로 노출. */
+function deadlineRiskGrade(slackMinutes: number | null | undefined, meetsDeadline: boolean | null | undefined): DeadlineRiskGrade {
+  if (meetsDeadline === false) return 'infeasible';
+  if (slackMinutes == null) return 'none';
+  if (slackMinutes >= 60) return 'safe';
+  if (slackMinutes >= 30) return 'caution';
+  if (slackMinutes >= 15) return 'danger';
+  return 'recheck';
 }
 
 export interface CaseSchematicPoint {
@@ -102,9 +130,24 @@ export interface CaseBoardCaseResult {
   planPreference?: 'auto' | 'hourly' | 'perJob';
   hourlyTotal?: number;
   perJobTotal?: number;
+  /** 시간당 산식 투명화: 과금분(30분 올림·최소 120), 시간당 단가, 유류할증. */
+  billMinutes?: number | null;
+  ratePerHour?: number | null;
+  fuelSurcharge?: number | null;
   annualPrice?: number;
   monthlyTotal?: number;
   monthlyVisits?: number;
+  /** 운행 요일 라벨(예: "월~토"). */
+  operatingWeekdaysLabel?: string | null;
+  /** 월 기준 근거 라벨(예: "2026-06 실제 달력 · 운행 24일"). */
+  monthBasisLabel?: string | null;
+  /** 계약 합산 재계산용 원본 패턴. */
+  operatingWeekdays?: number[];
+  includeHolidays?: boolean;
+  /** 마감 리스크 등급(현장 변수 여지 반영). */
+  riskGrade?: DeadlineRiskGrade;
+  /** Tmap 증빙: 견적 산출(조회) 시각 ISO. */
+  queriedAt?: string;
   frequencyLabel?: string | null;
   /** 경유지별 도착/출발 타임라인(역할 포함). */
   timeline?: CaseTimelineEntry[];
@@ -124,6 +167,10 @@ export interface CaseBoardResult {
     annualTotal: number | null;
     contractMonths: number | null;
     contractTotal: number | null;
+    /** 월 고정 견적 기준 월("YYYY-MM"). */
+    targetMonth: string | null;
+    /** 계약 기간 각 월의 영업일/금액 분해(월별 영업일 상이 반영). */
+    contractBreakdown?: Array<{ month: string; total: number }>;
     /** 마감을 지정한 케이스가 모두 충족하는지. 마감 지정 케이스가 없으면 null. */
     allMeetDeadline: boolean | null;
     infeasibleLabels: string[];
@@ -153,6 +200,7 @@ async function computeCase(
   baseUrl: string,
   c: CaseBoardCaseInput,
   departureFallback: string,
+  targetMonth: string,
   idx: number
 ): Promise<CaseBoardCaseResult> {
   const id = `case-${idx + 1}`;
@@ -224,16 +272,35 @@ async function computeCase(
       return { ...baseInfo, error: b?.error?.message || `견적 계산 실패 (HTTP ${quoteRes.status})` };
     }
     const quoteJson = await quoteRes.json();
-    const hourlyTotal = Number(quoteJson?.plans?.hourly?.total ?? 0);
+    const hourly = quoteJson?.plans?.hourly ?? {};
+    const hourlyTotal = Number(hourly?.total ?? 0);
     const perJobTotal = Number(quoteJson?.plans?.perJob?.total ?? 0);
+    // 시간당 산식 투명화: 과금분/단가/유류할증(quote-calculation 응답 그대로).
+    const billMinutes = Number.isFinite(Number(hourly?.billMinutes)) ? Number(hourly.billMinutes) : null;
+    const ratePerHour = Number.isFinite(Number(hourly?.ratePerHour)) ? Number(hourly.ratePerHour) : null;
+    const fuelSurcharge = Number.isFinite(Number(hourly?.fuelSurcharge)) ? Number(hourly.fuelSurcharge) : null;
     // 대표 운임: 사용자가 지정(hourly/perJob)하면 그대로, auto면 옹고잉 유리(높은 쪽).
     const pref = c.planPreference ?? 'auto';
     const recommendedPlan: 'hourly' | 'perJob' =
       pref === 'hourly' ? 'hourly' : pref === 'perJob' ? 'perJob' : hourlyTotal >= perJobTotal ? 'hourly' : 'perJob';
     const oneTimePrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
     const freq = c.frequency as Frequency | undefined;
-    const monthlyTotal = c.monthlyVisits ? oneTimePrice * c.monthlyVisits : undefined;
-    // 연 합계는 월간(monthlyVisits×12)이 가장 정확. 없으면 frequency 기반, 둘 다 없으면 미산정(null).
+
+    // 월 운행 횟수: operatingWeekdays + targetMonth 실제 달력이 우선. 없으면 monthlyVisits 폴백.
+    const hasPattern = Array.isArray(c.operatingWeekdays) && c.operatingWeekdays.length > 0;
+    const pattern: OperatingPattern | null = hasPattern
+      ? { weekdays: c.operatingWeekdays as number[], includeHolidays: c.includeHolidays ?? true }
+      : null;
+    const monthCount = pattern ? countOperatingDays(targetMonth, pattern) : null;
+    const monthlyVisits = monthCount ? monthCount.operatingDays : c.monthlyVisits;
+    const monthlyTotal = monthlyVisits ? oneTimePrice * monthlyVisits : undefined;
+    const operatingWeekdaysLabel = pattern ? describeWeekdays(pattern.weekdays) : null;
+    const monthBasisLabel = monthCount
+      ? `${targetMonth} 실제 달력 · 운행 ${monthCount.operatingDays}일${monthCount.excludedHolidays ? ` (공휴일 ${monthCount.excludedHolidays}일 제외)` : ''}`
+      : c.monthlyVisits
+        ? `월 ${c.monthlyVisits}회(직접 지정)`
+        : null;
+    // 연 합계는 월간(×12)이 가장 정확. 없으면 frequency 기반, 둘 다 없으면 미산정(null).
     const annualPrice = monthlyTotal != null ? monthlyTotal * 12 : freq ? annualizePrice(oneTimePrice, freq) : undefined;
 
     // 경유지별 타임라인(역할 포함) — route-optimization 실측 도착/출발 시각 그대로.
@@ -278,14 +345,23 @@ async function computeCase(
       returnArrival: hasReturn ? kstHHmm(returnArrivalIso) : null,
       meetsDeadline,
       deadlineSlackMinutes: slackMinutes,
+      riskGrade: deadlineRiskGrade(slackMinutes, meetsDeadline),
       oneTimePrice,
       recommendedPlan,
       planPreference: pref,
       hourlyTotal,
       perJobTotal,
+      billMinutes,
+      ratePerHour,
+      fuelSurcharge,
       annualPrice,
       monthlyTotal,
-      monthlyVisits: c.monthlyVisits,
+      monthlyVisits,
+      operatingWeekdaysLabel,
+      monthBasisLabel,
+      operatingWeekdays: pattern?.weekdays,
+      includeHolidays: pattern?.includeHolidays,
+      queriedAt: new Date().toISOString(),
       frequencyLabel: formatFrequency(freq),
       timeline,
       schematic,
@@ -297,10 +373,24 @@ async function computeCase(
   }
 }
 
+function defaultTargetMonth(): string {
+  // 다음 달을 기본 기준 월로(요청 시점이 월말이어도 다가오는 달 견적이 흔함).
+  const now = new Date(Date.now() + 9 * 3600 * 1000); // KST
+  let y = now.getUTCFullYear();
+  let m = now.getUTCMonth() + 1; // 1-based
+  m += 1;
+  if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
 export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): Promise<CaseBoardResult> {
   const departureFallback = input.departureFallback ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const targetMonth = input.targetMonth ?? defaultTargetMonth();
   const results = await mapPool(input.cases, CASE_CONCURRENCY, (c, idx) =>
-    computeCase(baseUrl, c, departureFallback, idx)
+    computeCase(baseUrl, c, departureFallback, targetMonth, idx)
   );
 
   const valid = results.filter((r) => !r.error && typeof r.oneTimePrice === 'number');
@@ -312,7 +402,32 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
   const annualVals = valid.map((r) => r.annualPrice).filter((n): n is number => typeof n === 'number');
   const annualTotal = monthlyTotal != null ? monthlyTotal * 12 : annualVals.length ? sum(annualVals) : null;
   const contractMonths = input.contractMonths ?? null;
-  const contractTotal = monthlyTotal != null && contractMonths != null ? monthlyTotal * contractMonths : null;
+
+  // 계약 합계: 각 월의 실제 영업일이 다르므로 연속 월을 따로 세서 합산(월별 분해 노출).
+  let contractTotal: number | null = null;
+  let contractBreakdown: Array<{ month: string; total: number }> | undefined;
+  if (contractMonths != null) {
+    const months = consecutiveMonths(targetMonth, contractMonths);
+    const patternCases = valid.filter(
+      (r) => Array.isArray(r.operatingWeekdays) && r.operatingWeekdays.length > 0 && typeof r.oneTimePrice === 'number'
+    );
+    if (patternCases.length) {
+      contractBreakdown = months.map((month) => {
+        const total = patternCases.reduce((acc, r) => {
+          const days = countOperatingDays(month, {
+            weekdays: r.operatingWeekdays as number[],
+            includeHolidays: r.includeHolidays ?? true,
+          }).operatingDays;
+          return acc + (r.oneTimePrice as number) * days;
+        }, 0);
+        return { month, total };
+      });
+      contractTotal = contractBreakdown.reduce((a, b) => a + b.total, 0);
+    } else if (monthlyTotal != null) {
+      // 패턴이 없으면 근사(월간×개월).
+      contractTotal = monthlyTotal * contractMonths;
+    }
+  }
 
   const deadlineCases = results.filter((r) => r.deadline);
   const infeasibleLabels = deadlineCases.filter((r) => r.meetsDeadline === false).map((r) => r.label);
@@ -320,7 +435,17 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
 
   return {
     cases: results,
-    rollup: { oneTimeTotal, monthlyTotal, annualTotal, contractMonths, contractTotal, allMeetDeadline, infeasibleLabels },
-    basis: '교통 반영(Tmap 예측) 소요시간 기준 · 마감은 마지막 배송 완료 기준(반납 복귀는 업무 종료, 마감 없음) · 옹고잉 요금엔 심야/주말 할증 없음',
+    rollup: {
+      oneTimeTotal,
+      monthlyTotal,
+      annualTotal,
+      contractMonths,
+      contractTotal,
+      targetMonth,
+      contractBreakdown,
+      allMeetDeadline,
+      infeasibleLabels,
+    },
+    basis: `${targetMonth} 실제 달력 기준 월 운행 횟수 · 교통 반영(Tmap 예측) 소요시간 · 마감은 마지막 배송 완료 기준(반납 복귀는 업무 종료, 마감 없음) · 옹고잉 요금엔 심야/주말 할증 없음`,
   };
 }

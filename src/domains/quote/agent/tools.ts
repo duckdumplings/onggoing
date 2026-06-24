@@ -374,20 +374,26 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     quote_case_board: tool({
       description:
-        '여러 케이스(예: 권역×점심/저녁×요일)를 한꺼번에 받아 케이스별로 교통 반영 소요시간·마지막 배송 마감 충족(O/X)·견적(시간당/단건)·지도 경로를 한 "보드"로 산출하고, 월간/계약 합계 롤업까지 돌려준다. 사용자가 밥따봉 메모처럼 다수 라인/시간대를 한 번에 견적 요청하면(여러 권역, 점심/저녁, 요일 패턴) 라인마다 따로 산문으로 나열하지 말고 반드시 이 도구를 써라. 각 케이스는 역할 태깅된 stops를 가진다. 마감은 기본적으로 "마지막 배송(drop) 완료" 기준이며(deadlineTarget), 서초 반납 복귀는 마감 없는 업무 종료 시각이다. 월요일처럼 반납이 없으면 그 케이스에 return stop을 넣지 마라. 점심/저녁은 출발시각만 다른 별도 케이스로 나눠라. 월간 합계가 필요하면 각 케이스의 monthlyVisits(그 달 운행 횟수)와 contractMonths를 채워라(합산은 도구가 한다, 본문에서 곱하지 마라).',
+        '여러 케이스(예: 권역×점심/저녁×요일)를 한꺼번에 받아 케이스별로 교통 반영 소요시간·마지막 배송 마감 충족(O/X)·견적(시간당/단건)·지도 경로를 한 "보드"로 산출하고, 월간/계약 합계 롤업까지 돌려준다. 사용자가 밥따봉 메모처럼 다수 라인/시간대를 한 번에 견적 요청하면(여러 권역, 점심/저녁, 요일 패턴) 라인마다 따로 산문으로 나열하지 말고 반드시 이 도구를 써라. 각 케이스는 역할 태깅된 stops를 가진다. 마감은 기본적으로 "마지막 배송(drop) 완료" 기준이며(deadlineTarget), 서초 반납 복귀는 마감 없는 업무 종료 시각이다. 월요일처럼 반납이 없으면 그 케이스에 return stop을 넣지 마라. 점심/저녁은 출발시각만 다른 별도 케이스로 나눠라. 월 합계는 monthlyVisits를 직접 적지 말고, 각 케이스의 operatingWeekdays(운행 요일)와 includeHolidays(공휴일 포함 여부) + 보드의 targetMonth(기준 월)를 채워라 — 도구가 그 달 실제 달력으로 운행 횟수를 센다(주말/공휴일 반영). contractMonths를 주면 각 월 실제 영업일로 월별 합산까지 한다. 합산/곱셈은 도구가 한다, 본문에서 직접 곱하지 마라.',
       inputSchema: z.object({
         cases: z.array(CaseBoardCaseInputSchema).min(2),
-        contractMonths: z.number().positive().optional().describe('계약 기간(개월). 계약 총액 롤업에 사용. 예: 3개월 계약이면 3.'),
+        contractMonths: z.number().positive().optional().describe('계약 기간(개월). 계약 총액 롤업에 사용. 예: 3개월 계약이면 3. 도구가 각 월 실제 영업일로 월별 합산한다.'),
+        targetMonth: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional()
+          .describe('월 고정 견적 기준 월 "YYYY-MM". 이 달 실제 달력으로 운행 횟수를 센다. 사용자가 "이번 달/다음 달/6월" 등으로 지정하면 그 값. 없으면 다음 달.'),
       }),
-      execute: async ({ cases, contractMonths }) => {
+      execute: async ({ cases, contractMonths, targetMonth }) => {
         const out = await computeCaseBoard(ctx.baseUrl, {
           cases,
           contractMonths,
+          targetMonth,
           departureFallback: ctx.departureAt,
         });
         track(
           'quote_case_board',
-          { count: cases.length, contractMonths: contractMonths ?? null },
+          { count: cases.length, contractMonths: contractMonths ?? null, targetMonth: targetMonth ?? null },
           { cases: out.cases.length, infeasible: out.rollup.infeasibleLabels.length }
         );
         return out;

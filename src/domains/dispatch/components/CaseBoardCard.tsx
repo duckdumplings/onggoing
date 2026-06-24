@@ -14,6 +14,19 @@ function won(v?: number | null): string {
   return `₩${Math.round(v).toLocaleString('ko-KR')}`;
 }
 
+/** 조회 시각 ISO → KST "MM/DD HH:mm". */
+function formatQueriedAt(iso?: string): string {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const k = new Date(t + 9 * 3600 * 1000);
+  const mm = String(k.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(k.getUTCDate()).padStart(2, '0');
+  const hh = String(k.getUTCHours()).padStart(2, '0');
+  const mi = String(k.getUTCMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+
 const ROLE_DOT_CLASS: Record<string, string> = {
   pickup: 'text-primary',
   drop: 'text-success-600',
@@ -80,19 +93,38 @@ function CaseSchematicMap({ points }: { points?: CaseSchematicPoint[] }) {
   );
 }
 
+type RiskGrade = NonNullable<CaseBoardCaseResult['riskGrade']>;
+
+const RISK_STYLE: Record<RiskGrade, { label: string; cls: string }> = {
+  safe: { label: '안정', cls: 'bg-success-muted text-success-600' },
+  caution: { label: '주의', cls: 'bg-warning-muted text-warning' },
+  danger: { label: '위험', cls: 'bg-warning-muted text-warning' },
+  recheck: { label: '구조 재검토', cls: 'bg-error-muted text-error-600' },
+  infeasible: { label: '마감 초과', cls: 'bg-error-muted text-error-600' },
+  none: { label: '마감 없음', cls: 'bg-muted text-muted-foreground' },
+};
+
+function slackLabel(min?: number | null): string {
+  if (min == null || !Number.isFinite(min)) return '';
+  if (min < 0) return `${Math.abs(min)}분 초과`;
+  return `여유 ${min}분`;
+}
+
 function DeadlineBadge({ c }: { c: CaseBoardCaseResult }) {
   if (!c.deadline) {
     return <span className="text-[11px] text-muted-foreground">마감 없음</span>;
   }
-  const ok = c.meetsDeadline;
+  const grade: RiskGrade = c.riskGrade ?? (c.meetsDeadline ? 'safe' : 'infeasible');
+  const style = RISK_STYLE[grade];
+  const ok = grade !== 'infeasible' && grade !== 'recheck';
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-        ok ? 'bg-success-muted text-success-600' : 'bg-error-muted text-error-600'
-      }`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.cls}`}
+      title={`마감 ${c.deadline} / 마지막 배송 ${c.deliveryArrival ?? '-'} · ${slackLabel(c.deadlineSlackMinutes)}`}
     >
       {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-      배송 {c.deliveryArrival ?? '-'} / 마감 {c.deadline}
+      {style.label} · 배송 {c.deliveryArrival ?? '-'}/마감 {c.deadline}
+      {c.deadlineSlackMinutes != null && <span className="font-normal opacity-80">({slackLabel(c.deadlineSlackMinutes)})</span>}
     </span>
   );
 }
@@ -121,6 +153,7 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
           <div className="truncate text-sm font-semibold text-foreground">{c.label}</div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
             {c.departureLabel ? `출발 ${c.departureLabel}` : '출발 미지정'} · {c.vehicleType}
+            {c.operatingWeekdaysLabel ? ` · ${c.operatingWeekdaysLabel}` : ''}
           </div>
         </div>
         <div className="text-right">
@@ -177,14 +210,39 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
           </div>
           <div className="text-muted-foreground">총 거리</div>
           <div className="text-right tabular-nums text-foreground">{c.km != null ? `${c.km}km` : '-'}</div>
+          {c.billMinutes != null && c.ratePerHour != null && (
+            <>
+              <div className="text-muted-foreground">시간당 산식</div>
+              <div className="text-right tabular-nums text-foreground">
+                과금 {c.billMinutes}분 × {c.ratePerHour.toLocaleString('ko-KR')}원/h
+                {c.fuelSurcharge ? ` + 유류 ${c.fuelSurcharge.toLocaleString('ko-KR')}` : ''}
+              </div>
+            </>
+          )}
           <div className="text-muted-foreground">시간당</div>
           <div className="text-right tabular-nums text-foreground">{won(c.hourlyTotal)}</div>
           <div className="text-muted-foreground">단건</div>
           <div className="text-right tabular-nums text-foreground">{won(c.perJobTotal)}</div>
+          {c.monthBasisLabel && (
+            <>
+              <div className="text-muted-foreground">월 기준</div>
+              <div className="text-right tabular-nums text-foreground">{c.monthBasisLabel}</div>
+            </>
+          )}
           {c.monthlyVisits != null && (
             <>
-              <div className="text-muted-foreground">월 {c.monthlyVisits}회</div>
+              <div className="text-muted-foreground">월 {c.monthlyVisits}회 합계</div>
               <div className="text-right tabular-nums text-foreground">{won(c.monthlyTotal)}</div>
+            </>
+          )}
+          {(c.predictionAttemptedSegments != null || c.queriedAt) && (
+            <>
+              <div className="text-muted-foreground">Tmap 증빙</div>
+              <div className="text-right tabular-nums text-foreground">
+                예측 {Math.max(0, (c.predictionAttemptedSegments ?? 0) - (c.predictionFallbackSegments ?? 0))}/
+                {c.predictionAttemptedSegments ?? 0} 구간
+                {c.queriedAt ? ` · 조회 ${formatQueriedAt(c.queriedAt)}` : ''}
+              </div>
             </>
           )}
           {Boolean(c.lowPrecisionStops?.length) && (
@@ -222,7 +280,7 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
 }
 
 export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardProps) {
-  const cases = board.cases ?? [];
+  const cases = useMemo(() => board.cases ?? [], [board.cases]);
 
   // group 키별로 묶되, 입력 순서를 보존한다.
   const groups = useMemo(() => {
@@ -257,13 +315,27 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
       {/* 롤업 요약 */}
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <RollupChip label="1회 합계" value={won(r.oneTimeTotal)} />
-        <RollupChip label="월 합계" value={r.monthlyTotal != null ? won(r.monthlyTotal) : '미산정'} />
+        <RollupChip
+          label={r.targetMonth ? `${r.targetMonth} 월 합계` : '월 합계'}
+          value={r.monthlyTotal != null ? won(r.monthlyTotal) : '미산정'}
+        />
         <RollupChip
           label={r.contractMonths != null ? `계약 ${r.contractMonths}개월` : '계약 합계'}
           value={r.contractTotal != null ? won(r.contractTotal) : '미산정'}
         />
         <RollupChip label="연 합계" value={r.annualTotal != null ? won(r.annualTotal) : '미산정'} />
       </div>
+
+      {Array.isArray(r.contractBreakdown) && r.contractBreakdown.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground">월별 영업일 반영</span>
+          {r.contractBreakdown.map((m) => (
+            <span key={m.month} className="tabular-nums">
+              {m.month} {won(m.total)}
+            </span>
+          ))}
+        </div>
+      )}
 
       {r.infeasibleLabels.length > 0 && (
         <div className="mb-3 inline-flex items-start gap-1.5 rounded-lg bg-error-muted/50 px-2.5 py-1.5 text-[11px] text-error-600">
