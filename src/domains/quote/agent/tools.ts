@@ -55,6 +55,20 @@ function won(v: number): string {
   return `₩${Math.round(v).toLocaleString('ko-KR')}`;
 }
 
+const KST_WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+function kstDateLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const kst = new Date(d.getTime() + 9 * 3600 * 1000);
+  const month = kst.getUTCMonth() + 1;
+  const day = kst.getUTCDate();
+  const weekday = KST_WEEKDAY_LABELS[kst.getUTCDay()];
+  const hh = String(kst.getUTCHours()).padStart(2, '0');
+  const mm = String(kst.getUTCMinutes()).padStart(2, '0');
+  return `${month}/${day}(${weekday}) ${hh}:${mm}`;
+}
+
 /** 유가 출처를 사람이 읽을 라벨로(오피넷이면 유종/거래일 포함). */
 function fuelSourceLabelOf(
   fuel: { source: 'manual' | 'opinet' | 'default'; tradeDate?: string },
@@ -402,12 +416,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     compare_departure_times: tool({
       description:
-        '단일 경로(역할 태깅된 stops)를 평일/주말 × 시간대(한산/출근/퇴근) 프리셋별로 계산해, 출발시간에 따른 소요시간·시간당 견적 차이를 매트릭스로 돌려준다. 사용자가 "출발시간/요일에 따라 견적이 달라지냐", "주말 기준으로도 내줘", "오후 3시까지 도착해야 한다" 등을 물으면 사용하라. 시간당 요금제 기준이며, 금액은 도구 결과만 사용하라. deadline(마감 시각)을 주면 각 출발시간의 예상 도착시각과 마감 충족 여부를 함께 돌려주고, 마감을 지키는 출발 중 가장 저렴한 것을 추천한다. 마감 기준은 기본적으로 "마지막 배송(drop) 완료"이며(deadlineTarget="delivery"), 서초 반납 복귀(업무 종료)는 마감 대상이 아니다. 반납 완료가 마감 기준이면 "return", 반납 포함 최종 도착이 기준이면 "final"로 지정하라.',
+        '단일 경로(역할 태깅된 stops)를 출발시간별로 계산해, 소요시간·시간당 견적 차이를 매트릭스로 돌려준다. 사용자가 "출발시간/요일에 따라 견적이 달라지냐", "주말 기준으로도", "대안 출발시간" 등을 물을 때만 사용하라. 사용자가 "09:00 고정/14:00 고정"처럼 특정 출발시각을 명시하면 customDepartureTimes에 반드시 넣어라. 여러 권역×점심/저녁×월 기준 견적은 이 도구가 아니라 quote_case_board를 먼저 사용하라. 시간당 요금제 기준이며, 금액은 도구 결과만 사용하라. deadline(마감 시각)을 주면 각 출발시간의 예상 도착시각과 마감 충족 여부를 함께 돌려준다. 마감 기준은 기본적으로 "마지막 배송(drop) 완료"이며(deadlineTarget="delivery"), 서초 반납 복귀(업무 종료)는 마감 대상이 아니다. 반납 완료가 마감 기준이면 "return", 반납 포함 최종 도착이 기준이면 "final"로 지정하라.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
         frequency: FrequencySchema.optional(),
+        customDepartureTimes: z
+          .array(z.string().regex(/^\d{1,2}:\d{2}$/))
+          .optional()
+          .describe('사용자가 명시한 출발시각 목록("HH:mm"). 예: "09:00 출발 고정", "14:00 출발"이면 반드시 포함한다. 기본 프리셋(08/10/18시)이 사용자 고정시각을 대체하면 안 된다.'),
         deadline: z
           .string()
           .optional()
@@ -417,7 +435,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .default('delivery')
           .describe('마감 판정 기준. delivery=마지막 배송 완료(기본). return=반납 완료. final=반납 포함 최종 도착.'),
       }),
-      execute: async ({ stops, vehicleType, scheduleType, frequency, deadline, deadlineTarget }) => {
+      execute: async ({ stops, vehicleType, scheduleType, frequency, customDepartureTimes, deadline, deadlineTarget }) => {
         const domainStops = toDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
@@ -443,7 +461,26 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const target: DeadlineTarget = deadlineTarget ?? 'delivery';
         const hasReturn = Array.from(roleMap.values()).includes('return');
 
-        const presets = resolveDeparturePresets();
+        const customPresets = Array.from(new Set((customDepartureTimes ?? []).filter((t) => parseHHMM(t) != null))).map((hhmm) => {
+          const mins = parseHHMM(hhmm)!;
+          const iso = nextIsoAtHHMM(hhmm);
+          return {
+            id: `custom-${hhmm}`,
+            label: `사용자 지정 ${hhmm}`,
+            dayType: 'weekday' as const,
+            hour: Math.floor(mins / 60),
+            minute: mins % 60,
+            trafficLabel: '사용자 지정',
+            iso,
+            dateLabel: kstDateLabel(iso),
+          };
+        });
+        const presetMap = new Map<string, ReturnType<typeof resolveDeparturePresets>[number] | (typeof customPresets)[number]>();
+        for (const preset of [...customPresets, ...resolveDeparturePresets()]) {
+          const key = `${preset.hour}:${preset.minute}`;
+          if (!presetMap.has(key)) presetMap.set(key, preset);
+        }
+        const presets = Array.from(presetMap.values());
 
         const rows = await Promise.all(
           presets.map(async (preset) => {
@@ -552,7 +589,13 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         };
         track(
           'compare_departure_times',
-          { stopCount: stops.length, presets: presets.length, deadline: deadline ?? null, deadlineTarget: target },
+          {
+            stopCount: stops.length,
+            presets: presets.length,
+            customDepartureTimes: customDepartureTimes ?? [],
+            deadline: deadline ?? null,
+            deadlineTarget: target,
+          },
           { recommendedId: out.recommendedId, valid: valid.length, deadlineInfeasible }
         );
         return out;
