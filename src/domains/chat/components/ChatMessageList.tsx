@@ -93,7 +93,7 @@ const MessageBubble = React.memo(function MessageBubble({
 }: MessageBubbleProps) {
   return (
     <div className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
+      <div className={`min-w-0 flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
 
         {/* Avatar */}
         <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'
@@ -104,9 +104,9 @@ const MessageBubble = React.memo(function MessageBubble({
         </div>
 
         {/* Message Bubble */}
-        <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+        <div className={`min-w-0 max-w-full flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
           <div
-            className={`relative px-4 py-3 text-[14.5px] leading-relaxed ${msg.role === 'user'
+            className={`relative max-w-full break-words px-4 py-3 text-[14.5px] leading-relaxed ${msg.role === 'user'
               ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-md shadow-sm shadow-primary/20'
               : (msg.kind === 'system' && msg.content !== WELCOME_MESSAGE)
                 ? 'bg-warning-muted text-warning border border-warning/20 rounded-2xl'
@@ -342,7 +342,7 @@ export default function ChatMessageList({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="relative flex-1 overflow-y-auto px-4 py-6 md:px-7 space-y-6 scroll-smooth custom-scrollbar bg-muted/40"
+      className="relative flex-1 min-w-0 overflow-y-auto px-4 py-6 md:px-7 space-y-6 scroll-smooth custom-scrollbar bg-muted/40"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}

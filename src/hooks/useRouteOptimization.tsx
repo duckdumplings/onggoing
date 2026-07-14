@@ -49,6 +49,10 @@ export interface OptimizationOptions {
   returnToOrigin?: boolean;
   deliveryTimes?: string[]; // 배송완료시간 배열 (24시간 형식: "14:30")
   isNextDayFlags?: boolean[]; // 다음날 배송 여부 배열
+  originDwellMinutes?: number; // 출발지 상차 대기(분)
+  openStart?: boolean; // 오픈 스타트(출발지 후보 탐색) 사용
+  startCandidateCount?: number; // 출발지 후보 개수
+  fastOrder?: boolean; // 빠른 순서 최적화 모드
 }
 
 export interface RouteOptimizationPayload {
@@ -65,6 +69,10 @@ export interface RouteOptimizationPayload {
   dwellMinutes: number[];
   deliveryTimes: string[];
   isNextDayFlags: boolean[];
+  originDwellMinutes?: number;
+  openStart?: boolean;
+  startCandidateCount?: number;
+  fastOrder?: boolean;
 }
 
 export interface RouteOptimizationBaseState {
@@ -126,6 +134,11 @@ export function buildRouteOptimizationPayload(
     dwellMinutes: dm,
     deliveryTimes: opt.deliveryTimes || [],
     isNextDayFlags: opt.isNextDayFlags || [],
+    // 챗↔지도 일치: 툴이 실제 사용한 출발지/순서 관련 필드를 그대로 API 바디까지 전달.
+    originDwellMinutes: opt.originDwellMinutes,
+    openStart: opt.openStart,
+    startCandidateCount: opt.startCandidateCount,
+    fastOrder: opt.fastOrder,
   };
 }
 

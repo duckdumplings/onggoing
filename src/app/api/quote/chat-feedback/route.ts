@@ -30,14 +30,44 @@ function inferFeedbackTags(params: {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // sendBeacon은 text/plain(Content-Type)으로 보내므로 request.json()이 실패할 수 있다.
+    // 실패 시 request.text() 후 JSON.parse로 폴백한다.
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      try {
+        const raw = await request.text();
+        body = raw ? JSON.parse(raw) : {};
+      } catch {
+        body = {};
+      }
+    }
     const feedbackType = body?.feedbackType === 'positive' ? 'positive' : 'negative';
 
     const userInput = String(body?.userInput || '').trim();
     const assistantOutput = String(body?.assistantOutput || '').trim();
     const reason = body?.reason ? String(body.reason).trim().slice(0, 500) : null;
     const sessionId = body?.sessionId ? String(body.sessionId) : null;
-    const rawMessageId = body?.messageId ? String(body.messageId) : (body?.metadata?.messageId ? String(body.metadata.messageId) : null);
+    const anonId = body?.anonId ? String(body.anonId).slice(0, 100) : null;
+    const extraMetadata =
+      body?.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+        ? (body.metadata as Record<string, unknown>)
+        : {};
+    const quoteSnapshot = extraMetadata?.quote ? String(extraMetadata.quote).slice(0, 200) : null;
+    const structuredKeys = Array.isArray(extraMetadata?.structuredKeys)
+      ? (extraMetadata.structuredKeys as unknown[]).map((k) => String(k)).slice(0, 30)
+      : null;
+    const evidenceSourceCount =
+      typeof extraMetadata?.evidenceSourceCount === 'number' ? extraMetadata.evidenceSourceCount : null;
+    const sourceUserText = extraMetadata?.sourceUserText ? String(extraMetadata.sourceUserText).slice(0, 4000) : null;
+    const rawMessageId = body?.messageId
+      ? String(body.messageId)
+      : extraMetadata?.messageIdRaw
+        ? String(extraMetadata.messageIdRaw)
+        : extraMetadata?.messageId
+          ? String(extraMetadata.messageId)
+          : null;
     const messageId =
       rawMessageId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawMessageId)
         ? rawMessageId
@@ -50,7 +80,8 @@ export async function POST(request: NextRequest) {
     });
     const mergedTags = Array.from(new Set([...tags, ...inferredTags]));
 
-    if (!userInput) {
+    // 결과 카드만 있는 피드백을 막지 않도록 완화 — 견적 결과(assistantOutput) 또는 견적 스냅샷이 있으면 통과.
+    if (!userInput && !assistantOutput && !quoteSnapshot) {
       return NextResponse.json(
         { success: false, error: { code: 'INVALID_INPUT', message: 'userInput이 필요합니다.' } },
         { status: 400 }
@@ -64,7 +95,8 @@ export async function POST(request: NextRequest) {
         {
           session_id: sessionId,
           message_id: messageId,
-          user_input: userInput,
+          // user_input은 NOT NULL 컬럼 — 완화 경로에서도 채워지도록 방어적 폴백.
+          user_input: userInput || sourceUserText || quoteSnapshot || 'unknown',
           assistant_output: assistantOutput || null,
           error_code: feedbackType === 'positive' ? 'USER_FEEDBACK_POSITIVE' : 'USER_FEEDBACK_NEGATIVE',
           reason,
@@ -73,6 +105,11 @@ export async function POST(request: NextRequest) {
             source: 'ui-feedback',
             feedback_type: feedbackType,
             raw_message_id: rawMessageId,
+            anon_id: anonId,
+            ...(quoteSnapshot ? { quote: quoteSnapshot } : {}),
+            ...(structuredKeys ? { structured_keys: structuredKeys } : {}),
+            ...(evidenceSourceCount != null ? { evidence_source_count: evidenceSourceCount } : {}),
+            ...(sourceUserText ? { source_user_text: sourceUserText } : {}),
           },
         },
       ])

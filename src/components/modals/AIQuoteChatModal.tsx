@@ -57,6 +57,98 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
 /** 입력창 최대 글자수 — 과도한 페이로드 방지용 소프트 가드. */
 const MAX_CHARS = 8000;
 
+/** 로그인 없이도 재귀개선용으로 피드백을 묶을 수 있는 익명 식별자. localStorage에 재사용 보관. */
+const ANON_ID_KEY = 'nyl_anon_id';
+const FEEDBACK_QUEUE_KEY = 'nyl_feedback_queue';
+
+function generateAnonId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // randomUUID 미지원 — 아래 폴백 사용.
+  }
+  return `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getAnonId(): string {
+  if (typeof window === 'undefined') return generateAnonId();
+  try {
+    let id = window.localStorage.getItem(ANON_ID_KEY);
+    if (!id) {
+      id = generateAnonId();
+      window.localStorage.setItem(ANON_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return generateAnonId();
+  }
+}
+
+function readFeedbackQueue(): Record<string, unknown>[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(FEEDBACK_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFeedbackQueue(list: Record<string, unknown>[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!list.length) {
+      window.localStorage.removeItem(FEEDBACK_QUEUE_KEY);
+      return;
+    }
+    // 무한 성장 방지 — 최근 50건만 유지.
+    window.localStorage.setItem(FEEDBACK_QUEUE_KEY, JSON.stringify(list.slice(-50)));
+  } catch {
+    // 스토리지 쓰기 실패는 조용히 무시.
+  }
+}
+
+function enqueueFeedback(body: Record<string, unknown>) {
+  const list = readFeedbackQueue();
+  list.push(body);
+  writeFeedbackQueue(list);
+}
+
+/** 마운트 시 큐를 재전송 — 성공분만 큐에서 제거하고, 실패분은 다시 적재해 유지. */
+async function flushFeedbackQueueAsync() {
+  const list = readFeedbackQueue();
+  if (!list.length) return;
+  writeFeedbackQueue([]);
+  const remaining: Record<string, unknown>[] = [];
+  for (const item of list) {
+    const ok = await submitFeedbackApi(item).catch(() => false);
+    if (!ok) remaining.push(item);
+  }
+  if (remaining.length) {
+    writeFeedbackQueue([...readFeedbackQueue(), ...remaining]);
+  }
+}
+
+/** 페이지 이탈 컨텍스트 — 동기 sendBeacon으로 전량 시도 후 전부 큐에 실리면 비운다. */
+function flushFeedbackQueueBeacon() {
+  const list = readFeedbackQueue();
+  if (!list.length) return;
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+    let allQueued = true;
+    for (const item of list) {
+      const blob = new Blob([JSON.stringify(item)], { type: 'text/plain' });
+      if (!navigator.sendBeacon('/api/quote/chat-feedback', blob)) allQueued = false;
+    }
+    if (allQueued) writeFeedbackQueue([]);
+  } catch {
+    // sendBeacon 실패 — 큐를 유지해 다음 마운트에서 재전송.
+  }
+}
+
 interface AIQuoteChatModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -136,6 +228,22 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   };
   useEffect(() => {
     setIssuer(loadIssuer());
+  }, []);
+
+  // 로그인 없이도 유실 없는 피드백 수집: 마운트 시 밀린 큐를 재전송하고,
+  // 페이지 이탈(pagehide) / 탭 숨김(visibilitychange=hidden) 시 sendBeacon으로 큐를 비운다.
+  useEffect(() => {
+    void flushFeedbackQueueAsync();
+    const onPageHide = () => flushFeedbackQueueBeacon();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushFeedbackQueueBeacon();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   // 직전 결과(견적/시나리오/경로 좌표)를 후속 요청 컨텍스트로 구조화 — 멀티턴 메모리.
@@ -781,22 +889,40 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   };
 
   const submitFeedback = async (msg: ChatMessage, type: 'positive' | 'negative') => {
-    // UX: 버튼 클릭 즉시 시각적 반영(로그인/세션 유무와 무관)
+    // UX: 버튼 클릭 즉시 시각적 반영(로그인/세션 유무와 무관). 실패해도 낙관적 상태를 유지한다.
     setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: type }));
-    try {
-      await submitFeedbackApi({
-        sessionId: currentSessionId && !currentSessionId.startsWith('local-') ? currentSessionId : null,
-        userInput: msg.sourceUserText || 'unknown',
-        assistantOutput: msg.content,
-        feedbackType: type,
-        messageId: msg.id,
-        metadata: { messageId: msg.id },
-      });
-    } catch (error) {
-      // 실패 시 버튼 상태 롤백
-      setFeedbackSentByMessageId((prev) => ({ ...prev, [msg.id]: undefined }));
-      const message = error instanceof Error ? error.message : '알 수 없는 오류';
-      pushAssistantMessage(`피드백 저장 실패: ${message}`, 'system');
+
+    // 재귀개선용 스냅샷 — 존재하는 것만 방어적으로 담는다.
+    const metadata: Record<string, unknown> = { messageId: msg.id, messageIdRaw: msg.id };
+    if (msg.sourceUserText) metadata.sourceUserText = msg.sourceUserText;
+    const structured = msg.structured;
+    if (structured) {
+      metadata.structuredKeys = Object.keys(structured);
+      const q = structured.quote as any;
+      const quoteFormatted = q?.hourly?.formatted || q?.perJob?.formatted;
+      if (quoteFormatted) metadata.quote = quoteFormatted;
+    }
+    if (!metadata.quote && latestResult?.quote) {
+      const repQuote = latestResult.quote.hourly?.formatted || latestResult.quote.perJob?.formatted;
+      if (repQuote) metadata.quote = repQuote;
+    }
+    const evidenceSources = msg.evidence?.sources;
+    if (Array.isArray(evidenceSources)) metadata.evidenceSourceCount = evidenceSources.length;
+
+    const body: Record<string, unknown> = {
+      sessionId: currentSessionId && !currentSessionId.startsWith('local-') ? currentSessionId : null,
+      userInput: msg.sourceUserText || 'unknown',
+      assistantOutput: msg.content,
+      feedbackType: type,
+      messageId: msg.id,
+      anonId: getAnonId(),
+      metadata,
+    };
+
+    const ok = await submitFeedbackApi(body).catch(() => false);
+    if (!ok) {
+      // 유실 방지: 로컬 큐에 적재하고 낙관적 상태는 유지(롤백/에러 말풍선 없음).
+      enqueueFeedback(body);
     }
   };
 
@@ -817,10 +943,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   // 좌표가 해석된 지점은 좌표로(재지오코딩 회피), 아니면 주소 문자열로 미리보기를 실행한다.
   const previewRouteOnMap = async (
     rawRequest: any,
-    opts: { useSanitizedFallback?: boolean; closeOnSuccess?: boolean; silent?: boolean } = {}
+    opts: { useSanitizedFallback?: boolean; closeOnSuccess?: boolean; silent?: boolean; optionsOverride?: { optimizeOrder?: boolean } } = {}
   ) => {
     if (!rawRequest) return;
-    const { useSanitizedFallback = false, closeOnSuccess = true, silent = false } = opts;
+    const { useSanitizedFallback = false, closeOnSuccess = true, silent = false, optionsOverride } = opts;
     const requestData = useSanitizedFallback
       ? sanitizeRequestDataForPreview(rawRequest)
       : rawRequest;
@@ -841,14 +967,22 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     const allResolved = Boolean(originCoord) && destCoords.length > 0 && destCoords.every(Boolean);
 
     const commonOptions = {
-      optimizeOrder: requestData.optimizeOrder ?? previewMode === 'optimized-order',
+      // 툴 payload는 optimizeOrder를 항상 담으므로 기본값 변조 방지를 위해 false로 폴백.
+      optimizeOrder: requestData.optimizeOrder ?? false,
       useRealtimeTraffic: requestData.useRealtimeTraffic,
       departureAt: requestData.departureAt || null,
       deliveryTimes: requestData.deliveryTimes || [],
       isNextDayFlags: requestData.isNextDayFlags || [],
       useExplicitDestination: Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress),
-      returnToOrigin: requestData.returnToOrigin ?? true,
+      returnToOrigin: requestData.returnToOrigin ?? false,
       roadOption: requestData.roadOption || 'time-first',
+      // 챗↔지도 일치: 툴이 실제 사용한 출발지/순서 관련 필드를 그대로 전달.
+      originDwellMinutes: requestData.originDwellMinutes,
+      openStart: requestData.openStart,
+      startCandidateCount: requestData.startCandidateCount,
+      fastOrder: requestData.fastOrder,
+      // 사이드바 명시 토글(입력/최적 순서) 경로에서만 optimizeOrder를 덮어쓴다.
+      ...(optionsOverride || {}),
     };
 
     try {
@@ -901,7 +1035,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   };
 
   const handlePreviewOnMap = (useSanitizedFallback = false) =>
-    previewRouteOnMap(latestResult?.routeRequest, { useSanitizedFallback });
+    previewRouteOnMap(latestResult?.routeRequest, {
+      useSanitizedFallback,
+      // 사이드바 명시 토글(입력 순서/최적 순서)을 optimizeOrder로 주입해 그 경로를 보존한다.
+      optionsOverride: { optimizeOrder: previewMode === 'optimized-order' },
+    });
 
   // 시나리오 비교에서 특정 시나리오를 앱 지도에 표시.
   // routes를 직접 넘기면(인라인 카드) 그것을, 없으면 latestResult를 사용.

@@ -123,14 +123,39 @@ export const deleteSessionApi = async (sessionId: string): Promise<{ success: bo
   return { success: true };
 };
 
-export const submitFeedbackApi = async (body: Record<string, unknown>) => {
-  const res = await fetch('/api/quote/chat-feedback', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || `HTTP_${res.status}`);
+/**
+ * 피드백을 내구성 있게 전송한다(익명·로그인 불필요). 예외를 던지지 않고 성공 여부를 boolean으로 반환.
+ * 1) keepalive fetch(페이지 이탈에도 유지) → 2) 지수 백오프 재시도(총 3회) →
+ * 3) 최종 폴백으로 navigator.sendBeacon(text/plain). 모두 실패하면 false.
+ */
+export const submitFeedbackApi = async (body: Record<string, unknown>): Promise<boolean> => {
+  const payload = JSON.stringify(body);
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch('/api/quote/chat-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      });
+      if (res.ok) return true;
+    } catch {
+      // 네트워크 오류 — 아래 백오프 후 재시도한다.
+    }
+    // 마지막 시도 뒤에는 대기하지 않는다.
+    if (attempt < MAX_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+    }
   }
+  // 최종 폴백: sendBeacon(text/plain). 언로드 중에도 전송 큐에 실린다.
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([payload], { type: 'text/plain' });
+      if (navigator.sendBeacon('/api/quote/chat-feedback', blob)) return true;
+    }
+  } catch {
+    // sendBeacon 사용 불가 — 실패로 처리한다.
+  }
+  return false;
 };
