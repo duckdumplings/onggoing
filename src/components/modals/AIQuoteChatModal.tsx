@@ -57,6 +57,13 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
 /** 입력창 최대 글자수 — 과도한 페이로드 방지용 소프트 가드. */
 const MAX_CHARS = 8000;
 
+/**
+ * 견적챗은 로그인 없이 쓴다(사용자 요청: "로그인/세션 관리 없는게 좋음").
+ * 로그인·로그아웃·인증 폼 UI를 이 플래그로 숨긴다. 익명 흐름·피드백 수집은 그대로 동작하고,
+ * 첨부/영속 등 로그인 의존 기능을 되살려야 하면 이 값을 true로만 바꾸면 된다(코드·훅은 보존).
+ */
+const SHOW_ACCOUNT_UI = false;
+
 /** 로그인 없이도 재귀개선용으로 피드백을 묶을 수 있는 익명 식별자. localStorage에 재사용 보관. */
 const ANON_ID_KEY = 'nyl_anon_id';
 const FEEDBACK_QUEUE_KEY = 'nyl_feedback_queue';
@@ -1155,20 +1162,22 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAuthForm((prev) => !prev);
-                  setAuthError(null);
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${authUserEmail
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                  }`}
-              >
-                {authUserEmail ? '로그인됨' : '로그인'}
-              </button>
-              {authUserEmail && (
+              {SHOW_ACCOUNT_UI && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAuthForm((prev) => !prev);
+                    setAuthError(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${authUserEmail
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                    }`}
+                >
+                  {authUserEmail ? '로그인됨' : '로그인'}
+                </button>
+              )}
+              {SHOW_ACCOUNT_UI && authUserEmail && (
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}
@@ -1196,7 +1205,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             </div>
           </div>
 
-          {(showAuthForm || authError) && (
+          {SHOW_ACCOUNT_UI && (showAuthForm || authError) && (
             <div className="px-4 md:px-8 py-3 border-b border-border bg-slate-50/80">
               {authUserEmail ? (
                 <div className="flex flex-wrap items-center gap-2 text-[12px]">
