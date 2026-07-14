@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Compass, Sparkles } from 'lucide-react';
+import { Compass, Sparkles, Calculator } from 'lucide-react';
 
 interface TopBarProps {
   onOpenChat: () => void;
@@ -37,17 +38,28 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
 
       {/* 액션 — 챗이 열려 있으면 슬라이드오버가 덮으므로 숨긴다 */}
       {!chatOpen && (
-        <motion.button
+        <motion.div
           initial={{ y: -12, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.28, ease: [0.2, 0, 0, 1], delay: 0.05 }}
-          type="button"
-          onClick={onOpenChat}
-          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-2xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:bg-primary/90 active:scale-[0.98]"
+          className="pointer-events-auto flex items-center gap-2"
         >
-          <Sparkles className="h-4 w-4" />
-          AI 견적챗
-        </motion.button>
+          <Link
+            href="/quote"
+            className="inline-flex items-center gap-1.5 rounded-2xl glass-launcher px-3 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-muted active:scale-[0.98]"
+          >
+            <Calculator className="h-4 w-4" />
+            간편 견적
+          </Link>
+          <button
+            type="button"
+            onClick={onOpenChat}
+            className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:bg-primary/90 active:scale-[0.98]"
+          >
+            <Sparkles className="h-4 w-4" />
+            AI 견적챗
+          </button>
+        </motion.div>
       )}
     </header>
   );

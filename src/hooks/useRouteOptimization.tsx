@@ -53,6 +53,8 @@ export interface OptimizationOptions {
   openStart?: boolean; // 오픈 스타트(출발지 후보 탐색) 사용
   startCandidateCount?: number; // 출발지 후보 개수
   fastOrder?: boolean; // 빠른 순서 최적화 모드
+  stopRoles?: string[]; // 목적지 인덱스 정합 역할(pickup/drop/return/waypoint) — 타임라인/지도 표기용
+  originRole?: string; // 출발지 역할
 }
 
 export interface RouteOptimizationPayload {
@@ -73,6 +75,8 @@ export interface RouteOptimizationPayload {
   openStart?: boolean;
   startCandidateCount?: number;
   fastOrder?: boolean;
+  stopRoles?: string[];
+  originRole?: string;
 }
 
 export interface RouteOptimizationBaseState {
@@ -139,7 +143,10 @@ export function buildRouteOptimizationPayload(
     openStart: opt.openStart,
     startCandidateCount: opt.startCandidateCount,
     fastOrder: opt.fastOrder,
-  };
+    // 역할 태그(단순 견적 뷰 등): 타임라인/지도가 수거지를 pickup으로 정확히 표기.
+    ...(opt.stopRoles ? { stopRoles: opt.stopRoles } : {}),
+    ...(opt.originRole ? { originRole: opt.originRole } : {}),
+  } as RouteOptimizationPayload;
 }
 
 function pickFirstRouteCoordinate(routeData: any): { lat: number; lng: number } | null {
