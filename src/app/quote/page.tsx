@@ -19,6 +19,7 @@ import type { StopRole } from '@/domains/dispatch/types/routePlan';
 interface StopRow {
   id: string;
   role: StopRole;
+  name: string; // 상호/지점명(복붙 시 memo에서 채움)
   address: string;
   selected: AddressSelection | null; // 자동완성으로 확정된 좌표
   time: string; // 'HH:mm' — pickup=준비시각, drop/return=도착 마감
@@ -36,10 +37,26 @@ const ROLE_OPTIONS: Array<{ value: StopRole; label: string }> = [
 
 const DEFAULT_DWELL: Record<StopRole, number> = { pickup: 15, drop: 12, return: 8, waypoint: 5 };
 
+const ROLE_LABEL: Record<string, string> = { pickup: '상차', drop: '하차', return: '반납', waypoint: '경유' };
+const ROLE_TONE: Record<string, string> = {
+  pickup: 'bg-emerald-100 text-emerald-700',
+  drop: 'bg-blue-100 text-blue-700',
+  return: 'bg-purple-100 text-purple-700',
+  waypoint: 'bg-muted text-muted-foreground',
+};
+// S9 마감 여유 톤: 초과=위반, 15~20분=이상적, <15=빡빡, >20=너무 이름(대기·컴플레인)
+const SLACK_TONE: Record<string, string> = {
+  late: 'bg-danger-100 text-danger-700',
+  ideal: 'bg-emerald-100 text-emerald-700',
+  tight: 'bg-amber-100 text-amber-700',
+  early: 'bg-sky-100 text-sky-700',
+};
+
 let rowSeq = 0;
 const newRow = (role: StopRole = 'waypoint'): StopRow => ({
   id: `row-${rowSeq++}`,
   role,
+  name: '',
   address: '',
   selected: null,
   time: '',
@@ -76,6 +93,7 @@ export default function SimpleQuotePage() {
       drafts.map((d) => ({
         ...newRow(d.role),
         role: d.role,
+        name: d.memo ?? '',
         address: d.address,
         time: d.deliveryTime ?? '',
         quantity: d.quantity != null ? String(d.quantity) : '',
@@ -91,6 +109,10 @@ export default function SimpleQuotePage() {
     () => (routeData?.summary ? computeRouteQuote(routeData.summary, (routeData as any)?.waypoints?.length ?? waypoints.length) : null),
     [routeData, waypoints.length]
   );
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
+  // 경로 타임라인 + 마감 여유(S9): 지점별 도착시각과 마감 대비 여유를 눈으로 확인.
+  const timelineRows = useMemo(() => buildTimeline(routeData), [routeData]);
 
   const canCalc = rows.filter((r) => r.address.trim()).length >= 2;
 
@@ -224,6 +246,14 @@ export default function SimpleQuotePage() {
                   <button type="button" onClick={() => removeRow(row.id)} className="text-xs text-muted-foreground hover:text-danger-600" aria-label="행 삭제">✕</button>
                 </div>
 
+                <input
+                  type="text"
+                  value={row.name}
+                  onChange={(e) => updateRow(row.id, { name: e.target.value })}
+                  placeholder="상호/지점명 (선택)"
+                  className="mb-1 w-full rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground placeholder:font-normal placeholder:text-muted-foreground"
+                />
+
                 <AddressAutocomplete
                   label=""
                   placeholder={idx === 0 ? '출발/첫 지점 주소' : '지점 주소'}
@@ -317,6 +347,26 @@ export default function SimpleQuotePage() {
           )}
           {calcError && <div className="mb-2 rounded-md border border-danger-300 bg-danger-50 p-2 text-[11px] text-danger-700">{calcError}</div>}
 
+          {timelineRows.length > 0 && (
+            <div className="mb-2 max-h-44 overflow-y-auto rounded-md border border-border bg-background p-2">
+              <p className="mb-1 text-[11px] font-medium text-muted-foreground">경로 타임라인</p>
+              <ol className="space-y-1">
+                {timelineRows.map((t, i) => (
+                  <li key={i} className="flex items-center gap-1.5 text-[11px]">
+                    <span className={`rounded px-1 py-0.5 text-[10px] ${ROLE_TONE[t.role] ?? 'bg-muted text-muted-foreground'}`}>{ROLE_LABEL[t.role] ?? '경유'}</span>
+                    <span className="min-w-0 flex-1 truncate text-foreground">{t.address}</span>
+                    <span className="tabular-nums text-muted-foreground">{t.arrival ?? '—'}</span>
+                    {t.slack != null && (
+                      <span className={`whitespace-nowrap rounded px-1 py-0.5 text-[10px] ${SLACK_TONE[t.tone]}`}>
+                        {t.slack < 0 ? `${-t.slack}분 초과` : `여유 ${t.slack}분`}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
           {quote && (
             <div className="mb-2 rounded-md border border-border bg-background p-2.5 text-xs">
               <div className="flex items-baseline justify-between">
@@ -325,10 +375,22 @@ export default function SimpleQuotePage() {
               </div>
               <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
                 <span>시간당 {won(quote.hourlyTotal)} · 단건 {won(quote.perJobTotal)}</span>
+                <button type="button" onClick={() => setShowBreakdown((v) => !v)} className="underline-offset-2 hover:underline">
+                  {showBreakdown ? '접기' : '상세'}
+                </button>
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
                 {quote.distanceKm}km · 주행 {quote.driveMinutes}분 + 체류 {quote.dwellTotalMin}분 · 과금 {quote.billMinutes}분
               </div>
+              {showBreakdown && (
+                <div className="mt-2 space-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                  <p className="font-medium text-foreground">시간당 요금제</p>
+                  <p>· {won(quote.hourlyBreakdown.hourlyRate)}/시간 × {(quote.hourlyBreakdown.billMinutes / 60).toFixed(1)}시간 = {won(quote.hourlyBreakdown.base)}</p>
+                  <p>· 유류할증 {won(quote.hourlyBreakdown.fuelSurcharge)}</p>
+                  <p className="mt-1 font-medium text-foreground">단건 요금제</p>
+                  <p>· 기본 {won(quote.perJobBreakdown.base)} + 경유지 {won(quote.perJobBreakdown.stopFee)} ({quote.perJobBreakdown.effectiveStopsCount}곳)</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -395,4 +457,40 @@ function formatHm(iso?: string): string | undefined {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return undefined;
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+interface TimelineRow {
+  role: string;
+  address: string;
+  arrival?: string;
+  slack: number | null; // 마감까지 남는 분(음수=초과)
+  tone: string;
+}
+
+/** routeData.timeline(역할·도착) + waypoints(도착 마감)로 지점별 도착시각·마감 여유를 만든다. */
+function buildTimeline(routeData: any): TimelineRow[] {
+  const tl: any[] = Array.isArray(routeData?.timeline) ? routeData.timeline : [];
+  if (!tl.length) return [];
+  const wps: any[] = Array.isArray(routeData?.waypoints) ? routeData.waypoints : [];
+  const dueByAddr = new Map<string, string>();
+  for (const w of wps) {
+    if (w?.address && w?.deliveryTime) dueByAddr.set(String(w.address), String(w.deliveryTime));
+  }
+  return tl.map((t) => {
+    const address = String(t.address ?? '');
+    const arrivalIso: string | undefined = t.arrivalTime;
+    const arrival = formatHm(arrivalIso);
+    const due = dueByAddr.get(address);
+    let slack: number | null = null;
+    let tone = '';
+    if (due && arrivalIso) {
+      const [dh, dm] = due.split(':').map(Number);
+      const ad = new Date(arrivalIso);
+      if (!Number.isNaN(ad.getTime()) && Number.isFinite(dh) && Number.isFinite(dm)) {
+        slack = dh * 60 + dm - (ad.getHours() * 60 + ad.getMinutes());
+        tone = slack < 0 ? 'late' : slack > 20 ? 'early' : slack >= 15 ? 'ideal' : 'tight';
+      }
+    }
+    return { role: String(t.role ?? 'waypoint'), address, arrival, slack, tone };
+  });
 }
