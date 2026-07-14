@@ -149,7 +149,7 @@ export function buildQuotePackage(board: CaseBoardResult, vatRate = DEFAULT_VAT_
       label: c.label,
       grade: c.riskGrade ?? 'none',
       labelText: riskLabelText(c.riskGrade),
-      reason: buildRiskReason(c),
+      reason: (c.riskGrade === 'infeasible' && c.riskReason) ? c.riskReason : (c.riskReason ?? buildRiskReason(c)),
       recommendedAction: buildRiskAction(c),
     }));
 

@@ -29,6 +29,7 @@ export const RouteStopSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   weightKg: z.number().optional().describe('지점별 물량(kg).'),
+  quantity: z.number().optional().describe('지점별 물량 개수(예: 도시락 30). weightKg(kg)와 별개. 차종·체류시간 판단 참고용.'),
   dwellMinutes: z.number().optional().describe('상하차/작업 체류 시간(분).'),
   deliveryTime: z.string().optional().describe("'HH:mm' 배송(drop) 도착 마감 전용. 상차(pickup)의 '물품 준비 시각'은 여기 넣지 마라(도착 마감으로 오인돼 비현실 충돌을 유발) — 준비시각은 출발시각/방문 순서로 다뤄라."),
   memo: z.string().optional(),
@@ -142,6 +143,17 @@ export function validatePlan(stops: RouteStop[], frequency?: Frequency): PlanVal
 
   if (frequency && frequency.count <= 0) {
     issues.push({ code: 'BAD_FREQUENCY', message: '빈도 횟수가 올바르지 않습니다.', severity: 'error' });
+  }
+
+  // 물량(개수) 하한 참고: 총 물량이 많으면 레이 적재 한계를 넘을 수 있어 차종/체류시간 상향 검토를 권고한다.
+  // severity는 'warning'이라 isReady를 바꾸지 않는다(차종 비교 판단은 프롬프트에 맡김).
+  const totalQuantity = stops.reduce((acc, s) => acc + (s.quantity ?? 0), 0);
+  if (totalQuantity > 40) {
+    issues.push({
+      code: 'HIGH_QUANTITY',
+      message: `총 물량 ${totalQuantity}개 — 레이 적재 한계 확인 또는 스타렉스 검토 권장`,
+      severity: 'warning',
+    });
   }
 
   const errorCount = issues.filter((i) => i.severity === 'error').length;

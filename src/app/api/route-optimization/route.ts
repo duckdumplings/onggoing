@@ -1313,7 +1313,7 @@ export async function POST(request: NextRequest) {
         // 시간제약이 없는 경우: 단순 거리 기반 최적화
         console.log('[거리 기반 최적화] 실행 - 시간제약 없음');
 
-        orderedDestinations = nearestNeighborOrder(startLocation, destinationCoords);
+        orderedDestinations = nearestNeighborOrder(startLocation, destinationCoords, Array.isArray(stopRoles) ? stopRoles : []);
 
         console.log('[거리 기반 최적화] 완료:', {
           최적경로: orderedDestinations.map(p => p.address),
@@ -1465,24 +1465,33 @@ export async function POST(request: NextRequest) {
       console.log('vehicleTypeCode:', vehicleTypeCode);
       console.log('====================');
 
+      // 동일 좌표 구간(예: 같은 지점 반복 방문, 두 경로가 공유하는 하차지) 방어:
+      // from==to인 0m 구간은 Tmap이 거부해 502로 견적 전체를 실패시킬 수 있다.
+      // 이동 0m/0초의 합성 구간으로 처리해 Tmap 호출을 건너뛴다(거리·시간에 영향 없음).
+      const sameCoord =
+        Math.abs(current.latitude - dest.latitude) < 1e-6 &&
+        Math.abs(current.longitude - dest.longitude) < 1e-6;
+
       // 출발시각 + time-first면 getTmapRoute가 예측(타임머신) 경로를 시도한다.
-      const segUsesPrediction = Boolean(segmentDepartureTime) && (roadOption || 'time-first') === 'time-first';
+      const segUsesPrediction = !sameCoord && Boolean(segmentDepartureTime) && (roadOption || 'time-first') === 'time-first';
       if (segUsesPrediction) predictionAttemptedSegments += 1;
 
-      const seg = await getTmapRoute(
-        { x: current.longitude, y: current.latitude },
-        { x: dest.longitude, y: dest.latitude },
-        tmapKey,
-        {
-          vehicleTypeCode,
-          trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
-          departureAt: segmentDepartureTime.toISOString(),
-          roadOption
-        }
-      ).catch((error) => {
-        console.warn(`Tmap API 호출 실패: ${error.message}`);
-        return null as any;
-      });
+      const seg = sameCoord
+        ? { features: [] as any[] }
+        : await getTmapRoute(
+            { x: current.longitude, y: current.latitude },
+            { x: dest.longitude, y: dest.latitude },
+            tmapKey,
+            {
+              vehicleTypeCode,
+              trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
+              departureAt: segmentDepartureTime.toISOString(),
+              roadOption
+            }
+          ).catch((error) => {
+            console.warn(`Tmap API 호출 실패: ${error.message}`);
+            return null as any;
+          });
 
       if (seg && Array.isArray(seg.features)) {
         // 거리 계산 정확성 검증
@@ -1934,6 +1943,41 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
 }
 
 /** Tmap → Nominatim 순으로 여러 쿼리 변형을 시도해 실패 시 예외만 던짐 */
+// Tmap 전체주소 지오코딩(도로명/지번에 강함). POI 키워드 검색이 상호명·동명이인에 오매칭되는 것을 방지.
+async function geocodeWithTmapFullAddr(
+  address: string,
+  appKey: string
+): Promise<{ latitude: number; longitude: number; address: string }> {
+  const url = new URL('https://apis.openapi.sk.com/tmap/geo/fullAddrGeo');
+  url.searchParams.set('version', '1');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('coordType', 'WGS84GEO');
+  url.searchParams.set('fullAddr', address);
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { appKey, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new Error(`TMAP_FULLADDR_HTTP_${res.status}`);
+  const data = await res.json();
+  const coord = data?.coordinateInfo?.coordinate?.[0];
+  if (!coord) throw new Error('TMAP_FULLADDR_NO_COORD');
+  const latitude = parseFloat(coord.newLat || coord.lat);
+  const longitude = parseFloat(coord.newLon || coord.lon);
+  if (!isValidCoordinate(latitude, longitude)) throw new Error('TMAP_FULLADDR_INVALID_COORDINATE');
+  const rebuilt = [coord.city_do, coord.gu_gun, coord.eup_myun, coord.legalDong, coord.roadName, coord.buildingIndex]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const regionOnly = rebuilt !== '' && !/\d/.test(rebuilt) && /(시|군|구|읍|면|동|리)$/.test(rebuilt);
+  return { latitude, longitude, address: !rebuilt || regionOnly ? address : rebuilt };
+}
+
+// 도로명/지번 주소처럼 보이면(로/길 + 번지, 또는 동 + 번지) fullAddrGeo를 우선 시도한다.
+function looksLikeRoadOrJibun(q: string): boolean {
+  const s = q.trim();
+  return /(로|길)\s*\d/.test(s) || /\d+(번길|길|로)/.test(s) || /[가-힣]동\s*\d/.test(s) || /\d+-\d+/.test(s);
+}
+
 async function geocodeAddressReliable(
   address: string,
   tmapKey: string
@@ -1941,6 +1985,15 @@ async function geocodeAddressReliable(
   const variants = buildGeocodeQueryVariants(address);
   let lastError: Error | null = null;
   for (const q of variants) {
+    // 도로명/지번 주소는 전체주소 지오코딩을 먼저(POI 키워드 오매칭 방지). 실패 시 POI 검색으로 폴백.
+    if (looksLikeRoadOrJibun(q)) {
+      try {
+        const r = await geocodeWithTmapFullAddr(q, tmapKey);
+        return { ...r, usedQuery: q, source: 'tmap' };
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+      }
+    }
     try {
       const r = await geocodeWithTmap(q, tmapKey);
       return { ...r, usedQuery: q, source: 'tmap' };
@@ -2383,27 +2436,45 @@ async function optimizeSegment(
 
 function nearestNeighborOrder(
   start: { latitude: number; longitude: number },
-  points: Array<{ latitude: number; longitude: number; address: string }>
+  points: Array<{ latitude: number; longitude: number; address: string }>,
+  roles: string[] = []
 ) {
-  const remaining = [...points]
-  const ordered: typeof points = []
-  let cur = { lat: start.latitude, lng: start.longitude }
-  while (remaining.length) {
-    let bestIdx = 0
-    let bestDist = Number.POSITIVE_INFINITY
-    for (let i = 0; i < remaining.length; i++) {
-      const p = remaining[i]
-      const d = haversineMeters(cur.lat, cur.lng, p.latitude, p.longitude)
-      if (d < bestDist) {
-        bestDist = d
-        bestIdx = i
+  // 최근접 이웃 순회. roles가 주어지면 수거(pickup)를 배송보다 먼저 방문하도록
+  // 픽업 그룹을 먼저 순회하고, 그 종점에서 나머지를 이어 순회한다(물건을 싣기 전 배송 금지).
+  const withRole = points.map((p, i) => ({ p, role: roles[i] }));
+  const pickups = withRole.filter((x) => x.role === 'pickup').map((x) => x.p);
+  const rest = withRole.filter((x) => x.role !== 'pickup').map((x) => x.p);
+
+  const sweep = (
+    from: { lat: number; lng: number },
+    pts: Array<{ latitude: number; longitude: number; address: string }>
+  ) => {
+    const remaining = [...pts];
+    const out: typeof pts = [];
+    let cur = from;
+    while (remaining.length) {
+      let bestIdx = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < remaining.length; i++) {
+        const p = remaining[i];
+        const d = haversineMeters(cur.lat, cur.lng, p.latitude, p.longitude);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
       }
+      const [chosen] = remaining.splice(bestIdx, 1);
+      out.push(chosen);
+      cur = { lat: chosen.latitude, lng: chosen.longitude };
     }
-    const [chosen] = remaining.splice(bestIdx, 1)
-    ordered.push(chosen)
-    cur = { lat: chosen.latitude, lng: chosen.longitude }
-  }
-  return ordered
+    return out;
+  };
+
+  const start2 = { lat: start.latitude, lng: start.longitude };
+  // 픽업이 하나도 없으면 기존 동작(전체를 한 번에 최근접 순회)과 동일.
+  if (pickups.length === 0) return sweep(start2, points);
+  const orderedPickups = sweep(start2, pickups);
+  const lastPickup = orderedPickups[orderedPickups.length - 1];
+  const afterPickup = lastPickup ? { lat: lastPickup.latitude, lng: lastPickup.longitude } : start2;
+  const orderedRest = sweep(afterPickup, rest);
+  return [...orderedPickups, ...orderedRest];
 }
 
 // 거리 기반 + 시간대별 예상 이동시간 계산 함수

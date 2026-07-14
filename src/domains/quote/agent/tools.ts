@@ -150,12 +150,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         roadOption: z.enum(['time-first', 'free-first', 'highway-first']).default('time-first'),
+        departureTime: z
+          .string()
+          .optional()
+          .describe("출발 시각 'HH:mm'. 지정 시 그 시각의 예측 교통으로 계산."),
         preserveOrder: z
           .boolean()
           .default(false)
           .describe('입력 순서를 그대로 존중(재최적화 안 함). 배송 시각/순번이 명확한 라인일 때만 true. 첫 stop=출발, 마지막=종착으로 고정된다.'),
       }),
-      execute: async ({ stops, vehicleType, roadOption, preserveOrder }) => {
+      execute: async ({ stops, vehicleType, roadOption, departureTime, preserveOrder }) => {
         const domainStops = toDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
@@ -165,6 +169,11 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           }
           return address;
         };
+        // 출발시각: 사용자가 준 "HH:mm"의 다음 도래 시각(교통 예측 현실성) 우선.
+        // 없으면 컨텍스트(UI 필드)/근미래. forecast_route_timeline과 동일 패턴.
+        const departureIso = departureTime
+          ? nextIsoAtHHMM(departureTime)
+          : ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
         // 출발지/순서/open-start 규칙은 buildRolePayload로 단일화. 일반 경로는 정확해(fastOrder=false).
         // preserveOrder=true면 입력 순서를 그대로 존중(재정렬/open-start 없음).
         const payload = buildRolePayload({
@@ -173,7 +182,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           vehicleType,
           roadOption,
           // 견적 산정과 지도 미리보기 결과 일치를 위해 출발 시각을 고정.
-          departureAt: ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          departureAt: departureIso,
           fastOrder: false,
           preserveOrder,
         });

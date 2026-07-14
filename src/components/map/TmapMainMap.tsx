@@ -35,6 +35,25 @@ const formatWon = (value: number) => `₩${Math.round(value).toLocaleString('ko-
 const toVehicleKey = (vehicleTypeLabel: string): 'ray' | 'starex' =>
   vehicleTypeLabel === '스타렉스' ? 'starex' : 'ray';
 
+// 같은 좌표(소수 5자리 기준)에 겹치는 마커를 방사형으로 미세 분산(약 3~5m)해
+// 아래 핀의 순번·ETA가 가려지는 문제를 막는다. 마커 표시 좌표만 조정하며,
+// 경로 폴리라인·거리 계산은 원좌표(routeData)를 사용하므로 영향을 받지 않는다.
+const spreadOverlappingMarkers = <T extends { lat: number; lng: number }>(points: T[]): T[] => {
+  const seenCounts = new Map<string, number>();
+  return points.map((point) => {
+    const key = `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`;
+    const seen = seenCounts.get(key) ?? 0;
+    seenCounts.set(key, seen + 1);
+    if (seen === 0) return point;
+    const angle = seen * 60 * (Math.PI / 180);
+    return {
+      ...point,
+      lat: point.lat + 0.00004 * Math.cos(angle),
+      lng: point.lng + 0.00004 * Math.sin(angle),
+    } as T;
+  });
+};
+
 export default function TmapMainMap() {
   const { routeData, isLoading, options, origins, destinations, optimizeRouteWith, setOptions, multiDriverResult, vehicleType, sendChatPrompt, openWorkspace, workspaceTab, routeSlotEl } = useRouteOptimization();
   const [focusedWaypoint, setFocusedWaypoint] = useState<{ lat: number; lng: number; label?: string } | null>(null);
@@ -196,7 +215,7 @@ export default function TmapMainMap() {
         });
       });
 
-      return points;
+      return spreadOverlappingMarkers(points);
     }
 
     // 단일 차량 모드
@@ -301,7 +320,7 @@ export default function TmapMainMap() {
         });
       });
     }
-    return points;
+    return spreadOverlappingMarkers(points);
   }, [origins, destinations, options?.useExplicitDestination, routeData, multiDriverResult]);
 
   // 경로 최적화 효과 계산

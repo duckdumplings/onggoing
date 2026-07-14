@@ -398,20 +398,26 @@ export async function POST(request: NextRequest) {
         // streamText 결과 1건을 소비하며 텍스트/도구이벤트를 클라이언트로 흘려보낸다.
         const consume = async (
           res: typeof result
-        ): Promise<{ fullText: string; streamError: string | null }> => {
+        ): Promise<{ fullText: string; tailText: string; streamError: string | null }> => {
           let fullText = '';
+          // tailText: 마지막 도구 이벤트 이후의 텍스트만. 도구 호출 사이의 예고성 중간 멘트("~하겠습니다")를
+          // 최종 답에서 제거하기 위함(라이브 스트림에는 전부 그대로 흘려보낸다).
+          let tailText = '';
           let streamError: string | null = null;
           try {
             for await (const part of res.fullStream) {
               switch (part.type) {
                 case 'text-delta':
                   fullText += part.text;
+                  tailText += part.text;
                   send({ type: 'text', delta: part.text });
                   break;
                 case 'tool-call':
+                  tailText = ''; // 도구 호출 직전까지의 예고성 텍스트는 최종 답에서 버린다
                   send({ type: 'step', name: part.toolName, label: STEP_LABELS[part.toolName] || part.toolName, phase: 'start' });
                   break;
                 case 'tool-result':
+                  tailText = ''; // 도구 결과 이후 새로 쓰는 텍스트만 최종 답으로 인정
                   applyToolResult(acc, part.toolName, (part as any).output);
                   send({ type: 'step', name: part.toolName, label: STEP_LABELS[part.toolName] || part.toolName, phase: 'done' });
                   break;
@@ -428,11 +434,12 @@ export async function POST(request: NextRequest) {
           } catch (err) {
             streamError = err instanceof Error ? err.message : String(err);
           }
-          return { fullText, streamError };
+          return { fullText, tailText, streamError };
         };
 
         const c1 = await consume(result);
         let fullText = c1.fullText;
+        let tailText = c1.tailText;
         let streamError = c1.streamError;
         let finishReason = 'stop';
         let stepCount = 0;
@@ -469,6 +476,7 @@ export async function POST(request: NextRequest) {
           const c2 = await consume(retry);
           send({ type: 'step', name: 'retry', label: '분석 이어서 진행', phase: c2.streamError ? 'error' : 'done' });
           fullText = `${fullText}\n\n${c2.fullText}`.trim();
+          tailText = c2.tailText; // 재시도 후 최종 답은 재시도 스트림의 tail
           if (c2.streamError && !streamError) streamError = c2.streamError;
           try {
             finishReason = await retry.finishReason;
@@ -480,10 +488,13 @@ export async function POST(request: NextRequest) {
 
         const toolNames = trace.map((t) => t.tool);
         const succeeded = !streamError || Boolean(fullText);
-        const guardedText = guardCaseBoardResponse(fullText, acc.caseBoard);
-        if (guardedText !== fullText) {
-          send({ type: 'text', delta: guardedText.slice(fullText.length) });
-          fullText = guardedText;
+        // 최종 답은 마지막 도구 이후 텍스트(tail)만 사용해 예고성 중간 멘트를 제거한다. 비면 전체 텍스트로 폴백.
+        let finalMessage = tailText.trim() || fullText;
+        const guardedFinal = guardCaseBoardResponse(finalMessage, acc.caseBoard);
+        if (guardedFinal !== finalMessage) {
+          // 가드가 덧붙인 안내를 라이브 스트림에도 반영(최종 payload는 finalMessage 사용).
+          send({ type: 'text', delta: guardedFinal.slice(finalMessage.length) });
+          finalMessage = guardedFinal;
         }
 
         // 견적/시나리오가 산출된 경우에만 가정·신뢰도를 노출(질문만 한 턴 등에는 미노출).
@@ -500,7 +511,7 @@ export async function POST(request: NextRequest) {
 
         const finalPayload = {
           success: succeeded,
-          assistantMessage: fullText,
+          assistantMessage: finalMessage,
           suggestedPrompts,
           quote: acc.agentQuote,
           scenarioComparison: acc.scenarioComparison,
@@ -534,7 +545,7 @@ export async function POST(request: NextRequest) {
         controller.close();
 
         // 대화 영속(베스트 에포트, 스트림 종료 후)
-        if (sessionId && fullText) {
+        if (sessionId && finalMessage) {
           try {
             const supabase = createServerClient();
             await supabase.from('quote_chat_messages').insert([
@@ -542,7 +553,7 @@ export async function POST(request: NextRequest) {
               {
                 session_id: sessionId,
                 role: 'assistant',
-                content: fullText,
+                content: finalMessage,
                 metadata: {
                   kind: 'agent-response',
                   provider,

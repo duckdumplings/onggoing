@@ -23,6 +23,8 @@ export interface RouteStop {
   role: StopRole;
   /** 지점별 물량(kg). 적재량/차종 판단 및 향후 분할 운행에 사용. */
   weightKg?: number;
+  /** 지점별 물량 개수(예: 도시락 30). weightKg(kg)와 별개. 차종·체류시간 판단 참고용. */
+  quantity?: number;
   /** 체류/상하차 작업 시간(분). */
   dwellMinutes?: number;
   /** "HH:mm" 도착 데드라인(선택). */

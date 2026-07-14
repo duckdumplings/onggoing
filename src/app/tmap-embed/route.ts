@@ -239,6 +239,18 @@ export async function GET() {
               return parts.length ? head + ' / ' + parts.join(' · ') : head;
             }
 
+            // 같은 좌표(소수 5자리 기준)에 겹치는 마커를 방사형으로 미세 분산(약 3~5m)해
+            // 아래 핀의 순번·ETA 가림을 막는다. 마커 배치 좌표만 조정하며,
+            // 경로 폴리라인·거리 계산에는 원좌표를 사용하므로 영향을 주지 않는다.
+            function computeMarkerSpread(baseLat, baseLng, seen) {
+              if (!seen || seen <= 0) return { lat: baseLat, lng: baseLng };
+              const angle = (seen * 60) * Math.PI / 180;
+              return {
+                lat: baseLat + 0.00004 * Math.cos(angle),
+                lng: baseLng + 0.00004 * Math.sin(angle)
+              };
+            }
+
             // 다중 배송원 경로 그리기
             function drawMultiDriverRoutes(routeDataArray, waypoints) {
               try {
@@ -303,12 +315,17 @@ export async function GET() {
                 // waypoints 마커 표시 (배송원별 색상 적용 및 툴팁)
                 if (waypoints && waypoints.length > 0) {
                   console.log('[TmapEmbed] 다중 배송원 waypoints:', waypoints.length, '개');
+                  const markerDupCounts = new Map();
                   waypoints.forEach((wp, wpIndex) => {
                     if (!wp || !wp.lat || !wp.lng) {
                       console.warn('[TmapEmbed] 잘못된 waypoint:', wp);
                       return;
                     }
                     
+                    const dupKey = wp.lat.toFixed(5) + ',' + wp.lng.toFixed(5);
+                    const dupSeen = markerDupCounts.get(dupKey) || 0;
+                    markerDupCounts.set(dupKey, dupSeen + 1);
+                    const spread = computeMarkerSpread(wp.lat, wp.lng, dupSeen);
                     const wpColor = wp.color || '#3B82F6';
                     const wpLabel = wp.label || '';
                     const driverIndex = wp.driverIndex !== undefined ? wp.driverIndex : -1;
@@ -317,7 +334,7 @@ export async function GET() {
                     try {
                       console.log('[TmapEmbed] 마커 생성:', { lat: wp.lat, lng: wp.lng, label: wpLabel, address: wpAddress });
                       const marker = new Tmapv2.Marker({
-                        position: new Tmapv2.LatLng(wp.lat, wp.lng),
+                        position: new Tmapv2.LatLng(spread.lat, spread.lng),
                         map: map,
                         icon: createPinIcon(wpLabel || String(wpIndex + 1), wp.etaLabel, wp.riskColor || wpColor, wpColor),
                         iconSize: new Tmapv2.Size(70, 56),
@@ -328,7 +345,7 @@ export async function GET() {
                       
                       // 툴팁 생성 (기존 drawRoute와 동일한 방식)
                       try {
-                        const tipPos = new Tmapv2.LatLng(wp.lat, wp.lng);
+                        const tipPos = new Tmapv2.LatLng(spread.lat, spread.lng);
                         const tipText = wpAddress || wpLabel || \`경유지 \${wpIndex + 1}\`;
                         const tipLabel = driverIndex >= 0 ? \`배송원 \${driverIndex + 1} - \${tipText}\` : tipText;
                         
@@ -621,10 +638,15 @@ export async function GET() {
                 // 핀 그리기 (waypoints가 있으면 항상 표시)
                 if (waypoints && waypoints.length > 0) {
                   console.log('[TmapEmbed] 핀 그리기 시작:', waypoints.length, '개 waypoint');
+                  const markerDupCounts = new Map();
                   waypoints.forEach((point, index) => {
                     if (point.lat && point.lng) {
+                      const dupKey = point.lat.toFixed(5) + ',' + point.lng.toFixed(5);
+                      const dupSeen = markerDupCounts.get(dupKey) || 0;
+                      markerDupCounts.set(dupKey, dupSeen + 1);
+                      const spread = computeMarkerSpread(point.lat, point.lng, dupSeen);
                       const marker = new Tmapv2.Marker({
-                        position: new Tmapv2.LatLng(point.lat, point.lng),
+                        position: new Tmapv2.LatLng(spread.lat, spread.lng),
                         icon: createPinIcon(point.label || String(index + 1), point.etaLabel, point.riskColor),
                         iconSize: new Tmapv2.Size(70, 56),
                         map: map
@@ -635,7 +657,7 @@ export async function GET() {
 
                       // 핀 클릭/롱프레스 툴팁 (주소/라벨/ETA)
                       try {
-                        const tipPos = new Tmapv2.LatLng(point.lat, point.lng);
+                        const tipPos = new Tmapv2.LatLng(spread.lat, spread.lng);
                         // 전역 인터랙션용 목록 저장 (툴팁은 DOM으로 표시)
                         markerInteracts.push({
                           marker: marker,
@@ -664,7 +686,7 @@ export async function GET() {
                             const worldScale = 256 * Math.pow(2, zoom);
                             const project = (lt, lg) => { const x = (lg + 180) / 360 * worldScale; const siny = Math.sin(lt * Math.PI / 180); const y = (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * worldScale; return { x, y }; };
                             const c = project(center.getLat(), center.getLng());
-                            const p = project(point.lat, point.lng);
+                            const p = project(spread.lat, spread.lng);
                             const px = (p.x - c.x) + rect.width / 2; const py = (p.y - c.y) + rect.height / 2;
                             tip.style.left = px + 'px'; tip.style.top = py + 'px';
                             tip.style.display = (tip.style.display === 'block') ? 'none' : 'block';
