@@ -111,19 +111,20 @@ function slackLabel(min?: number | null): string {
 }
 
 function DeadlineBadge({ c }: { c: CaseBoardCaseResult }) {
-  if (!c.deadline) {
+  if (!c.deadline && c.riskGrade !== 'infeasible') {
     return <span className="text-[11px] text-muted-foreground">마감 없음</span>;
   }
   const grade: RiskGrade = c.riskGrade ?? (c.meetsDeadline ? 'safe' : 'infeasible');
   const style = RISK_STYLE[grade];
   const ok = grade !== 'infeasible' && grade !== 'recheck';
+  const deadlineLabel = c.deadline ?? '배송시각 제약';
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.cls}`}
-      title={`마감 ${c.deadline} / 마지막 배송 ${c.deliveryArrival ?? '-'} · ${slackLabel(c.deadlineSlackMinutes)}`}
+      title={`마감 ${deadlineLabel} / 마지막 배송 ${c.deliveryArrival ?? '-'} · ${slackLabel(c.deadlineSlackMinutes)}`}
     >
       {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-      {style.label} · 배송 {c.deliveryArrival ?? '-'}/마감 {c.deadline}
+      {style.label} · 배송 {c.deliveryArrival ?? '-'}/마감 {deadlineLabel}
       {c.deadlineSlackMinutes != null && <span className="font-normal opacity-80">({slackLabel(c.deadlineSlackMinutes)})</span>}
     </span>
   );

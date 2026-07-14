@@ -81,6 +81,14 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
       departureAt,
       dwellMinutes: rest.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
       originDwellMinutes: origin.dwellMinutes ?? defaultDwellForRole(origin.role),
+      // 지점별 도착 데드라인. destinations와 인덱스 정합, 빈 문자열 = 제약 없음.
+      // route-optimization이 사전(직행검증)·사후(ETA) 검증과 위반 시 조정 제안을 수행한다.
+      deliveryTimes: rest.map((s) => s.deliveryTime ?? ''),
+      isNextDayFlags: rest.map((s) => Boolean(s.isNextDay)),
+      // destinations 인덱스 정합 역할 배열. route-optimization이 타임라인/지도 role 표기에 사용
+      // (없으면 모든 경유지를 drop으로 하드코딩해 수거지가 배송으로 잘못 표기됨).
+      stopRoles: rest.map((s) => s.role),
+      originRole: origin.role,
       openStart: false,
       startCandidateCount: 1,
       fastOrder: false,
@@ -116,6 +124,13 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     departureAt,
     dwellMinutes: ordered.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
     originDwellMinutes: originStop.dwellMinutes ?? defaultDwellForRole(originStop.role),
+    // 지점별 도착 데드라인(빈 문자열 = 제약 없음). 시간제약이 하나라도 있으면
+    // route-optimization이 open-start를 스스로 비활성화하고 due 기반 순서/검증을 적용한다.
+    deliveryTimes: ordered.map((s) => s.deliveryTime ?? ''),
+    isNextDayFlags: ordered.map((s) => Boolean(s.isNextDay)),
+    // destinations 인덱스 정합 역할 배열(재정렬 시 route-optimization이 원본 인덱스로 되짚어 사용).
+    stopRoles: ordered.map((s) => s.role),
+    originRole: originStop.role,
     openStart,
     // 출발지 후보를 픽업으로 제한(origin + 그 외 픽업). 배송지/반납지는 출발지가 될 수 없다.
     startCandidateCount: pickups.length,

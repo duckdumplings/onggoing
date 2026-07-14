@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
 import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
-import { postRouteOptimizationCached } from '@/domains/dispatch/services/routeOptCache';
+import { postRouteOptimizationCached, describeRouteOptFailure } from '@/domains/dispatch/services/routeOptCache';
 import { buildQuotePackage, buildRiskAction, buildRiskReason } from '@/domains/dispatch/services/quotePackageBuilder';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
 import {
@@ -36,6 +36,13 @@ import { FrequencySchema, RouteStopSchema, toDomainStops } from '@/domains/quote
 import type { QuotePackage, QuotePackageGroupRollup } from '@/domains/dispatch/types/quotePackage';
 
 const CASE_CONCURRENCY = 4;
+
+/** route-optimization이 시간제약 불가로 400을 낼 때의 에러 코드(불투명 실패 대신 infeasible로 유지). */
+const TIME_CONSTRAINT_ERROR_CODES: readonly string[] = [
+  'TIME_CONSTRAINT_VIOLATION',
+  'DIRECT_FEASIBILITY_FAILED',
+  'PHYSICALLY_IMPOSSIBLE_TIME',
+];
 
 /** 케이스 1건 입력 스키마(에이전트 도구가 그대로 재사용). */
 export const CaseBoardCaseInputSchema = z.object({
@@ -241,13 +248,35 @@ async function computeCase(
       useRealtimeTraffic: true,
     });
 
-    const { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, payload);
+    let { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, payload);
+    // 시간제약 위반 케이스: 불투명 에러로 버리지 않고, 참고가 있는 infeasible 케이스로 유지한다.
+    let deadlineInfeasible = false;
+    let infeasibleReason: string | undefined;
     if (!ok) {
-      const failed = body?.diagnostics?.failedAddresses;
-      const message = Array.isArray(failed) && failed.length
-        ? `주소를 찾지 못했어요: ${failed.map((f: any) => f?.address).filter(Boolean).join(', ')}`
-        : body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
-      return { ...baseInfo, error: message };
+      const code = typeof body?.error === 'string' ? body.error : undefined;
+      if (status === 400 && code && TIME_CONSTRAINT_ERROR_CODES.includes(code)) {
+        deadlineInfeasible = true;
+        const errs = Array.isArray(body?.details?.errors)
+          ? (body.details.errors as unknown[]).filter((e): e is string => typeof e === 'string')
+          : [];
+        infeasibleReason = errs.length ? errs.join(' ') : describeRouteOptFailure(status, body);
+        // 시각 제약을 모두 비운 페이로드로 1회 재시도해 참고용 summary/waypoints/timeline/가격을 얻는다.
+        const retryPayload = {
+          ...payload,
+          deliveryTimes: Array.isArray(payload.deliveryTimes)
+            ? payload.deliveryTimes.map(() => '')
+            : payload.deliveryTimes,
+        };
+        const retry = await postRouteOptimizationCached(baseUrl, retryPayload);
+        if (!retry.ok) {
+          return { ...baseInfo, error: describeRouteOptFailure(retry.status, retry.json) };
+        }
+        ok = retry.ok;
+        status = retry.status;
+        body = retry.json;
+      } else {
+        return { ...baseInfo, error: describeRouteOptFailure(status, body) };
+      }
     }
 
     const summary = body?.data?.summary;
@@ -258,9 +287,12 @@ async function computeCase(
     const deliveryArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'delivery');
     const returnArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'return');
     const targetArrivalIso = pickTargetArrivalIso(waypoints, roleMap, target);
-    const { meetsDeadline, slackMinutes } = c.deadline
+    const judged = c.deadline
       ? judgeDeadline(targetArrivalIso, c.deadline)
       : { meetsDeadline: null, slackMinutes: null };
+    // 시간제약 불가 케이스는 마감 미충족으로 고정(참고가는 살리되 판정은 infeasible).
+    const meetsDeadline = deadlineInfeasible ? false : judged.meetsDeadline;
+    const slackMinutes = judged.slackMinutes;
 
     const km = Number(summary?.totalDistance || 0) / 1000;
     const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
@@ -392,7 +424,7 @@ async function computeCase(
     };
     return {
       ...result,
-      riskReason: buildRiskReason(result),
+      riskReason: deadlineInfeasible ? (infeasibleReason ?? buildRiskReason(result)) : buildRiskReason(result),
       recommendedAction: buildRiskAction(result),
     };
   } catch (e) {
@@ -463,7 +495,7 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
     }
   }
 
-  const deadlineCases = results.filter((r) => r.deadline);
+  const deadlineCases = results.filter((r) => r.deadline || r.meetsDeadline === false);
   const infeasibleLabels = deadlineCases.filter((r) => r.meetsDeadline === false).map((r) => r.label);
   const allMeetDeadline = deadlineCases.length ? infeasibleLabels.length === 0 : null;
 

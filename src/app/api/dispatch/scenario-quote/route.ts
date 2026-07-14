@@ -8,6 +8,7 @@ import {
   type GeocodedStop,
 } from '@/domains/dispatch/services/stopGeocoder';
 import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
+import { describeRouteOptFailure } from '@/domains/dispatch/services/routeOptCache';
 import {
   toVehicleKey,
   type QuoteScenario,
@@ -101,17 +102,9 @@ function buildRoutePayload(
 
 type ScenarioRoutePayload = ReturnType<typeof buildRoutePayload>;
 
-/** route-optimization 에러 본문에서 사람이 읽을 메시지를 뽑는다. */
+/** route-optimization 에러 본문에서 사람이 읽을 메시지를 뽑는다(공용 헬퍼 위임). */
 function describeRouteError(status: number, body: unknown): string {
-  const b = (body || {}) as Record<string, any>;
-  const failed = b?.diagnostics?.failedAddresses;
-  if (Array.isArray(failed) && failed.length > 0) {
-    const names = failed.map((f: any) => f?.address).filter(Boolean).join(', ');
-    return `주소를 찾지 못했어요: ${names}`;
-  }
-  if (typeof b?.error === 'string' && b.error) return b.error;
-  if (typeof b?.message === 'string' && b.message) return b.message;
-  return `경로 계산 실패 (HTTP ${status})`;
+  return describeRouteOptFailure(status, body);
 }
 
 async function resolveMetrics(
@@ -199,7 +192,11 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const comparison = compareScenarios(scenarios, metricsByLabel, sortKey);
+    // 경로 계산에 실패한 시나리오는 0-메트릭으로 최저가 오추천을 유발하므로 비교/추천에서 제외한다.
+    // (실패 사실은 아래 routeErrors로 응답에 그대로 남긴다.)
+    const failedLabels = new Set(routeErrors.map((e) => e.label));
+    const rankableScenarios = scenarios.filter((s: QuoteScenario) => !failedLabels.has(s.label));
+    const comparison = compareScenarios(rankableScenarios, metricsByLabel, sortKey);
 
     // 실비 투명성 카드가 한국 실시간 유가(오피넷)를 반영하도록 차종별 유가를 1회 조회(캐시)해 부착.
     const usedVehicles = Array.from(new Set(comparison.results.map((r) => toVehicleKey(r.vehicleType))));

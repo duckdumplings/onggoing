@@ -35,8 +35,36 @@ export function normalizeRouteKey(payload: any): string {
     useRealtimeTraffic: Boolean(payload?.useRealtimeTraffic),
     fastOrder: Boolean(payload?.fastOrder),
     dwellMinutes: payload?.dwellMinutes ?? null,
+    // 시간제약도 키에 포함 — 같은 경로라도 시각 없이 계산된 캐시가
+    // 시각 달린 재계산에 히트되면 시간제약 검증이 통째로 우회된다.
+    deliveryTimes: payload?.deliveryTimes ?? null,
+    isNextDayFlags: payload?.isNextDayFlags ?? null,
     departureMin,
   });
+}
+
+/**
+ * route-optimization 실패 본문 → 사람이 읽을 메시지.
+ * 코드 문자열(TIME_CONSTRAINT_VIOLATION 등)보다 한글 message·지점별 사유(details.errors)·
+ * 조정 제안(details.suggestions)을 우선한다 — LLM/사용자가 원인과 다음 행동을 알 수 있게.
+ */
+export function describeRouteOptFailure(status: number, body: any): string {
+  const failed = body?.diagnostics?.failedAddresses;
+  if (Array.isArray(failed) && failed.length) {
+    return `주소를 찾지 못했어요: ${failed.map((f: any) => f?.address).filter(Boolean).join(', ')}`;
+  }
+  const parts: string[] = [];
+  if (typeof body?.message === 'string' && body.message.trim()) parts.push(body.message.trim());
+  const errors = body?.details?.errors;
+  if (Array.isArray(errors)) parts.push(...errors.filter((e: unknown): e is string => typeof e === 'string'));
+  const suggestions = body?.details?.suggestions;
+  if (Array.isArray(suggestions)) {
+    const desc = suggestions.map((s: any) => s?.description).filter(Boolean);
+    if (desc.length) parts.push(`조정 제안: ${desc.join(' / ')}`);
+  }
+  if (parts.length) return parts.join(' ');
+  if (typeof body?.error === 'string' && body.error) return body.error;
+  return `경로 계산 실패 (HTTP ${status})`;
 }
 
 /** route-optimization POST 호출(성공 응답만 TTL 캐시). 응답 JSON과 캐시 적중 여부를 반환. */

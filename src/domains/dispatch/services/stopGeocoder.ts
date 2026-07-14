@@ -69,7 +69,10 @@ export async function geocodeViaTmapPoi(query: string): Promise<GeoHit | null> {
     const latitude = Number(poi.noorLat ?? poi.frontLat ?? poi.newLat ?? poi.lat);
     const longitude = Number(poi.noorLon ?? poi.frontLon ?? poi.newLon ?? poi.lon);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-    return { latitude, longitude, address: road || jibun || keyword };
+    // 전체 도로명(road)을 최우선. road가 없고 지번이 구/동 단위로만 오면(예: "서울 금천구")
+    // 지점 고유성이 사라지므로 POI명/원본 키워드로 대체한다.
+    const specificJibun = jibun && !isRegionOnlyQuery(jibun) ? jibun : '';
+    return { latitude, longitude, address: road || specificJibun || poi.name || keyword };
   } catch {
     return null;
   }
@@ -97,10 +100,12 @@ export async function geocodeViaTmapFullAddr(query: string): Promise<GeoHit | nu
     const latitude = Number(coord.newLat || coord.lat);
     const longitude = Number(coord.newLon || coord.lon);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-    const resolvedAddr =
-      [coord.city_do, coord.gu_gun, coord.eup_myun, coord.legalDong, coord.roadName, coord.buildingIndex]
-        .filter(Boolean)
-        .join(' ') || fullAddr;
+    // Tmap이 도로명/건물번호 echo를 생략하면 재구성 라벨이 "서울 금천구"로 붕괴한다.
+    // 재구성 결과가 비었거나 구/동 단위뿐이면 사용자 원문(fullAddr)을 라벨로 보존한다(좌표는 그대로).
+    const rebuilt = [coord.city_do, coord.gu_gun, coord.eup_myun, coord.legalDong, coord.roadName, coord.buildingIndex]
+      .filter(Boolean)
+      .join(' ');
+    const resolvedAddr = !rebuilt || isRegionOnlyQuery(rebuilt) ? fullAddr : rebuilt;
     return { latitude, longitude, address: resolvedAddr };
   } catch {
     return null;
@@ -141,9 +146,15 @@ export async function geocodeStopAddresses(
     pending.map(async (address) => {
       const lowPrecision = isRegionOnlyQuery(address);
       const hit = await resolveStopAddress(address);
+      // 좌표는 hit에서 쓰되, 해석 라벨이 원본보다 거칠어졌으면(구/동 단위로 붕괴) 원본을 표시/키 문자열로 보존한다.
+      // 이 한 곳이 tools.ts의 toPoint·geocode_addresses·caseBoard가 공유하는 chokepoint라,
+      // 같은 구의 두 지점(예: 금천구 상차지 vs 반납지)이 "서울 금천구"로 동일해져 주소-키 맵이 충돌하는 것을 막는다.
+      const label = hit && hit.address && !isRegionOnlyQuery(hit.address) ? hit.address : address;
       cache.set(
         address,
-        hit ? { ...hit, resolved: true, lowPrecision } : { address, resolved: false, lowPrecision }
+        hit
+          ? { latitude: hit.latitude, longitude: hit.longitude, address: label, resolved: true, lowPrecision }
+          : { address, resolved: false, lowPrecision }
       );
     })
   );

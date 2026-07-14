@@ -45,7 +45,25 @@ export default function ScenarioComparisonCard({
 }: ScenarioComparisonCardProps) {
   const { results, recommendedLabel } = comparison;
   const [expandedLabel, setExpandedLabel] = useState<string | null>(null);
-  if (!results.length) return null;
+  if (!results.length) {
+    // 모든 시나리오가 경로 계산에 실패해 비교할 행이 없을 때도 사유는 노출한다.
+    if (routeErrors && routeErrors.length > 0) {
+      return (
+        <div className="glass-panel p-4 w-full">
+          <div className="mb-2 text-sm font-semibold text-foreground">시나리오 비교</div>
+          <div className="space-y-1 rounded-md bg-warning-50 p-2 text-xs text-warning-700">
+            <div className="font-medium">경로를 계산할 수 없어 비교할 수 있는 시나리오가 없습니다.</div>
+            {routeErrors.map((e) => (
+              <div key={e.label}>
+                {e.label}: {e.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
 
   const { rationale, annualExtraByLabel, maxAnnualExtra } = summarizeComparison(comparison);
   const errorLabels = new Set((routeErrors ?? []).map((e) => e.label));

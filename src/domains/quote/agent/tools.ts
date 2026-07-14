@@ -26,7 +26,7 @@ import {
   pickTargetArrivalIso,
   judgeDeadline,
 } from '@/domains/dispatch/utils/deliveryDeadline';
-import { postRouteOptimizationCached } from '@/domains/dispatch/services/routeOptCache';
+import { postRouteOptimizationCached, describeRouteOptFailure } from '@/domains/dispatch/services/routeOptCache';
 import { computeCaseBoard, CaseBoardCaseInputSchema } from '@/domains/dispatch/services/caseBoard';
 import { retrieveRagContext } from '@/domains/quote/services/ragRetriever';
 import {
@@ -180,10 +180,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
         const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
         if (!ok) {
-          const failed = body?.diagnostics?.failedAddresses;
-          const message = Array.isArray(failed) && failed.length
-            ? `주소를 찾지 못했어요: ${failed.map((f: any) => f?.address).filter(Boolean).join(', ')}`
-            : body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
+          const message = describeRouteOptFailure(status, body);
           track('optimize_route', payload, { error: message });
           return { error: message };
         }
@@ -480,8 +477,10 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             dateLabel: kstDateLabel(iso),
           };
         });
+        // 사용자가 확정 출발시각을 주면 기본 프리셋을 섞지 않고 지정 시각만 비교(recommendedId도 지정 시각만 대상).
+        const presetSources = customPresets.length > 0 ? customPresets : resolveDeparturePresets();
         const presetMap = new Map<string, ReturnType<typeof resolveDeparturePresets>[number] | (typeof customPresets)[number]>();
-        for (const preset of [...customPresets, ...resolveDeparturePresets()]) {
+        for (const preset of presetSources) {
           const key = `${preset.hour}:${preset.minute}`;
           if (!presetMap.has(key)) presetMap.set(key, preset);
         }
@@ -501,7 +500,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             try {
               const { ok, status, json: routeJson } = await postRouteOptimizationCached(ctx.baseUrl, payload);
               if (!ok) {
-                return { ...base, error: routeJson?.error || routeJson?.message || `경로 계산 실패 (HTTP ${status})` };
+                return { ...base, error: describeRouteOptFailure(status, routeJson) };
               }
               const summary = routeJson?.data?.summary;
               const wps: any[] = Array.isArray(routeJson?.data?.waypoints) ? routeJson.data.waypoints : [];
@@ -657,7 +656,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
         const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
         if (!ok) {
-          const message = body?.error || body?.message || `경로 계산 실패 (HTTP ${status})`;
+          const message = describeRouteOptFailure(status, body);
           track('forecast_route_timeline', { stops: domainStops.length, departureTime }, { error: message });
           return { error: message };
         }

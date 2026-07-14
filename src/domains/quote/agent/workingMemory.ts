@@ -30,7 +30,7 @@ export const RouteStopSchema = z.object({
   longitude: z.number().optional(),
   weightKg: z.number().optional().describe('지점별 물량(kg).'),
   dwellMinutes: z.number().optional().describe('상하차/작업 체류 시간(분).'),
-  deliveryTime: z.string().optional().describe('"HH:mm" 도착 데드라인.'),
+  deliveryTime: z.string().optional().describe("'HH:mm' 배송(drop) 도착 마감 전용. 상차(pickup)의 '물품 준비 시각'은 여기 넣지 마라(도착 마감으로 오인돼 비현실 충돌을 유발) — 준비시각은 출발시각/방문 순서로 다뤄라."),
   memo: z.string().optional(),
 });
 

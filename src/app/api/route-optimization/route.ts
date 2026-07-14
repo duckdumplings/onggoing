@@ -847,6 +847,9 @@ export async function POST(request: NextRequest) {
       openStart = false,
       fastOrder = false,
       startCandidateCount,
+      // 역할 태그(선택). destinations 인덱스 정합. 미전달 시 기존처럼 목적지는 drop으로 표기.
+      stopRoles = [],
+      originRole,
       // 제약(optional): 적재 용량. 호출자(에이전트/UI)가 명시한 값만 사용 — 차종 kg를 임의 추정하지 않는다.
       loadKg = [],
       vehicleCapacityKg
@@ -1241,38 +1244,41 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const validationResult = validateTimeConstraintsAndSuggest(
-          startTime,
-          destinationCoords,
-          timeConstraints
-        );
+        // 거리기반 휴리스틱(estimateArrivalTime: 하버사인 36km/h, origin→첫지점 누락, 원본 인덱스 오해석)은
+        // 실제 Tmap과 무관한 "16시 도착" 같은 날조 충돌을 만들어 오탐한다. 실측 검증은 위 precheckDirectFeasibility(직행)와
+        // 아래 buildRouteWithAnchors 후 postOrderViolations(전체 순서 ETA)가 모두 담당하므로, 이 휴리스틱 게이트는 비활성화한다.
+        if (ENABLE_HEURISTIC) {
+          const validationResult = validateTimeConstraintsAndSuggest(
+            startTime,
+            destinationCoords,
+            timeConstraints
+          );
 
-        if (!validationResult.isValid) {
-          console.log('[시간제약 검증] 실패:', {
-            오류수: validationResult.errors.length,
-            제안수: validationResult.suggestions.length,
-            오류내용: validationResult.errors,
-            제안내용: validationResult.suggestions.map(s => s.title)
-          });
+          if (!validationResult.isValid) {
+            console.log('[시간제약 검증] 실패:', {
+              오류수: validationResult.errors.length,
+              제안수: validationResult.suggestions.length,
+              오류내용: validationResult.errors,
+              제안내용: validationResult.suggestions.map(s => s.title)
+            });
 
-          // 검증 실패 시 에러 응답 반환
-          return NextResponse.json({
-            success: false,
-            error: 'TIME_CONSTRAINT_VIOLATION',
-            message: '시간제약 충돌이 감지되었습니다.',
-            details: {
-              errors: validationResult.errors,
-              suggestions: validationResult.suggestions
-            },
-            diagnostics: buildDiagnostics({
-              code: 'TIME_CONSTRAINT_VIOLATION',
-              errors: validationResult.errors,
-              suggestions: validationResult.suggestions,
-            }),
-          }, { status: 400 });
+            // 검증 실패 시 에러 응답 반환
+            return NextResponse.json({
+              success: false,
+              error: 'TIME_CONSTRAINT_VIOLATION',
+              message: '시간제약 충돌이 감지되었습니다.',
+              details: {
+                errors: validationResult.errors,
+                suggestions: validationResult.suggestions
+              },
+              diagnostics: buildDiagnostics({
+                code: 'TIME_CONSTRAINT_VIOLATION',
+                errors: validationResult.errors,
+                suggestions: validationResult.suggestions,
+              }),
+            }, { status: 400 });
+          }
         }
-
-        console.log('[시간제약 검증] 통과 - 모든 시간제약이 현실적으로 가능함');
       } else {
         console.log('[시간제약 검증] 건너뜀 - 시간제약이 없음');
       }
@@ -1293,7 +1299,8 @@ export async function POST(request: NextRequest) {
           vehicleTypeCode,
           usedTraffic,
           'tomorrow',
-          dwellMinutes
+          dwellMinutes,
+          Array.isArray(stopRoles) ? stopRoles : []
         );
 
         orderedDestinations = ordered;
@@ -1357,7 +1364,9 @@ export async function POST(request: NextRequest) {
       routeTimeline.push({
         seq: 1,
         address: startLocation.address,
-        role: 'pickup',
+        role: (typeof originRole === 'string' && (['pickup', 'drop', 'return', 'waypoint'] as string[]).includes(originRole))
+          ? (originRole as 'pickup' | 'drop' | 'return' | 'waypoint')
+          : 'pickup',
         arrivalTime: new Date(currentTime.getTime() - normalizedOriginDwellMinutes * 60 * 1000).toISOString(),
         departureTime: currentTime.toISOString(),
         dwellTime: normalizedOriginDwellMinutes,
@@ -1389,6 +1398,21 @@ export async function POST(request: NextRequest) {
         constraintByAddress.set(addr, { deliveryTime: dt, isNextDay: !!isNextDayFlags[idx] });
       }
     }
+
+    // 목적지 주소 → 역할. 호출자가 stopRoles(destinations 인덱스 정합)를 주면 타임라인/지도가
+    // 수거지를 pickup으로 정확히 표기한다(미전달 시 기존처럼 drop).
+    const roleByAddress = new Map<string, 'pickup' | 'drop' | 'return' | 'waypoint'>();
+    const VALID_STOP_ROLES = ['pickup', 'drop', 'return', 'waypoint'] as const;
+    if (Array.isArray(stopRoles) && stopRoles.length > 0) {
+      for (let idx = 0; idx < destinationCoords.length; idx++) {
+        const r = stopRoles[idx];
+        if (typeof r === 'string' && (VALID_STOP_ROLES as readonly string[]).includes(r)) {
+          roleByAddress.set(destinationCoords[idx].address, r as 'pickup' | 'drop' | 'return' | 'waypoint');
+        }
+      }
+    }
+    const resolveDestRole = (address: string): 'pickup' | 'drop' | 'return' | 'waypoint' =>
+      roleByAddress.get(address) ?? 'drop';
 
     const postOrderViolations: string[] = [];
 
@@ -1518,8 +1542,9 @@ export async function POST(request: NextRequest) {
           predictionFallback: false,
         });
 
-        // 검증용 시계 업데이트: 체류 미고려(운전시간만)
-        validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
+        // 검증용 시계 업데이트: 이동 + 이 지점 체류. 상/하차 작업 시간이 하류 마감 도착에 실제로 누적되므로
+        // 체류를 포함해야 마감 위반을 정확히 검출한다(과거엔 체류를 빼 낙관적으로 계산해 지각을 놓쳤다).
+        validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
 
         // 경유지별 도착시간 저장
         const waypoint = waypoints[waypoints.length - 1];
@@ -1531,7 +1556,7 @@ export async function POST(request: NextRequest) {
         routeTimeline.push({
           seq: routeTimeline.length + 1,
           address: dest.address,
-          role: 'drop',
+          role: resolveDestRole(dest.address),
           arrivalTime: waypoint.arrivalTime,
           departureTime: waypoint.departureTime,
           dwellTime,
@@ -1567,11 +1592,11 @@ export async function POST(request: NextRequest) {
           if (segUsesPrediction) predictionFallbackSegments += 1;
           validationWarnings.push(`예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`);
 
-          // 시간 업데이트(체류 포함), 검증시계(체류 미포함)
+          // 시간 업데이트(체류 포함). 검증시계도 체류 포함(하류 마감 도착에 상/하차 시간이 실제로 누적됨).
           const dwellTime = destinationDwell(i);
           const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
           currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
-          validationClock = new Date(validationClock.getTime() + (segmentTime * 1000));
+          validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
           segmentSummary.push({
             seq: segmentSummary.length + 1,
             from: current.address,
@@ -1595,7 +1620,7 @@ export async function POST(request: NextRequest) {
           routeTimeline.push({
             seq: routeTimeline.length + 1,
             address: dest.address,
-            role: 'drop',
+            role: resolveDestRole(dest.address),
             arrivalTime: waypoint.arrivalTime,
             departureTime: waypoint.departureTime,
             dwellTime,
@@ -1893,13 +1918,18 @@ async function geocodeWithTmap(address: string, appKey: string): Promise<{ latit
   if (!isValidCoordinate(latitude, longitude)) {
     throw new Error('TMAP_GEOCODE_INVALID_COORDINATE');
   }
+  // 전체 도로명(fullAddressRoad)을 최우선. 없으면 서브필드 조합, 그것도 구/동 단위로 뭉개지면
+  // 원본 입력(address)을 라벨로 유지한다 — "서울 금천구"처럼 잘려 같은 구의 두 지점이 동일해지는 것을 막는다.
+  const fullRoad: string | undefined = poi?.newAddressList?.newAddress?.[0]?.fullAddressRoad;
+  const composed = [poi.upperAddrName, poi.middleAddrName, poi.lowerAddrName, poi.roadName, poi.firstBuildNo]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const composedIsRegionOnly = composed !== '' && !/\d/.test(composed) && /(시|군|구|읍|면|동|리)$/.test(composed);
   return {
     latitude,
     longitude,
-    address: [poi.upperAddrName, poi.middleAddrName, poi.lowerAddrName, poi.roadName, poi.firstBuildNo]
-      .filter(Boolean)
-      .join(' ')
-      .trim() || poi.name || address,
+    address: (fullRoad && fullRoad.trim()) || (composedIsRegionOnly ? '' : composed) || poi.name || address,
   };
 }
 
@@ -2547,7 +2577,8 @@ async function buildRouteWithAnchors(
   vehicleTypeCode: string,
   trafficMode: 'realtime' | 'standard',
   trafficAnchor: 'today' | 'tomorrow' | 'auto',
-  dwellMinutes: number[] = []
+  dwellMinutes: number[] = [],
+  roles: string[] = []
 ): Promise<{ ordered: Waypoint[]; totalLatenessMin: number }> {
   const tmapCache = new Map<string, { timeSec: number; distM: number }>();
   const ordered: Waypoint[] = [];
@@ -2581,6 +2612,35 @@ async function buildRouteWithAnchors(
   // 유틸: 세그먼트 이동시간
   const move = async (a: Waypoint, b: Waypoint, depart: Date) =>
     fetchSegmentTravel(tmapCache, a, b, depart, tmapKey, vehicleTypeCode, trafficMode, trafficAnchor);
+
+  // 정순위(precedence) 보장: 시각 제약이 없는 수거지(pickup)는 배송보다 먼저 방문해야 한다.
+  // 기존엔 이들이 unconstrained로 분류돼 슬랙 삽입/말미 배치로 배송 뒤로 밀릴 수 있었다(물건을 싣기 전에 배송하는 순서).
+  // roles가 주어지면 시각 없는 픽업을 제약 루프 전에 최근접 순으로 먼저 배치한다.
+  const isPickup = (idx: number) => roles[idx] === 'pickup';
+  const leadingPickups = unconstrained.filter((u) => isPickup(u.idx));
+  if (leadingPickups.length > 0) {
+    // unconstrained에서 픽업 제거(나머지 비제약은 기존 로직대로 슬랙/말미 배치)
+    for (const p of leadingPickups) {
+      const at = unconstrained.findIndex((u) => u.idx === p.idx);
+      if (at >= 0) unconstrained.splice(at, 1);
+    }
+    // 최근접 순으로 픽업들을 먼저 방문
+    const remainingPickups = [...leadingPickups];
+    while (remainingPickups.length) {
+      let best = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < remainingPickups.length; i++) {
+        const d = haversineMeters(cur.latitude, cur.longitude, remainingPickups[i].wp.latitude, remainingPickups[i].wp.longitude);
+        if (d < bestDist) { bestDist = d; best = i; }
+      }
+      const p = remainingPickups.splice(best, 1)[0];
+      const toP = await move(cur, p.wp, now);
+      ordered.push(p.wp);
+      const dwellP = dwellMinutes[p.idx + 1] ?? 10;
+      now = new Date(now.getTime() + toP.timeSec * 1000 + dwellP * 60 * 1000);
+      cur = p.wp;
+    }
+  }
 
   // 각 제약 사이에 비제약 삽입
   for (let i = 0; i < constrained.length; i++) {
