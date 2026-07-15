@@ -189,6 +189,7 @@ export async function retrieveSimilarQueryCandidate(params: {
 }
 
 export async function retrieveFeedbackGuidance(params: {
+  /** 지정 시 해당 세션으로 스코프. 미지정(권장)이면 전역에서 반복 실패 패턴을 학습. */
   sessionId?: string | null;
   query: string;
   limit?: number;
@@ -203,16 +204,18 @@ export async function retrieveFeedbackGuidance(params: {
       duplicateGuardBoost: false,
     },
   };
-  if (!params.sessionId || !params.query?.trim()) return empty;
+  if (!params.query?.trim()) return empty;
 
   try {
     const supabase = createServerClient();
-    const { data, error } = await supabase
+    // 전역 학습 기본. 부정 피드백을 우선 노출하도록 최근순으로 넉넉히 읽고, 유사도로 걸러 상위만 사용.
+    let q = supabase
       .from('quote_chat_failure_cases')
-      .select('user_input, assistant_output, error_code, reason, metadata, created_at')
-      .eq('session_id', params.sessionId)
+      .select('user_input, assistant_output, error_code, reason, tags, metadata, created_at')
       .order('created_at', { ascending: false })
-      .limit(120);
+      .limit(params.sessionId ? 120 : 300);
+    if (params.sessionId) q = q.eq('session_id', params.sessionId);
+    const { data, error } = await q;
     if (error || !data?.length) return empty;
 
     const guidanceRows = data
@@ -221,7 +224,13 @@ export async function retrieveFeedbackGuidance(params: {
         return { row, score };
       })
       .filter((item) => item.score >= 0.2)
-      .sort((a, b) => b.score - a.score)
+      // 전역 모드에선 부정(개선) 피드백을 우선 정렬(같은 점수면 부정을 앞으로).
+      .sort((a, b) => {
+        const an = a.row.error_code === 'USER_FEEDBACK_NEGATIVE' ? 1 : 0;
+        const bn = b.row.error_code === 'USER_FEEDBACK_NEGATIVE' ? 1 : 0;
+        if (bn !== an) return bn - an;
+        return b.score - a.score;
+      })
       .slice(0, Math.max(1, Math.min(params.limit ?? 6, 12)));
 
     if (!guidanceRows.length) return empty;
@@ -245,16 +254,27 @@ export async function retrieveFeedbackGuidance(params: {
       }
 
       const reasonLower = reason.toLowerCase();
-      if (/주소|지오코드|geocode|좌표/.test(reasonLower) || /주소|지오코드|geocode|좌표/.test(userInput.toLowerCase())) {
+      const tags: string[] = Array.isArray(row.tags) ? row.tags.map((t: any) => String(t)) : [];
+      if (
+        tags.includes('address-contamination') ||
+        /주소|지오코드|geocode|좌표/.test(reasonLower) ||
+        /주소|지오코드|geocode|좌표/.test(userInput.toLowerCase())
+      ) {
         addressNormalizationBoost = true;
       }
-      if (/중복|duplicate|순서|경유지/.test(reasonLower) || /중복|duplicate|순서|경유지/.test(userInput.toLowerCase())) {
+      if (
+        tags.includes('route-ordering') ||
+        tags.includes('role-misclassification') ||
+        /중복|duplicate|순서|경유지/.test(reasonLower) ||
+        /중복|duplicate|순서|경유지/.test(userInput.toLowerCase())
+      ) {
         duplicateGuardBoost = true;
       }
 
       const signalLabel = isPositive ? '긍정' : '개선';
       const detail = reason || (isPositive ? '사용자가 결과에 만족함' : '사용자 불만 피드백');
-      snippets.push(`[${signalLabel}피드백] 유사 요청(score=${score.toFixed(2)}): ${detail}`);
+      const tagLabel = tags.length ? ` [${tags.join(',')}]` : '';
+      snippets.push(`[${signalLabel}피드백] 유사 요청(score=${score.toFixed(2)}):${tagLabel} ${detail}`);
       sources.push(`feedback:${code || 'UNKNOWN'}`);
     }
 

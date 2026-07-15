@@ -5,6 +5,7 @@ import { resolveModel, AGENT_DEFAULTS } from '@/libs/llm/provider';
 import { buildQuoteAgentTools } from '@/domains/quote/agent/tools';
 import { saveToolCallLog } from '@/domains/quote/services/toolRouter';
 import { guardCaseBoardResponse } from '@/domains/quote/services/quoteResponseGuard';
+import { retrieveFeedbackGuidance } from '@/domains/quote/services/ragRetriever';
 import { createServerClient } from '@/libs/supabase-client';
 
 export const runtime = 'nodejs';
@@ -313,6 +314,12 @@ function sse(obj: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+/** 여러 줄 텍스트를 한 줄 요약으로(공백 정규화 + 최대 n자). 세션 롤링 요약용. */
+function oneLine(text: string, max: number): string {
+  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
 export async function POST(request: NextRequest) {
   const startedAt = Date.now();
   try {
@@ -368,7 +375,29 @@ export async function POST(request: NextRequest) {
       ? `\n\n[이전 대화 요약 — 최근 메시지 밖의 맥락. 참고용이며, 현재 사용자 메시지/새 문서가 우선한다]\n${sessionSummary.slice(0, 1200)}`
       : '';
 
-    const systemPrompt = SYSTEM_PROMPT + contextNote + mapRouteNote + summaryNote;
+    // 재귀개선: 과거 사용자 피드백(전역)에서 이번 요청과 유사한 반복 실패 패턴을 끌어와 프롬프트에 주입.
+    // 부정 피드백 우선 + 태그(주소오염/역할오분류/순서 등)로 정책 힌트를 준다. 실패해도 조용히 진행(fail-open).
+    let feedbackNote = '';
+    try {
+      const guidance = await retrieveFeedbackGuidance({ query: message, limit: 4 });
+      const negatives = guidance.snippets.filter((s) => s.startsWith('[개선피드백]')).slice(0, 4);
+      const hints: string[] = [];
+      if (guidance.policyHints.addressNormalizationBoost) {
+        hints.push('과거 유사 요청에서 주소 해석 문제가 있었다 — 사용자가 준 도로명/지번을 토씨 그대로 쓰고 구/동 단위로 뭉개지지 않게 주의.');
+      }
+      if (guidance.policyHints.duplicateGuardBoost) {
+        hints.push('과거 유사 요청에서 역할/순서 문제가 있었다 — 상차(pickup)를 배송보다 먼저 두고, 지점별 역할을 정확히 태깅하라.');
+      }
+      if (negatives.length || hints.length) {
+        feedbackNote =
+          `\n\n[반복 피드백 반영 — 참고용, 과거 유사 요청에서 사용자가 아쉬워한 점. 같은 실수를 피하되 현재 입력이 우선한다]\n` +
+          [...hints.map((h) => `- ${h}`), ...negatives.map((s) => `- ${s}`)].join('\n');
+      }
+    } catch {
+      /* 피드백 조회 실패 시 무시 */
+    }
+
+    const systemPrompt = SYSTEM_PROMPT + contextNote + mapRouteNote + summaryNote + feedbackNote;
 
     const result = streamText({
       model,
@@ -585,6 +614,15 @@ export async function POST(request: NextRequest) {
                 },
               },
             ]);
+
+            // 세션 롤링 요약 갱신: 최근 히스토리 윈도우(8개) 밖의 맥락을 다음 턴에 복원(sessionSummary로 읽힘).
+            // 결정적 1줄(Q요약→A요약)을 누적하고 최근 ~1000자만 유지. 로컬 임시 세션은 제외.
+            if (!sessionId.startsWith('local-')) {
+              const turnLine = `- Q: ${oneLine(message, 80)} → A: ${oneLine(finalMessage, 140)}`;
+              const prev = typeof sessionSummary === 'string' ? sessionSummary : '';
+              const rolled = (prev ? `${prev}\n${turnLine}` : turnLine).slice(-1000);
+              await supabase.from('quote_chat_sessions').update({ last_summary: rolled }).eq('id', sessionId);
+            }
           } catch {
             /* 영속 실패 무시 */
           }
