@@ -10,7 +10,8 @@
  *   AGENT_EVAL_URL=https://staging.example.com npm run eval:agent
  */
 
-import { AGENT_EVAL_CASES } from '../src/domains/quote/evals/agentEvalCases';
+import { AGENT_EVAL_CASES, type AgentEvalCase } from '../src/domains/quote/evals/agentEvalCases';
+import { loadPromotedEvalCases } from '../src/domains/quote/evals/feedbackEvalCases';
 import { scoreAgentResponse, summarize, type ScoredCase } from '../src/domains/quote/evals/agentScorer';
 
 const BASE_URL =
@@ -37,7 +38,7 @@ async function readAgentResponse(res: Response): Promise<any> {
   return final;
 }
 
-async function runOne(testCase: (typeof AGENT_EVAL_CASES)[number]): Promise<ScoredCase> {
+async function runOne(testCase: AgentEvalCase): Promise<ScoredCase> {
   const res = await fetch(new URL('/api/quote/agent-chat', BASE_URL), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -63,7 +64,11 @@ async function runOne(testCase: (typeof AGENT_EVAL_CASES)[number]): Promise<Scor
 }
 
 async function main() {
-  console.log(`[agent-evals] base=${BASE_URL}  cases=${AGENT_EVAL_CASES.length}\n`);
+  const promoted = await loadPromotedEvalCases().catch(() => []);
+  const cases = [...AGENT_EVAL_CASES, ...promoted];
+  console.log(
+    `[agent-evals] base=${BASE_URL}  cases=${cases.length} (static=${AGENT_EVAL_CASES.length} promoted=${promoted.length})\n`
+  );
 
   // 사전 헬스 체크
   try {
@@ -73,7 +78,7 @@ async function main() {
   }
 
   const scored: ScoredCase[] = [];
-  for (const testCase of AGENT_EVAL_CASES) {
+  for (const testCase of cases) {
     process.stdout.write(`- ${testCase.id} ... `);
     try {
       const result = await runOne(testCase);
