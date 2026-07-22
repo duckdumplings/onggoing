@@ -450,6 +450,30 @@ function buildDiagnostics(params: {
   };
 }
 
+/** Date를 KST(Asia/Seoul) 기준 "HH:mm"로 포맷(서버 TZ 무관). */
+function formatKstHHmm(d: Date): string {
+  return d.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * 마감 위반 시 "권장 출발시각"을 역산한다.
+ * 출발을 통째로 앞당기면 도착도 대략 같은 폭으로 앞당겨진다는 근사에 기반해,
+ * 가장 많이 지각한 지점(latenessMin)을 해소하고 목표 여유(기본 15분)를 확보하도록 출발을 당긴다.
+ * 반환: 권장 출발 ISO + KST 라벨 + 앞당김 분. departureAt이 없거나 지각이 없으면 null.
+ */
+function computeRecommendedDeparture(
+  departureAtIso: string | undefined | null,
+  latenessMin: number,
+  targetBufferMin = 15
+): { iso: string; label: string; shiftMin: number } | null {
+  if (!departureAtIso || !Number.isFinite(latenessMin) || latenessMin <= 0) return null;
+  const base = new Date(departureAtIso);
+  if (Number.isNaN(base.getTime())) return null;
+  const shiftMin = Math.ceil(latenessMin) + Math.max(0, targetBufferMin);
+  const rec = new Date(base.getTime() - shiftMin * 60 * 1000);
+  return { iso: rec.toISOString(), label: formatKstHHmm(rec), shiftMin };
+}
+
 // 시간제약 검증 및 스마트 제안 생성
 function validateTimeConstraintsAndSuggest(
   startTime: string,
@@ -1190,7 +1214,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 1) Tmap 기반 직행 가능성 사전검증 (시간제약 경유지 대상)
-        const preErrors = await precheckDirectFeasibility(
+        const { errors: preErrors, maxLatenessMin: preLateness } = await precheckDirectFeasibility(
           startLocation,
           destinationCoords,
           deliveryTimes,
@@ -1203,24 +1227,22 @@ export async function POST(request: NextRequest) {
           'tomorrow'
         );
         if (preErrors.length > 0) {
+          // 마감 위반 시 "권장 출발시각"을 역산해 구체적 조정안으로 제시.
+          const rec = computeRecommendedDeparture(departureAt as string, preLateness);
+          const recSuggestion = rec
+            ? [{ type: 'departure_time', title: `출발시간을 ${rec.label}로 앞당기기`, description: `${rec.label} 출발(현재보다 ${rec.shiftMin}분 이른) 권장 — 가장 빡빡한 마감을 약 15분 여유로 맞춥니다.` }]
+            : [{ type: 'departure_time', title: '출발시간 앞당기기', description: '출발을 더 이른 시각으로 설정하면 충돌이 해소될 수 있습니다.' }];
+          const suggestions = [
+            ...recSuggestion,
+            { type: 'delivery_time', title: '문제 경유지 시간 늦추기', description: '안내된 최소 도착시각 이후로 설정하세요.' },
+          ];
           return NextResponse.json({
             success: false,
             error: 'DIRECT_FEASIBILITY_FAILED',
             message: '직행 기준으로도 시간제약을 만족할 수 없습니다.',
-            details: {
-              errors: preErrors, suggestions: [
-                { type: 'departure_time', title: '출발시간 앞당기기', description: '출발을 더 이른 시각으로 설정하면 충돌이 해소될 수 있습니다.' },
-                { type: 'delivery_time', title: '문제 경유지 시간 늦추기', description: '안내된 최소 도착시각 이후로 설정하세요.' }
-              ]
-            },
-            diagnostics: buildDiagnostics({
-              code: 'DIRECT_FEASIBILITY_FAILED',
-              errors: preErrors,
-              suggestions: [
-                { type: 'departure_time', title: '출발시간 앞당기기', description: '출발을 더 이른 시각으로 설정하면 충돌이 해소될 수 있습니다.' },
-                { type: 'delivery_time', title: '문제 경유지 시간 늦추기', description: '안내된 최소 도착시각 이후로 설정하세요.' }
-              ],
-            }),
+            recommendedDeparture: rec ? { at: rec.iso, label: rec.label, shiftMinutes: rec.shiftMin } : null,
+            details: { errors: preErrors, suggestions },
+            diagnostics: buildDiagnostics({ code: 'DIRECT_FEASIBILITY_FAILED', errors: preErrors, suggestions }),
           }, { status: 400 });
         }
 
@@ -1415,6 +1437,7 @@ export async function POST(request: NextRequest) {
       roleByAddress.get(address) ?? 'drop';
 
     const postOrderViolations: string[] = [];
+    let maxPostLatenessMin = 0; // 권장 출발 역산용: 가장 많이 지각한 분
 
     // 검증용 시계: 체류 미고려(요청사항)
     let validationClock = new Date(currentTime);
@@ -1531,6 +1554,7 @@ export async function POST(request: NextRequest) {
             const idxForUser = typeof originIdx === 'number' ? originIdx + 1 : (i + 1);
             const cdt = (cForDest && cForDest.deliveryTime) || `${hh}:${mm}`;
             postOrderViolations.push(`경유지 ${idxForUser}: ${cdt} 도착은 불가능합니다. 최소 ${hh}:${mm}에 도착 예상됩니다. (구간: ${prevAddress} → ${dest.address})`);
+            maxPostLatenessMin = Math.max(maxPostLatenessMin, (actualArrival.getTime() - dueMinMs) / 60000);
           }
         }
 
@@ -1732,25 +1756,22 @@ export async function POST(request: NextRequest) {
 
     // 최적 경로 산출 후, 실제 도착 시각 기준으로 시간제약 위반이 있으면 에러 반환
     if (postOrderViolations.length > 0) {
+      // 마감 위반 시 "권장 출발시각"을 역산해 구체적 조정안으로 제시.
+      const rec = computeRecommendedDeparture(departureAt as string, maxPostLatenessMin);
+      const recSuggestion = rec
+        ? { type: 'departure_time', title: `출발시간을 ${rec.label}로 앞당기기`, description: `${rec.label} 출발(현재보다 ${rec.shiftMin}분 이른) 권장 — 가장 빡빡한 마감을 약 15분 여유로 맞춥니다.` }
+        : { type: 'departure_time', title: '출발시간을 앞당기기', description: '지각분만큼 앞당기면 충돌을 해소할 수 있습니다.' };
+      const suggestions = [
+        recSuggestion,
+        { type: 'delivery_time', title: '문제 경유지 배송완료시간 늦추기', description: '경유지의 시간을 여유 있게 조정하세요.' },
+      ];
       return NextResponse.json({
         success: false,
         error: 'TIME_CONSTRAINT_VIOLATION',
         message: '시간제약 충돌이 감지되었습니다.',
-        details: {
-          errors: postOrderViolations,
-          suggestions: [
-            { type: 'departure_time', title: '출발시간을 앞당기기', description: '지각분만큼 앞당기면 충돌을 해소할 수 있습니다.' },
-            { type: 'delivery_time', title: '문제 경유지 배송완료시간 늦추기', description: '경유지의 시간을 여유 있게 조정하세요.' }
-          ]
-        },
-        diagnostics: buildDiagnostics({
-          code: 'TIME_CONSTRAINT_VIOLATION',
-          errors: postOrderViolations,
-          suggestions: [
-            { type: 'departure_time', title: '출발시간을 앞당기기', description: '지각분만큼 앞당기면 충돌을 해소할 수 있습니다.' },
-            { type: 'delivery_time', title: '문제 경유지 배송완료시간 늦추기', description: '경유지의 시간을 여유 있게 조정하세요.' }
-          ],
-        }),
+        recommendedDeparture: rec ? { at: rec.iso, label: rec.label, shiftMinutes: rec.shiftMin } : null,
+        details: { errors: postOrderViolations, suggestions },
+        diagnostics: buildDiagnostics({ code: 'TIME_CONSTRAINT_VIOLATION', errors: postOrderViolations, suggestions }),
       }, { status: 400 });
     }
 
@@ -2813,13 +2834,14 @@ async function precheckDirectFeasibility(
   vehicleTypeCode: string,
   trafficMode: 'realtime' | 'standard',
   trafficAnchor: 'today' | 'tomorrow' | 'auto'
-): Promise<string[]> {
+): Promise<{ errors: string[]; maxLatenessMin: number }> {
   const cache = new Map<string, { timeSec: number; distM: number }>();
   const base = anchorDepartureTime(new Date(departureAt), trafficAnchor);
   // 출발지 체류 반영
   const depart = new Date(base.getTime() + originDwellMinutes * 60 * 1000);
 
   const errors: string[] = [];
+  let maxLatenessMin = 0;
   for (let i = 0; i < waypoints.length; i++) {
     const dt = (deliveryTimes[i] || '').trim();
     if (!dt) continue; // 시간제약 없는 경유지는 사전검증 대상 아님
@@ -2850,7 +2872,8 @@ async function precheckDirectFeasibility(
       const ah = String(ceilDate.getHours()).padStart(2, '0');
       const am = String(ceilDate.getMinutes()).padStart(2, '0');
       errors.push(`경유지 ${i + 1}: 직행 기준 ${dt} 도착은 불가능합니다. 최소 ${ah}:${am} 도착.`);
+      maxLatenessMin = Math.max(maxLatenessMin, (arrive.getTime() - dueMinMs) / 60000);
     }
   }
-  return errors;
+  return { errors, maxLatenessMin };
 }
