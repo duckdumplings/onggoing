@@ -268,6 +268,9 @@ export interface RouteOptimizationState {
   sendChatPrompt: (text: string, routeContext?: unknown) => void;
   // 일회성 요청 소비 후 비운다(챗 재오픈 시 동일 프롬프트 재전송 방지).
   clearChatPrompt: () => void;
+  // 커맨드 독의 '경로 입력' 패널을 외부(온보딩 시작카드)에서 여는 요청.
+  routeInputRequest: { nonce: number } | null;
+  requestRouteInput: () => void;
 
   // 우측 워크스페이스(탭 패널): 대화/견적/경로/배차 결과를 하나의 표면에서 전환한다.
   workspaceOpen: boolean;
@@ -309,6 +312,7 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   const [multiDriverResult, setMultiDriverResult] = useState<any>(null);
   const [inputApplyRequest, setInputApplyRequest] = useState<{ data: any; nonce: number } | null>(null);
   const [chatPromptRequest, setChatPromptRequest] = useState<{ text: string; nonce: number; routeContext?: unknown } | null>(null);
+  const [routeInputRequest, setRouteInputRequest] = useState<{ nonce: number } | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceTab, setWorkspaceTab] = useState<'chat' | 'quote' | 'route' | 'result'>('chat');
   const [quoteSummary, setQuoteSummary] = useState<{ hasQuote: boolean; hourly?: string; perJob?: string } | null>(null);
@@ -337,6 +341,12 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
   }, []);
 
   const clearChatPrompt = useCallback(() => setChatPromptRequest(null), []);
+
+  const routeInputNonceRef = useRef(0);
+  const requestRouteInput = useCallback(() => {
+    routeInputNonceRef.current += 1;
+    setRouteInputRequest({ nonce: routeInputNonceRef.current });
+  }, []);
 
   const setOptions = useCallback((o: Partial<OptimizationOptions>) => {
     setOptionsState(prev => ({ ...prev, ...o }));
@@ -580,6 +590,8 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
     chatPromptRequest,
     sendChatPrompt,
     clearChatPrompt,
+    routeInputRequest,
+    requestRouteInput,
     workspaceOpen,
     workspaceTab,
     openWorkspace,

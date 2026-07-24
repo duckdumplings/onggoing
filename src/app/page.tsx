@@ -7,6 +7,7 @@ import BottomSheet from '@/components/ui/BottomSheet';
 import TopBar from '@/components/shell/TopBar';
 import CommandDock from '@/components/shell/CommandDock';
 import WorkspacePanel from '@/components/shell/WorkspacePanel';
+import StartHero from '@/components/shell/StartHero';
 import { useCallback, useEffect, useRef } from 'react';
 import { useIsDesktop } from '@/hooks/useMediaQuery';
 import { useRouteOptimization } from '@/hooks/useRouteOptimization';
@@ -51,6 +52,11 @@ export default function Home() {
       {/* 하단 중앙 커맨드 독 (태블릿/데스크톱) */}
       <div className="hidden md:block">
         <CommandDock onOpenChat={openChat} chatOpen={docked} />
+      </div>
+
+      {/* 콜드스타트 온보딩 — 능력별 시작카드 (데스크톱, 데이터 0일 때만) */}
+      <div className="hidden md:block">
+        <StartHero />
       </div>
 
       {/* 우측 워크스페이스 — 대화/배차 결과를 한 표면(탭)으로 통합 */}

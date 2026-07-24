@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp, Calculator, ChevronDown, Map, PanelRight, Route, Sparkles } from 'lucide-react';
 import RouteOptimizerPanel from '@/components/panels/RouteOptimizerPanel';
@@ -40,7 +40,7 @@ const QUICK_CHIPS = [
  * - result: 경로 계산 후 KPI 스트립([상세]/[이 경로로 견적])이 입력 위로 솟아남
  */
 export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDockProps) {
-  const { sendChatPrompt, routeData, destinations, origins, vehicleType, openWorkspace } =
+  const { sendChatPrompt, routeData, destinations, origins, vehicleType, openWorkspace, routeInputRequest } =
     useRouteOptimization();
   const [prompt, setPrompt] = useState('');
   const [routeOpen, setRouteOpen] = useState(false);
@@ -50,6 +50,15 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
   useEffect(() => {
     if (chatOpen) setRouteOpen(false);
   }, [chatOpen]);
+
+  // 온보딩 시작카드('경로 최적화')에서 요청하면 경로 입력 패널을 펼친다.
+  const lastRouteReqNonce = useRef(0);
+  useEffect(() => {
+    if (routeInputRequest && routeInputRequest.nonce !== lastRouteReqNonce.current) {
+      lastRouteReqNonce.current = routeInputRequest.nonce;
+      setRouteOpen(true);
+    }
+  }, [routeInputRequest?.nonce]);
 
   const summary = routeData?.summary as
     | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number | null; isSelected?: boolean }> }
