@@ -108,7 +108,6 @@ function documentViews(): QuotePackage['documentViews'] {
     make('customer-summary', ['summary', 'customerRows', 'operatingBasis.minimal', 'vat', 'notes']),
     make('calculation-basis', ['summary', 'cases', 'pricingBreakdown', 'operatingBasis', 'timeline']),
     make('internal-risk', ['risks', 'timeline', 'deadlineSlack', 'predictionFallback', 'actions']),
-    make('email-draft', ['summary', 'customerRows', 'notes']),
   ];
 }
 

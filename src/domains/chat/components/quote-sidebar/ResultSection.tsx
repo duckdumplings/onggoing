@@ -15,7 +15,7 @@ interface ResultSectionProps {
   onFillInput: (text: string) => void;
   onGenerateFile: (
     type: GeneratedFile['file_type'],
-    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   isGeneratingFile: boolean;
   previewMode: 'input-order' | 'optimized-order';

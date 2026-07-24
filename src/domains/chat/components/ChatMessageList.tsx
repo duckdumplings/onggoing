@@ -40,7 +40,7 @@ interface ChatMessageListProps {
   onScenarioSelect: (label: string, routes?: Array<{ label: string; routeRequest: any }>) => void;
   onGenerateFile: (
     type: 'pdf',
-    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;
@@ -66,7 +66,7 @@ interface MessageBubbleProps {
   onScenarioSelect: (label: string, routes?: Array<{ label: string; routeRequest: any }>) => void;
   onGenerateFile: (
     type: 'pdf',
-    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   isGeneratingFile: boolean;
   onPreviewRoute: (routeRequest: any) => void;

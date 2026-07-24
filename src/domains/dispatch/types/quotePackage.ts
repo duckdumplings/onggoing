@@ -1,6 +1,6 @@
 import type { DeadlineRiskGrade } from '@/domains/dispatch/services/caseBoard';
 
-export type QuoteDocumentView = 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft';
+export type QuoteDocumentView = 'customer-summary' | 'calculation-basis' | 'internal-risk';
 
 export interface QuotePackageSummary {
   monthlyTotal: number | null;

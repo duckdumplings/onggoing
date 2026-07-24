@@ -26,7 +26,7 @@ interface IssueSectionProps {
   isGeneratingFile: boolean;
   onGenerateFile: (
     type: GeneratedFile['file_type'],
-    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' | 'email-draft' }
+    override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   currentSessionId: string | null;
 }
