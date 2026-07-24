@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const MAX_RENDER_RETRY = 3;
 const RENDER_ACK_TIMEOUT_MS = 5000;
@@ -54,6 +54,8 @@ interface TmapMapProps {
     arrivalTime?: string;
     departureTime?: string;
     dwellTime?: number;
+    etaLabel?: string;
+    riskColor?: string;
   }[];
   useExplicitDestination?: boolean;
   className?: string;
@@ -86,8 +88,10 @@ export default function TmapMap({
   const lastQueuedPayloadHashRef = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fatalError, setFatalError] = useState<string | null>(null); // SDK 로드 실패 등 재시도가 필요한 하드 에러
+  const [reloadNonce, setReloadNonce] = useState(0); // 증가 시 iframe을 재생성(SDK 재시도)
   const [renderStatus, setRenderStatus] = useState<'idle' | 'waiting-ack' | 'ok' | 'failed'>('idle');
-  const [isMapReadyState, setIsMapReadyState] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(true);
 
   const clearAckTimer = () => {
     if (ackTimerRef.current !== null) {
@@ -180,7 +184,6 @@ export default function TmapMap({
         setReady(true);
         setError(null);
         isMapReadyRef.current = false;
-        setIsMapReadyState(false);
         iframe.contentWindow?.postMessage({ type: 'init', center }, getTargetOrigin());
         clearMapReadyFallbackTimer();
         mapReadyFallbackTimerRef.current = window.setTimeout(() => {
@@ -195,7 +198,7 @@ export default function TmapMap({
       };
 
       iframe.onerror = () => {
-        setError('지도 로딩 실패');
+        setFatalError('지도를 불러오지 못했습니다. 다시 시도해 주세요.');
       };
 
       containerRef.current.appendChild(iframe);
@@ -211,7 +214,6 @@ export default function TmapMap({
 
       if (data.type === 'mapReady') {
         isMapReadyRef.current = true;
-        setIsMapReadyState(true);
         setError(null);
         clearMapReadyFallbackTimer();
         flushPendingPayload();
@@ -227,7 +229,6 @@ export default function TmapMap({
           setError(null);
           if (!isMapReadyRef.current) {
             isMapReadyRef.current = true;
-            setIsMapReadyState(true);
           }
           if (pendingPayloadRef.current?.requestId === data.requestId) {
             lastAckedPayloadRef.current = pendingPayloadRef.current;
@@ -238,7 +239,12 @@ export default function TmapMap({
 
       if (data.type === 'mapError') {
         setRenderStatus('failed');
-        setError(data.error || '지도 렌더링 오류');
+        if (data.error === 'SDK_LOAD_TIMEOUT') {
+          // SDK가 끝내 로드되지 않음 → 빈 지도에 갇히지 않도록 재시도 UI 노출
+          setFatalError('지도 SDK를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+        } else {
+          setError(data.error || '지도 렌더링 오류');
+        }
       }
     };
 
@@ -266,7 +272,7 @@ export default function TmapMap({
         iframeRef.current = null;
       }
     };
-  }, [center.lat, center.lng, zoom]);
+  }, [center.lat, center.lng, zoom, reloadNonce]);
 
   useEffect(() => {
     if (!ready || !iframeRef.current) {
@@ -309,27 +315,178 @@ export default function TmapMap({
     );
   }, [ready, focusedWaypoint]);
 
+  // SDK 로드 실패 등 하드 에러 후 iframe을 처음부터 재생성해 복구를 시도한다.
+  const reloadMap = () => {
+    setError(null);
+    setFatalError(null);
+    setReady(false);
+    setRenderStatus('idle');
+    isMapReadyRef.current = false;
+    lastAckedPayloadRef.current = null;
+    lastQueuedPayloadHashRef.current = null;
+    inflightRequestIdRef.current = null;
+    retryCountRef.current = 0;
+    clearAckTimer();
+    clearMapReadyFallbackTimer();
+    setReloadNonce((n) => n + 1);
+  };
+
+  // '전체 경로 보기' — 사용자가 확대/이동한 뒤 다시 전체 경로에 뷰를 맞춘다.
+  const fitAllInView = () => {
+    iframeRef.current?.contentWindow?.postMessage({ type: 'fitView' }, getTargetOrigin());
+  };
+
+  // 지도 위 범례 데이터(모드별). 표시할 지점이 없으면 null.
+  const legend = useMemo(() => {
+    const pts = waypoints || [];
+    if (pts.length === 0) return null;
+    if (multiDriverMode) {
+      const byDriver = new Map<number, string>();
+      pts.forEach((p) => {
+        if (typeof p.driverIndex === 'number' && p.label !== '출발') {
+          if (!byDriver.has(p.driverIndex)) byDriver.set(p.driverIndex, p.color || '#3B82F6');
+        }
+      });
+      const drivers = Array.from(byDriver.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([idx, color]) => ({ color, label: `배송원 ${idx + 1}` }));
+      return { mode: 'multi' as const, drivers };
+    }
+    // 단일 모드 핀은 전부 파란 원이고 라벨(출발/순번/도착)로 구분된다(색 구분 아님).
+    // 색으로 구분되는 유일한 요소는 각 핀 위 ETA 배지(마감 대비 위험)뿐이다.
+    const hasEta = pts.some((p) => !!p.etaLabel);
+    return { mode: 'single' as const, hasDestination: !!useExplicitDestination, hasEta };
+  }, [waypoints, multiDriverMode, useExplicitDestination]);
+
+  // 단일 모드: 파란 핀 안의 라벨로 지점 종류를 구분함을 그대로 표현
+  const singlePinItems = [
+    { glyph: '출', label: '출발지' },
+    { glyph: '1', label: '방문 순번' },
+    ...(legend?.mode === 'single' && legend.hasDestination ? [{ glyph: '도', label: '도착지' }] : []),
+  ];
+  // ETA 배지 색 = 마감 대비 도착 위험
+  const riskItems = [
+    { color: '#22C55E', label: '여유' },
+    { color: '#F59E0B', label: '임박 (20분↓)' },
+    { color: '#EF4444', label: '마감 초과' },
+  ];
+
   return (
     <div className={`relative ${className} ${height} map-container`}>
       <div
         ref={containerRef}
         className="w-full h-full"
       />
-      {ready && (
-        <div className="absolute top-2 right-2 rounded bg-white/80 px-2 py-1 text-xs text-gray-600">
-          {isMapReadyState ? (renderStatus === 'waiting-ack' ? '지도 반영 중...' : '지도 준비됨') : '지도 초기화 중...'}
+      {/* 렌더 반영 중에만 잠깐 노출되는 트랜지언트 표시(상시 배지 제거) */}
+      {ready && renderStatus === 'waiting-ack' && (
+        <div className="absolute top-2 right-2 z-[1200] flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+          반영 중
         </div>
       )}
-      {error && (
-        <div className="absolute top-10 right-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700 shadow">
+
+      {/* 일시적 렌더 오류 토스트(하드 에러가 아닌 경우만) */}
+      {error && !fatalError && (
+        <div className="absolute top-2 left-1/2 z-[1300] -translate-x-1/2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 shadow">
           {error}
         </div>
       )}
-      {!ready && (
-        <div className="absolute inset-0 bg-muted flex items-center justify-center">
+
+      {/* 지도 범례 */}
+      {ready && legend && (
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] max-w-[min(15rem,calc(100%-1.5rem))]">
+          <div className="pointer-events-auto rounded-xl border border-border bg-card/95 px-3 py-2.5 text-xs shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-foreground">범례</span>
+              <button
+                type="button"
+                onClick={() => setLegendOpen((v) => !v)}
+                className="text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {legendOpen ? '접기' : '펼치기'}
+              </button>
+            </div>
+
+            {legendOpen && (
+              <div className="mt-2 space-y-2">
+                {legend.mode === 'single' ? (
+                  <>
+                    <div className="space-y-1">
+                      {singlePinItems.map((it) => (
+                        <div key={it.label} className="flex items-center gap-2">
+                          <span className="inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-[#3B82F6] text-[8px] font-bold text-white ring-1 ring-white/70">{it.glyph}</span>
+                          <span className="text-muted-foreground">{it.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {legend.hasEta && (
+                      <div className="border-t border-border pt-2">
+                        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">ETA 배지 (마감 대비)</div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {riskItems.map((it) => (
+                            <div key={it.label} className="flex items-center gap-1.5">
+                              <span className="inline-block h-2.5 w-2.5 flex-none rounded-sm" style={{ background: it.color }} />
+                              <span className="text-muted-foreground">{it.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 flex-none rounded-full" style={{ background: '#10B981' }} />
+                      <span className="text-muted-foreground">출발 (공통)</span>
+                    </div>
+                    {legend.drivers.map((d) => (
+                      <div key={d.label} className="flex items-center gap-2">
+                        <span className="inline-block h-2.5 w-2.5 flex-none rounded-full" style={{ background: d.color }} />
+                        <span className="text-muted-foreground">{d.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                  <span className="text-[10px] text-muted-foreground">핀·경로 클릭 → 상세</span>
+                  <button
+                    type="button"
+                    onClick={fitAllInView}
+                    className="whitespace-nowrap text-[10px] font-bold text-primary hover:underline"
+                  >
+                    전체 경로 보기
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 로딩 오버레이(하드 에러가 아닐 때만) */}
+      {!ready && !fatalError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted">
           <div className="text-center">
-            <div className="text-foreground font-semibold">지도 로딩 중</div>
-            <div className="text-muted-foreground text-sm">지도를 불러오는 중…</div>
+            <div className="font-semibold text-foreground">지도 로딩 중</div>
+            <div className="text-sm text-muted-foreground">지도를 불러오는 중…</div>
+          </div>
+        </div>
+      )}
+
+      {/* SDK 로드 실패 등 하드 에러 → 재시도 UI(빈 지도에 갇히지 않도록) */}
+      {fatalError && (
+        <div className="absolute inset-0 z-[1500] flex items-center justify-center bg-muted px-4">
+          <div className="max-w-xs text-center">
+            <div className="mb-1 text-base font-bold text-foreground">지도를 표시할 수 없어요</div>
+            <div className="mb-4 text-sm leading-relaxed text-muted-foreground">{fatalError}</div>
+            <button
+              type="button"
+              onClick={reloadMap}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
+            >
+              다시 시도
+            </button>
           </div>
         </div>
       )}

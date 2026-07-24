@@ -61,19 +61,24 @@ export async function GET() {
             let lastSegmentKey = null; // 토글 상태 추적용
             let lastRenderRequestId = null;
             let lastPayloadHash = null;
+            let lastFitHash = null;        // 마지막으로 뷰를 맞춘 페이로드 (지오메트리 변경 판별용)
+            let lastRenderedOkHash = null; // 마지막으로 "성공적으로" 렌더한 페이로드 (동일 페이로드 dedup용)
             const parentOrigin = window.location.origin;
             
             // 전역 디버그 노출 (초기 no-op)
             try { window.toggleNearest = function(){ console.log('[TmapEmbed] toggleNearest noop (not ready)'); }; } catch(e){}
 
-            // Tmapv2 로딩 대기
+            // Tmapv2 로딩 대기 (최대 ~12초; 실패 시 부모에 mapError 전파해 재시도 UI 노출)
+            let tmapWaitAttempts = 0;
             function waitForTmap() {
               if (typeof window.Tmapv2 !== 'undefined') {
                 console.log('[TmapEmbed] Tmapv2 loaded, initializing map');
                 initMap();
-              } else {
-                console.log('[TmapEmbed] Tmapv2 not ready, waiting...');
+              } else if (tmapWaitAttempts++ < 120) {
                 setTimeout(waitForTmap, 100);
+              } else {
+                console.error('[TmapEmbed] Tmapv2 SDK load timeout');
+                try { window.parent.postMessage({ type: 'mapError', error: 'SDK_LOAD_TIMEOUT' }, parentOrigin); } catch (e) {}
               }
             }
             
@@ -142,26 +147,33 @@ export async function GET() {
                     }
                     break;
                     
-                  case 'route':
-                    console.log('[TmapEmbed] Handling route message:', { 
-                      routeData: !!routeData, 
-                      waypoints: !!waypoints, 
-                      waypointsCount: waypoints?.length,
-                      multiDriverMode: !!multiDriverMode,
-                      isRouteDataArray: Array.isArray(routeData),
-                      requestId
-                    });
+                  case 'route': {
+                    // 이미 "성공적으로" 렌더한 것과 동일한 페이로드 재전송(탭 복귀·ACK 재발송·재시도)은
+                    // 재그리기·뷰 리셋 없이 ACK만 보낸다. 사용자가 확대/이동한 뷰가 "튕기지" 않게 하는 핵심 가드.
+                    // (첫 렌더가 실패했다면 해시가 기록되지 않으므로 재시도가 정상적으로 재그리기함)
+                    const sameAsRendered = payloadHash && payloadHash === lastRenderedOkHash;
+                    if (sameAsRendered) {
+                      window.parent.postMessage({
+                        type: 'routeRendered', requestId: requestId || null, payloadHash, applied: true, deduped: true
+                      }, parentOrigin);
+                      break;
+                    }
+                    // 경로 지오메트리가 실제로 바뀐 첫 렌더에서만 뷰를 자동으로 맞춘다.
+                    const shouldFit = payloadHash !== lastFitHash;
                     let renderApplied = false;
                     if (routeData || waypoints) {
                       if (multiDriverMode && Array.isArray(routeData)) {
-                        renderApplied = drawMultiDriverRoutes(routeData, waypoints);
+                        renderApplied = drawMultiDriverRoutes(routeData, waypoints, shouldFit);
                       } else {
-                        renderApplied = drawRoute(routeData, waypoints);
+                        renderApplied = drawRoute(routeData, waypoints, shouldFit);
                       }
                     } else {
-                      console.log('[TmapEmbed] No route data or waypoints provided');
                       clearOverlays();
                       renderApplied = true;
+                    }
+                    if (renderApplied) {
+                      lastRenderedOkHash = payloadHash || null;
+                      if (shouldFit) lastFitHash = payloadHash || null;
                     }
                     lastRenderRequestId = requestId || null;
                     lastPayloadHash = payloadHash || null;
@@ -172,6 +184,7 @@ export async function GET() {
                       applied: renderApplied
                     }, parentOrigin);
                     break;
+                  }
 
                   case 'focusWaypoint':
                     if (event.data?.waypoint && map) {
@@ -182,7 +195,12 @@ export async function GET() {
                       }
                     }
                     break;
-                    
+
+                  case 'fitView':
+                    // 사용자가 '전체 경로 보기'를 누르면 현재 오버레이 전체에 맞춰 강제 재조정한다.
+                    try { fitMapToOverlays(); } catch (e) { console.warn('[TmapEmbed] fitView failed', e); }
+                    break;
+
                   default:
                     console.log('[TmapEmbed] Unknown message type:', type);
                 }
@@ -251,8 +269,64 @@ export async function GET() {
               };
             }
 
+            // 현재 오버레이(경로 폴리라인 + 마커) 전체를 포함하도록 지도 뷰를 맞춘다.
+            // route 메시지의 shouldFit=true(새 지오메트리)일 때와 'fitView' 요청 시에만 호출.
+            // 매 렌더마다 호출하지 않으므로 사용자가 확대/이동한 뷰가 유지된다.
+            function fitMapToOverlays() {
+              if (!map || (routePolylines.length === 0 && markers.length === 0)) return;
+              const readLatLng = (obj) => {
+                if (!obj) return null;
+                try {
+                  const lat = typeof obj.getLat === 'function' ? obj.getLat() : (typeof obj.lat === 'function' ? obj.lat() : obj.lat);
+                  const lng = typeof obj.getLng === 'function' ? obj.getLng() : (typeof obj.lng === 'function' ? obj.lng() : obj.lng);
+                  if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) return { lat, lng };
+                } catch (e) {}
+                return null;
+              };
+              const coords = [];
+              routePolylines.forEach((pl) => {
+                try {
+                  const path = (pl && typeof pl.getPath === 'function') ? pl.getPath() : null;
+                  const arr = Array.isArray(path)
+                    ? path
+                    : (path && Array.isArray(path.coordinates) ? path.coordinates
+                      : (path && Array.isArray(path.points) ? path.points : null));
+                  if (arr) arr.forEach((p) => { const c = readLatLng(p); if (c) coords.push(c); });
+                } catch (e) {}
+              });
+              markers.forEach((mk) => {
+                try {
+                  const pos = (mk && typeof mk.getPosition === 'function') ? mk.getPosition() : null;
+                  const c = readLatLng(pos);
+                  if (c) coords.push(c);
+                } catch (e) {}
+              });
+              if (coords.length === 0) return;
+              let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+              coords.forEach((c) => {
+                minLat = Math.min(minLat, c.lat); maxLat = Math.max(maxLat, c.lat);
+                minLng = Math.min(minLng, c.lng); maxLng = Math.max(maxLng, c.lng);
+              });
+              if ([minLat, maxLat, minLng, maxLng].some((v) => isNaN(v))) return;
+              const centerLat = (minLat + maxLat) / 2;
+              const centerLng = (minLng + maxLng) / 2;
+              const maxDiff = Math.max(maxLat - minLat, maxLng - minLng);
+              let zoom = 14;
+              if (maxDiff > 1) zoom = 9;
+              else if (maxDiff > 0.5) zoom = 10;
+              else if (maxDiff > 0.2) zoom = 11;
+              else if (maxDiff > 0.1) zoom = 12;
+              else if (maxDiff > 0.05) zoom = 13;
+              try {
+                if (typeof map.setCenter === 'function' && typeof map.setZoom === 'function') {
+                  map.setCenter(new Tmapv2.LatLng(centerLat, centerLng));
+                  map.setZoom(zoom);
+                }
+              } catch (e) { console.warn('[TmapEmbed] 뷰맞춤 적용 실패', e); }
+            }
+
             // 다중 배송원 경로 그리기
-            function drawMultiDriverRoutes(routeDataArray, waypoints) {
+            function drawMultiDriverRoutes(routeDataArray, waypoints, shouldFit) {
               try {
                 console.log('[TmapEmbed] drawMultiDriverRoutes 시작:', { 
                   driversCount: routeDataArray.length,
@@ -424,8 +498,8 @@ export async function GET() {
                   try { window.markerInteracts = markerInteracts; } catch(e){}
                 }
                 
-                // 모든 경로를 포함하도록 지도 범위 조정
-                if (routePolylines.length > 0 || markers.length > 0) {
+                // 모든 경로를 포함하도록 지도 범위 조정 (새 지오메트리일 때만; 튕김 방지)
+                if (shouldFit && (routePolylines.length > 0 || markers.length > 0)) {
                   const bounds = new Tmapv2.LatLngBounds();
                   routePolylines.forEach(polyline => {
                     if (polyline.getPath && polyline.getPath().getArray) {
@@ -452,7 +526,7 @@ export async function GET() {
               }
             }
 
-            function drawRoute(routeData, waypoints) {
+            function drawRoute(routeData, waypoints, shouldFit) {
               try {
                 console.log('[TmapEmbed] drawRoute 시작:', { 
                   hasRouteData: !!routeData, 
@@ -705,8 +779,8 @@ export async function GET() {
                   console.log('[TmapEmbed] Waypoints 없음 - 핀 그리기 건너뜀');
                 }
                 
-                // 자동 뷰맞춤: 모든 경로와 핀을 포함하는 뷰로 조정
-                if (routePolylines.length > 0 || markers.length > 0) {
+                // 자동 뷰맞춤: 경로 지오메트리가 실제로 바뀐 첫 렌더에서만(shouldFit) 실행 → 튕김 방지
+                if (shouldFit && (routePolylines.length > 0 || markers.length > 0)) {
                   console.log('[TmapEmbed] 자동 뷰맞춤 시작');
                   console.log('[TmapEmbed] 뷰맞춤 대상:', { 
                     routePolylinesCount: routePolylines.length, 

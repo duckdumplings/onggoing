@@ -577,6 +577,76 @@ export default function TmapMainMap() {
         </div>
       ) : null}
 
+      {/* 단일 차량 계산완료 요약카드 + CTA — 지도에서 결과·다음 행동을 바로 노출 */}
+      {!multiDriverResult && routeData?.summary ? (
+        <div className="absolute left-4 top-[4.75rem] z-[1000] w-[calc(100vw-2rem)] sm:w-[340px] pointer-events-none">
+          <div className="glass-canvas rounded-2xl p-4 pointer-events-auto animate-in fade-in slide-in-from-left-2 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg flex-none">
+                <Route className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-foreground text-base leading-tight">경로 계산 완료</h3>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {routeQuoteDetail ? `${routeQuoteDetail.vehicleTypeLabel} · ` : ''}경유 {(waypoints.length ? Math.max(0, waypoints.length - 2) : 0)}곳
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">총거리</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {((routeData.summary as any).totalDistance / 1000).toFixed(1)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">km</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">총시간</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {Math.ceil((routeData.summary as any).totalTime / 60)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">분</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-muted px-2 py-2 text-center">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">경유지</div>
+                <div className="mt-0.5 text-base font-black text-foreground">
+                  {(waypoints.length ? Math.max(0, waypoints.length - 2) : 0)}<span className="ml-0.5 text-[10px] font-normal text-muted-foreground">곳</span>
+                </div>
+              </div>
+            </div>
+
+            {routeQuoteDetail && (
+              <div className="mt-2 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">예상 견적</span>
+                <span className="text-right">
+                  <span className="text-base font-black text-primary">{formatWon(routeQuoteDetail.totalPrice)}</span>
+                  <span className="ml-1 text-[10px] font-bold text-muted-foreground">{routeQuoteDetail.recommendedPlan === 'hourly' ? '시간당' : '단건'}</span>
+                </span>
+              </div>
+            )}
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openWorkspace('route')}
+                className="focus-ring-inset rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground shadow-sm transition hover:bg-muted active:scale-[0.99]"
+                title="경로 상세(KPI·ETA·도로 옵션) 보기"
+              >
+                경로 상세
+              </button>
+              <button
+                type="button"
+                onClick={handleQuoteFromRoute}
+                className="focus-ring-inset inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
+                title="이 경로 그대로 견적 챗에 전달"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                이 경로로 견적
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 단일경로 '경로 상세' — 우측 워크스페이스 '경로' 탭으로 portal 주입(지도 의존 로직은 여기 유지) */}
       {routeSlotEl && workspaceTab === 'route' && routeData?.summary
         ? createPortal(
