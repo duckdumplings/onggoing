@@ -10,6 +10,7 @@ import {
 } from '@/domains/dispatch/services/segmentTravel';
 import { buildDirectedMatrix } from '@/domains/dispatch/services/routeMatrix';
 import { solveOpenStart, type OriginRationale } from '@/domains/dispatch/services/openStartOptimizer';
+import { solveExactOrder, EXACT_ORDER_MAX_STOPS } from '@/domains/dispatch/services/exactOrder';
 import {
   buildGeocodeQueryVariants,
   buildUserFacingAddressHints,
@@ -1335,11 +1336,23 @@ export async function POST(request: NextRequest) {
         // 시간제약이 없는 경우: 단순 거리 기반 최적화
         console.log('[거리 기반 최적화] 실행 - 시간제약 없음');
 
-        orderedDestinations = nearestNeighborOrder(startLocation, destinationCoords, Array.isArray(stopRoles) ? stopRoles : []);
+        const distResult = await optimizeOrderDistanceBased(
+          startLocation,
+          destinationCoords,
+          Array.isArray(stopRoles) ? stopRoles : [],
+          {
+            tmapKey,
+            vehicleTypeCode,
+            trafficMode: usedTraffic as 'realtime' | 'standard',
+            departAt: departureAt ? new Date(departureAt) : new Date(),
+            useExplicitDestination,
+          },
+        );
+        orderedDestinations = distResult.ordered;
 
         console.log('[거리 기반 최적화] 완료:', {
           최적경로: orderedDestinations.map(p => p.address),
-          전략: '최근접 이웃 알고리즘'
+          전략: distResult.method === 'exact-realtime' ? '실측 정확해(Held-Karp)' : 'Haversine 최근접이웃',
         });
       }
     } else {
@@ -2496,6 +2509,79 @@ function nearestNeighborOrder(
   const afterPickup = lastPickup ? { lat: lastPickup.latitude, lng: lastPickup.longitude } : start2;
   const orderedRest = sweep(afterPickup, rest);
   return [...orderedPickups, ...orderedRest];
+}
+
+/**
+ * 거리기반(시간제약 없음) 순서 최적화의 적응형 디스패처.
+ * - 지점 적음(< MIN): 기존 Haversine NN. 이미 최적에 가깝고 Tmap 호출 0(값싸다).
+ * - 중간(MIN..MAX): 실측 비대칭 행렬 + Held-Karp 정확해. Haversine의 직선거리 오차를 제거한다.
+ * - 큼(> MAX) 또는 계산 실패: Haversine NN으로 안전 폴백(사용자 경로는 절대 깨지지 않는다).
+ *
+ * 근거: scripts/diagnose-ordering-gap.ts — 분산된 6~9지점 경로에서 Haversine NN이 실측 최적 대비
+ * 최대 ~10%(15~17분)를 잃었고, 상당 부분이 "직선거리로 순서를 정한" 탓이었다. 이 경로는
+ * 실측 시간 위에서 정확해를 구해 그 손실을 없앤다. 선행제약(픽업 먼저)은 NN과 동일하게 유지.
+ *
+ * 비용: 정확해는 N×(N-1) Tmap 실측 호출이 든다(Haversine NN은 0). 그래서 MIN 미만은 값싼
+ * Haversine을 쓰고, MAX 초과는 행렬 비용/Held-Karp 폭발을 피해 폴백한다. 임계값은 env로 조정.
+ */
+async function optimizeOrderDistanceBased(
+  start: Waypoint,
+  dests: Waypoint[],
+  roles: string[],
+  ctx: {
+    tmapKey: string;
+    vehicleTypeCode: string;
+    trafficMode: 'realtime' | 'standard';
+    departAt: Date;
+    useExplicitDestination: boolean;
+  },
+): Promise<{ ordered: Waypoint[]; method: 'haversine-nn' | 'exact-realtime' }> {
+  const n = dests.length;
+  const enabled = (process.env.ORDER_EXACT_ENABLED ?? 'true') !== 'false';
+  const MIN = Number(process.env.ORDER_EXACT_MIN_STOPS ?? 6);
+  const MAX = Math.min(Number(process.env.ORDER_EXACT_MAX_STOPS ?? 9), EXACT_ORDER_MAX_STOPS);
+
+  const nnFallback = (): { ordered: Waypoint[]; method: 'haversine-nn' } => ({
+    ordered: nearestNeighborOrder(start, dests, roles),
+    method: 'haversine-nn',
+  });
+
+  if (!enabled || n < MIN || n > MAX) {
+    if (enabled && n > MAX) {
+      console.warn(`[거리기반 최적화] 지점 ${n}개 > 상한 ${MAX} → Haversine NN 폴백(정확해 스킵). ORDER_EXACT_MAX_STOPS로 상향 가능.`);
+    }
+    return nnFallback();
+  }
+
+  try {
+    const points: Waypoint[] = [start, ...dests];
+    const matrix = await buildDirectedMatrix({
+      points,
+      departAt: ctx.departAt,
+      tmapKey: ctx.tmapKey,
+      vehicleTypeCode: ctx.vehicleTypeCode,
+      trafficMode: ctx.trafficMode,
+      trafficAnchor: 'tomorrow',
+    });
+    const stopIndices = dests.map((_, i) => i + 1); // 행렬 인덱스 0 = 출발지, 1..n = dests
+    const pickupIndices = roles
+      .map((r, i) => (r === 'pickup' ? i + 1 : -1))
+      .filter((x) => x > 0);
+    // useExplicitDestination이면 마지막 dest를 고정 종착으로(아래 :useExplicitDestination 후처리 핀과 일치).
+    const fixedFinalIndex = ctx.useExplicitDestination && dests.length > 0 ? dests.length : null;
+    const res = solveExactOrder({
+      time: matrix.timeSec,
+      stopIndices,
+      pickupIndices,
+      precedence: true,
+      fixedFinalIndex,
+    });
+    if (res.skipped || res.order.length !== dests.length) return nnFallback();
+    return { ordered: res.order.map((gi) => points[gi]), method: 'exact-realtime' };
+  } catch (e) {
+    console.warn('[거리기반 최적화] 실측 정확해 실패 → Haversine NN 폴백:', e instanceof Error ? e.message : e);
+    return nnFallback();
+  }
 }
 
 // 거리 기반 + 시간대별 예상 이동시간 계산 함수
