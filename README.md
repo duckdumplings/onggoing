@@ -192,7 +192,6 @@ npx next build         # 프로덕션 빌드
 | `POST /api/quote/ai-chat-generate` | AI 견적 챗봇 메인 |
 | `POST /api/quote/extract-quote-info` | 견적 정보 추출 |
 | `POST /api/quote/generate-risk-report` | 견적 리스크 리포트 |
-| `POST /api/quote/pdf` | 견적서 PDF 생성 |
 | `GET  /api/poi-search` | Tmap POI 검색 프록시 |
 
 전체 목록은 [`AGENTS.md`](./AGENTS.md) §"API Routes 목록" 참조.

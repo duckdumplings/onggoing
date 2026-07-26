@@ -86,14 +86,11 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `quote/document-upload/route.ts` | 견적 문서 업로드 | — | 중간 |
 | `quote/validate-route/route.ts` | 경로 검증 | — | 중간 |
 | `quote/generate-from-text/route.ts` | 텍스트 기반 견적 생성 | — | 중간 |
-| `quote/generate-from-customer-data/route.ts` | 고객 데이터 기반 견적 | — | 중간 |
 | `quote/generate-risk-report/route.ts` | 리스크 리포트 생성 | — | 중간 |
 | `quote/compare-quotes/route.ts` | 견적 비교 | — | 낮음 |
 | `quote/chat-sessions/route.ts` | AI Chat 세션 CRUD | — | 중간 |
 | `quote/chat-feedback/route.ts` | AI Chat 피드백 수집 | — | 낮음 |
 | `quote/reviews/route.ts` | 견적 검토 이력 | — | 낮음 |
-| `quote/pdf/route.ts` | 견적서 PDF 생성 | 317 | 중간 |
-| `quote/pdf-v2/route.ts` | 견적서 PDF v2 | — | 중간 |
 | `quote/evals/route.ts` | AI Chat 평가 실행 | — | 낮음 |
 | `quote-calculation/route.ts` | 단순 견적 계산 (legacy?) | — | 낮음 |
 | `poi-search/route.ts` | Tmap POI 검색 프록시 | — | 중간 |
@@ -170,8 +167,8 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `src/components/ui/` | 도메인 무관 기본 UI (Button, Card, Input, Modal, Select, Loading, ErrorBoundary) |
 | `src/components/layout/` | Layout, Header, Footer, Sidebar, Navigation |
 | `src/components/map/` | TmapMainMap, TmapMap (지도 컴포넌트) |
-| `src/components/panels/` | 도메인 종속 패널 (RouteOptimizer, MultiDriverResults, QuoteFromCustomerData, QuoteRiskReview, OptimizationHistory 등) — 향후 도메인 폴더로 이동 |
-| `src/components/modals/` | AIQuoteChatModal, DriverRouteDetailModal, RiskReportModal |
+| `src/components/panels/` | 도메인 종속 패널 (RouteOptimizer, MultiDriverResults, AIQuoteLauncher) — 향후 도메인 폴더로 이동 |
+| `src/components/modals/` | AIQuoteChatModal, DriverRouteDetailModal |
 | `src/components/AddressAutocomplete.tsx` | 주소 자동완성 (501줄, panels/로 이동 후보) |
 
 ## 테스트 (현 상태: 미도입)

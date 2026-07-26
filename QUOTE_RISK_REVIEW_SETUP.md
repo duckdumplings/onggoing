@@ -1,5 +1,7 @@
 # 견적안 리스크 검토 시스템 설정 가이드
 
+> ⚠️ **부분 폐기 (2026-07)**: 이 기능의 UI 패널(`QuoteRiskReviewPanel`, `QuoteReviewHistoryPanel`, `QuoteFromCustomerDataPanel`, `RiskReportModal`)은 라이브에서 사용되지 않아 삭제되었습니다(대화형 AI 견적챗이 대체). 백엔드 API(`/api/quote/reviews`, `validate-route`, `document-upload`, `parse-document`, `extract-quote-info`, `generate-risk-report`)와 Supabase 테이블은 후속 마이그레이션 정리 전까지 유지됩니다. 아래는 그 잔여 백엔드 기준의 과거 설정 기록입니다.
+
 ## 개요
 화주사 견적안 검토 및 견적 생성 시스템 구현이 완료되었습니다. 다음 설정을 진행해주세요.
 
