@@ -113,6 +113,8 @@ export interface CaseTimelineEntry {
   arrival: string | null;
   departure: string | null;
   dwellMinutes: number | null;
+  /** 조기배송 금지로 인한 현장 대기(분). 구속시간에 과금됨. */
+  waitMinutes?: number | null;
 }
 
 export interface CaseBoardCaseResult {
@@ -124,6 +126,7 @@ export interface CaseBoardCaseResult {
   km?: number;
   driveMinutes?: number;
   dwellMinutes?: number;
+  waitMinutes?: number;
   /** 출발시각 예측(타임머신)을 시도한 구간 수. */
   predictionAttemptedSegments?: number;
   /** 예측 실패로 호출시점 교통으로 대체한 구간 수(>0이면 그만큼 소요가 비예측). */
@@ -166,8 +169,10 @@ export interface CaseBoardCaseResult {
   frequencyLabel?: string | null;
   /** 경유지별 도착/출발 타임라인(역할 포함). */
   timeline?: CaseTimelineEntry[];
-  /** 격자 미니맵용 정규화 폴리라인(출발 + 최적 순서 경유지). */
+  /** 격자 미니맵의 지점 노드(출발 + 최적 순서 경유지). 역할 점 표시용. */
   schematic?: CaseSchematicPoint[];
+  /** 미니맵용 실도로 폴리라인(Tmap 경로 지오메트리, [lng,lat] 아님·{lat,lng} 정규화). 직선이 아니라 실제 도로 모양. */
+  routeGeometry?: { lat: number; lng: number }[];
   /** 단일 상세 지도 렌더용 경로 페이로드. */
   routeRequest?: unknown;
   lowPrecisionStops?: string[];
@@ -297,6 +302,7 @@ async function computeCase(
     const km = Number(summary?.totalDistance || 0) / 1000;
     const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
     const dwellMinutes = Math.round(Number(summary?.dwellTime || 0) / 60);
+    const waitMinutes = Math.round(Number(summary?.waitTime || 0) / 60);
     const predictionAttemptedSegments = Number(summary?.predictionAttemptedSegments ?? 0) || 0;
     const predictionFallbackSegments = Number(summary?.predictionFallbackSegments ?? 0) || 0;
     const stopsCount = Math.max(0, payload.destinations.length - (payload.useExplicitDestination ? 1 : 0));
@@ -309,6 +315,7 @@ async function computeCase(
         time: driveMinutes * 60,
         vehicleType: c.vehicleType,
         dwellMinutes: payload.dwellMinutes,
+        waitMinutes,
         stopsCount,
         scheduleType: c.scheduleType,
       }),
@@ -365,6 +372,11 @@ async function computeCase(
       arrival: kstHHmm(w?.arrivalTime),
       departure: kstHHmm(w?.departureTime),
       dwellMinutes: Number.isFinite(Number(w?.dwellTime)) ? Number(w.dwellTime) : null,
+      waitMinutes: Number.isFinite(Number(w?.waitMinutes))
+        ? Number(w.waitMinutes)
+        : Number.isFinite(Number(w?.waitTime))
+          ? Number(w.waitTime)
+          : null,
     }));
 
     // 격자 미니맵용 폴리라인: 출발지 + 최적 순서 경유지(좌표).
@@ -381,6 +393,32 @@ async function computeCase(
       }
     }
 
+    // 실도로 폴리라인: Tmap 경로 features의 LineString 좌표를 순서대로 이어붙인다(직선 아님).
+    // SVG 부담을 줄이려 최대 ~180점으로 균등 다운샘플. 좌표는 [lng,lat] → {lat,lng} 정규화.
+    const rawGeom: { lat: number; lng: number }[] = [];
+    const feats: any[] = Array.isArray((body as any)?.data?.features) ? (body as any).data.features : [];
+    for (const f of feats) {
+      const g = f?.geometry;
+      if (g?.type === 'LineString' && Array.isArray(g.coordinates)) {
+        for (const co of g.coordinates) {
+          if (Array.isArray(co) && co.length >= 2 && Number.isFinite(Number(co[0])) && Number.isFinite(Number(co[1]))) {
+            rawGeom.push({ lng: Number(co[0]), lat: Number(co[1]) });
+          }
+        }
+      }
+    }
+    const MAX_GEOM = 180;
+    const routeGeometry =
+      rawGeom.length <= MAX_GEOM
+        ? rawGeom
+        : (() => {
+            const step = rawGeom.length / MAX_GEOM;
+            const out: { lat: number; lng: number }[] = [];
+            for (let i = 0; i < MAX_GEOM; i++) out.push(rawGeom[Math.floor(i * step)]);
+            out.push(rawGeom[rawGeom.length - 1]); // 종점 보존
+            return out;
+          })();
+
     const lowPrecisionStops = domainStops
       .map((s) => s.address)
       .filter((addr) => cache.get(addr.trim())?.lowPrecision);
@@ -391,6 +429,7 @@ async function computeCase(
       km: Number(km.toFixed(1)),
       driveMinutes,
       dwellMinutes,
+      waitMinutes,
       predictionAttemptedSegments,
       predictionFallbackSegments,
       deadline: c.deadline ?? null,
@@ -419,6 +458,7 @@ async function computeCase(
       frequencyLabel: formatFrequency(freq),
       timeline,
       schematic,
+      routeGeometry,
       routeRequest: { ...payload, useRealtimeTraffic: true },
       lowPrecisionStops,
     };

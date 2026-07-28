@@ -41,29 +41,38 @@ const ROLE_LABEL: Record<string, string> = {
   waypoint: '경유',
 };
 
-/** 케이스 경로의 격자 스키매틱 미니맵(Tmap 없이 좌표만 정규화해 한눈에 비교). */
-function CaseSchematicMap({ points }: { points?: CaseSchematicPoint[] }) {
+/**
+ * 케이스 경로의 격자 미니맵. routeGeometry(Tmap 실도로 좌표)가 있으면 실제 도로 모양으로 그리고,
+ * 없을 때만 지점을 잇는 점선(개략)으로 폴백한다. 여러 라인을 한눈에 비교하는 용도.
+ */
+function CaseSchematicMap({ points, polyline }: { points?: CaseSchematicPoint[]; polyline?: { lat: number; lng: number }[] }) {
   const geom = useMemo(() => {
-    const pts = (points ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    if (pts.length === 0) return null;
+    const nodes = (points ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    const road = (polyline ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    const all = [...road, ...nodes];
+    if (all.length === 0) return null;
     const W = 132;
     const H = 84;
     const PAD = 10;
-    const lats = pts.map((p) => p.lat);
-    const lngs = pts.map((p) => p.lng);
+    const lats = all.map((p) => p.lat);
+    const lngs = all.map((p) => p.lng);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
     const maxLng = Math.max(...lngs);
     const spanLat = maxLat - minLat || 1;
     const spanLng = maxLng - minLng || 1;
-    const project = (p: CaseSchematicPoint) => ({
-      x: pts.length === 1 ? W / 2 : PAD + ((p.lng - minLng) / spanLng) * (W - 2 * PAD),
-      y: pts.length === 1 ? H / 2 : PAD + ((maxLat - p.lat) / spanLat) * (H - 2 * PAD),
-      role: p.role,
+    const single = all.length === 1;
+    const project = (p: { lat: number; lng: number }) => ({
+      x: single ? W / 2 : PAD + ((p.lng - minLng) / spanLng) * (W - 2 * PAD),
+      y: single ? H / 2 : PAD + ((maxLat - p.lat) / spanLat) * (H - 2 * PAD),
     });
-    return { W, H, nodes: pts.map(project) };
-  }, [points]);
+    const roadPath =
+      road.length > 1
+        ? road.map((p, i) => { const q = project(p); return `${i === 0 ? 'M' : 'L'}${q.x.toFixed(1)},${q.y.toFixed(1)}`; }).join(' ')
+        : null;
+    return { W, H, roadPath, nodes: nodes.map((p) => ({ ...project(p), role: p.role })) };
+  }, [points, polyline]);
 
   if (!geom) {
     return (
@@ -73,16 +82,24 @@ function CaseSchematicMap({ points }: { points?: CaseSchematicPoint[] }) {
     );
   }
 
-  const path = geom.nodes.map((n, i) => `${i === 0 ? 'M' : 'L'}${n.x.toFixed(1)},${n.y.toFixed(1)}`).join(' ');
+  // 실도로 좌표가 없을 때만 지점 연결선을 점선(개략)으로 그린다 — 직선이 실제 경로로 오인되지 않게.
+  const dashedPath =
+    !geom.roadPath && geom.nodes.length > 1
+      ? geom.nodes.map((n, i) => `${i === 0 ? 'M' : 'L'}${n.x.toFixed(1)},${n.y.toFixed(1)}`).join(' ')
+      : null;
 
   return (
     <svg
       viewBox={`0 0 ${geom.W} ${geom.H}`}
       className="h-[84px] w-full rounded-lg bg-muted"
       role="img"
-      aria-label="경로 개략도"
+      aria-label={geom.roadPath ? '실제 도로 경로 개략도' : '경로 개략도(직선 근사)'}
     >
-      <path d={path} fill="none" stroke="currentColor" strokeWidth={1.5} className="text-primary/40" strokeLinejoin="round" />
+      {geom.roadPath ? (
+        <path d={geom.roadPath} fill="none" stroke="currentColor" strokeWidth={1.6} className="text-primary/60" strokeLinejoin="round" strokeLinecap="round" />
+      ) : dashedPath ? (
+        <path d={dashedPath} fill="none" stroke="currentColor" strokeWidth={1.2} strokeDasharray="3 2" className="text-primary/30" strokeLinejoin="round" />
+      ) : null}
       {geom.nodes.map((n, i) => (
         <g key={i} className={ROLE_DOT_CLASS[n.role] ?? 'text-muted-foreground'}>
           <circle cx={n.x} cy={n.y} r={i === 0 ? 3.4 : 2.6} fill="currentColor" />
@@ -148,7 +165,7 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
 
   return (
     <div className="rounded-xl border border-border bg-card p-3">
-      <CaseSchematicMap points={c.schematic} />
+      <CaseSchematicMap points={c.schematic} polyline={c.routeGeometry} />
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">{c.label}</div>
@@ -201,6 +218,36 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
         )}
       </div>
 
+      {/* 타임라인은 신뢰의 근거 — '상세' 펼침과 무관하게 항상 노출한다(요청 반영). */}
+      {Boolean(c.timeline?.length) && (
+        <div className="mt-2 border-t border-border pt-2">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            경유지 타임라인
+          </div>
+          <ol className="space-y-0.5 text-[11px]">
+            {c.timeline!.map((t) => (
+              <li key={t.seq} className="flex items-center gap-2">
+                <span className={`w-9 text-right tabular-nums ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
+                  {t.arrival ?? '-'}
+                </span>
+                <span className={`rounded px-1 text-[9px] font-semibold ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
+                  {ROLE_LABEL[t.role ?? 'waypoint']}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-foreground">{t.address ?? '-'}</span>
+                {t.waitMinutes != null && t.waitMinutes > 0 && (
+                  <span
+                    className="whitespace-nowrap rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700"
+                    title="조기배송 금지로 현장 대기 후 배송(구속시간에 과금)"
+                  >
+                    대기 {t.waitMinutes}분
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {open && (
         <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
           <div className="flex items-center gap-1 text-muted-foreground">
@@ -208,6 +255,7 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
           </div>
           <div className="text-right tabular-nums text-foreground">
             주행 {c.driveMinutes ?? '-'}분 · 체류 {c.dwellMinutes ?? '-'}분
+            {c.waitMinutes != null && c.waitMinutes > 0 ? ` · 대기 ${c.waitMinutes}분` : ''}
           </div>
           <div className="text-muted-foreground">총 거리</div>
           <div className="text-right tabular-nums text-foreground">{c.km != null ? `${c.km}km` : '-'}</div>
@@ -262,28 +310,6 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
             <div className="col-span-2 mt-1 inline-flex items-start gap-1 text-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
               <span>구 단위 추정 주소 포함: {c.lowPrecisionStops!.join(', ')}</span>
-            </div>
-          )}
-          {Boolean(c.timeline?.length) && (
-            <div className="col-span-2 mt-1.5 border-t border-border pt-1.5">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                경유지 타임라인
-              </div>
-              <ol className="space-y-0.5">
-                {c.timeline!.map((t) => (
-                  <li key={t.seq} className="flex items-center gap-2">
-                    <span className={`w-7 text-right tabular-nums ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
-                      {t.arrival ?? '-'}
-                    </span>
-                    <span
-                      className={`rounded px-1 text-[9px] font-semibold ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}
-                    >
-                      {ROLE_LABEL[t.role ?? 'waypoint']}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-foreground">{t.address ?? '-'}</span>
-                  </li>
-                ))}
-              </ol>
             </div>
           )}
         </dl>

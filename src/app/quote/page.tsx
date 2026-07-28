@@ -356,6 +356,11 @@ export default function SimpleQuotePage() {
                     <span className={`rounded px-1 py-0.5 text-[10px] ${ROLE_TONE[t.role] ?? 'bg-muted text-muted-foreground'}`}>{ROLE_LABEL[t.role] ?? '경유'}</span>
                     <span className="min-w-0 flex-1 truncate text-foreground">{t.address}</span>
                     <span className="tabular-nums text-muted-foreground">{t.arrival ?? '—'}</span>
+                    {t.wait != null && t.wait > 0 && (
+                      <span className="whitespace-nowrap rounded bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700" title="조기배송 금지로 현장 대기 후 배송(구속시간 과금)">
+                        대기 {t.wait}분
+                      </span>
+                    )}
                     {t.slack != null && (
                       <span className={`whitespace-nowrap rounded px-1 py-0.5 text-[10px] ${SLACK_TONE[t.tone]}`}>
                         {t.slack < 0 ? `${-t.slack}분 초과` : `여유 ${t.slack}분`}
@@ -463,6 +468,7 @@ interface TimelineRow {
   role: string;
   address: string;
   arrival?: string;
+  wait?: number; // 조기배송 금지로 인한 현장 대기(분). 구속시간에 과금됨.
   slack: number | null; // 마감까지 남는 분(음수=초과)
   tone: string;
 }
@@ -491,6 +497,7 @@ function buildTimeline(routeData: any): TimelineRow[] {
         tone = slack < 0 ? 'late' : slack > 20 ? 'early' : slack >= 15 ? 'ideal' : 'tight';
       }
     }
-    return { role: String(t.role ?? 'waypoint'), address, arrival, slack, tone };
+    const wait = Number.isFinite(Number(t.waitMinutes)) ? Number(t.waitMinutes) : 0;
+    return { role: String(t.role ?? 'waypoint'), address, arrival, wait, slack, tone };
   });
 }
