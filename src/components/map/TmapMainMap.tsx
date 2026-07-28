@@ -349,12 +349,14 @@ export default function TmapMainMap() {
     const totalTimeSec = Number(summary.travelTime || summary.totalTime || 0);
     const destinationCount = Math.max(0, waypoints.length - 1);
     const dwellTotalMin = Math.round(Number(summary.dwellTime || 0) / 60);
+    // 조기배송 금지 현장 대기(엔진 산출). 구속시간에 포함되어 과금(수동 슬라이더는 이 위에 추가).
+    const waitTotalMin = Math.round(Number(summary.waitTime || 0) / 60);
     const vehicleTypeLabel = summary?.vehicleTypeCode === '2' ? '스타렉스' : '레이';
     const scheduleType: 'regular' | 'ad-hoc' = 'ad-hoc';
     const vehicleKey = toVehicleKey(vehicleTypeLabel);
     const distanceKm = totalDistanceM / 1000;
     const driveMinutes = Math.ceil(totalTimeSec / 60);
-    const totalBillMinutes = driveMinutes + dwellTotalMin;
+    const totalBillMinutes = driveMinutes + dwellTotalMin + waitTotalMin;
 
     const billMinutes = roundUpTo30Minutes(totalBillMinutes);
     const hourlyRate = pickHourlyRate(vehicleKey, billMinutes);

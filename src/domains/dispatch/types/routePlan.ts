@@ -52,6 +52,8 @@ export interface RouteMetrics {
   driveMinutes: number;
   /** 체류 시간 합(분). */
   dwellMinutes: number;
+  /** 조기배송 금지로 인한 현장 대기 합(분). 구속시간(시간당 과금)에 포함. 미지정 시 0. */
+  waitMinutes?: number;
   /** 중간 경유지 수(최종 하차지 제외). 정액 경유비 산정 기준. */
   stopsCount: number;
   /** open-start로 시스템이 선택한 출발지(주소). 미사용 시 undefined. */

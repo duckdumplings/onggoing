@@ -72,6 +72,31 @@ describe('computeRouteQuote', () => {
     expect(q.totalPrice).toBe(expectedPlan === 'hourly' ? q.hourlyTotal : q.perJobTotal);
   });
 
+  it('waitTime(현장 대기)이 구속시간과 요금에 반영된다', () => {
+    // 조기배송 금지로 발생한 대기 60분(3600초)은 구속시간에 포함되어 과금돼야 한다.
+    const withWait = computeRouteQuote({ ...summary, waitTime: 3600 }, 2);
+    const noWait = computeRouteQuote(summary, 2);
+    expect(withWait).not.toBeNull();
+    expect(noWait).not.toBeNull();
+    if (!withWait || !noWait) return;
+
+    // waitTotalMin = round(3600/60) = 60
+    expect(withWait.waitTotalMin).toBe(60);
+    expect(noWait.waitTotalMin).toBe(0);
+    // 구속시간 = 주행 + 체류 + 대기
+    expect(withWait.totalBillMinutes).toBe(withWait.driveMinutes + withWait.dwellTotalMin + withWait.waitTotalMin);
+    expect(withWait.totalBillMinutes).toBe(noWait.totalBillMinutes + 60);
+    // 대기가 붙으면 과금분·시간당 요금이 줄지 않는다(단조 증가).
+    expect(withWait.billMinutes).toBeGreaterThanOrEqual(noWait.billMinutes);
+    expect(withWait.hourlyTotal).toBeGreaterThanOrEqual(noWait.hourlyTotal);
+  });
+
+  it('waitTime 미지정 시 기존 동작과 동일하다(하위호환)', () => {
+    const q = computeRouteQuote(summary, 2);
+    expect(q?.waitTotalMin).toBe(0);
+    expect(q?.totalBillMinutes).toBe((q?.driveMinutes ?? 0) + (q?.dwellTotalMin ?? 0));
+  });
+
   it("vehicleTypeCode '2' 는 스타렉스로 매핑된다", () => {
     const q = computeRouteQuote({ ...summary, vehicleTypeCode: '2' }, 2);
     expect(q?.vehicleTypeLabel).toBe('스타렉스');

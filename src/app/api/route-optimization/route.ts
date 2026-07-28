@@ -64,6 +64,10 @@ interface RouteWaypoint {
   dwellTime?: number;
   deliveryTime?: string | null;
   isNextDay?: boolean;
+  /** 조기 도착 시 현장 대기(분). 마감−여유 이전 도착이면 그때까지 대기 후 배송. */
+  waitTime?: number;
+  /** 실제 배송(작업 시작) 시각 = max(도착, 마감−여유). 대기 없으면 도착시각과 동일. */
+  serviceStartTime?: string;
 }
 
 interface RouteTimelineEntry {
@@ -73,6 +77,10 @@ interface RouteTimelineEntry {
   arrivalTime: string;
   departureTime: string;
   dwellTime: number;
+  /** 조기 도착 시 현장 대기(분). 구속시간에 포함되어 과금된다. */
+  waitMinutes?: number;
+  /** 실제 배송 시작 시각(대기 반영). 대기 없으면 arrivalTime과 동일. */
+  serviceStartTime?: string;
 }
 
 interface RouteSegmentSummary {
@@ -84,6 +92,8 @@ interface RouteSegmentSummary {
   driveSeconds: number;
   distanceMeters: number;
   dwellMinutes: number;
+  /** 조기 도착 시 현장 대기(분). 구속시간에 포함. */
+  waitMinutes?: number;
   predictionAttempted: boolean;
   predictionFallback: boolean;
 }
@@ -869,6 +879,9 @@ export async function POST(request: NextRequest) {
       isNextDayFlags = [],
       dwellMinutes = [],
       originDwellMinutes = 0,
+      // 조기배송 금지 여유(분): 마감 대비 이만큼 이르면 현장 대기 후 배송(대기=구속시간 과금).
+      // 기본 15분(옹고잉 정책). 0 이하면 대기 모델링 비활성(과거 동작).
+      earlyToleranceMinutes = 15,
       openStart = false,
       fastOrder = false,
       startCandidateCount,
@@ -1381,6 +1394,11 @@ export async function POST(request: NextRequest) {
     const segmentFeatures: any[] = [];
     const waypoints: RouteWaypoint[] = [];
     const routeTimeline: RouteTimelineEntry[] = [];
+    // 조기배송 금지 여유(분). 마감−이 값보다 이르면 현장 대기. 0 이하면 대기 모델링 비활성.
+    const earlyToleranceMin = Number.isFinite(Number(earlyToleranceMinutes))
+      ? Math.max(0, Number(earlyToleranceMinutes))
+      : 15;
+    let totalWaitTime = 0; // 현장 대기 합(초). 구속시간(과금)에 포함된다.
     const segmentSummary: RouteSegmentSummary[] = [];
     let totalDistance = 0;
     let totalTime = 0;
@@ -1419,6 +1437,19 @@ export async function POST(request: NextRequest) {
       const legacy = dwellMinutes[orderedDestinations.length + 1];
       const value = dwellMinutes.length === orderedDestinations.length ? 0 : (direct ?? legacy);
       return Number.isFinite(Number(value)) ? Number(value) : 0;
+    };
+
+    // 조기배송 금지: 도착이 (마감−여유)보다 이르면 그 시각까지 현장 대기 후 배송.
+    // 반환 waitSec은 구속시간(과금)에 누적되고, serviceStart는 실제 배송 시작 시각이다.
+    // 익일(isNextDay) 배송은 마감이 다음 날이라 밤샘 '대기'가 아니므로 대기 모델링 제외.
+    const computeDeliveryWait = (arrival: Date, target: Date | null, isNextDay?: boolean): { waitSec: number; serviceStart: Date } => {
+      if (target && earlyToleranceMin > 0 && !isNextDay) {
+        const earliestMs = target.getTime() - earlyToleranceMin * 60 * 1000;
+        if (arrival.getTime() < earliestMs) {
+          return { waitSec: Math.round((earliestMs - arrival.getTime()) / 1000), serviceStart: new Date(earliestMs) };
+        }
+      }
+      return { waitSec: 0, serviceStart: arrival };
     };
 
     // 주소 → 시간제약 매핑 (최종 순서에서도 정확한 매칭 보장)
@@ -1571,10 +1602,14 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // 다음 구간을 위한 현재 시간 업데이트 (이동시간 + 체류시간)
+        // 다음 구간을 위한 현재 시간 업데이트 (이동시간 + 대기 + 체류시간)
         const dwellTime = destinationDwell(i); // 경유지 체류시간
         const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
-        currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
+        // 조기배송 금지: 마감−여유보다 이르면 현장 대기 후 배송(대기는 구속시간에 과금).
+        const { waitSec, serviceStart } = computeDeliveryWait(arrivalTime, targetDeliveryTime, cForDest?.isNextDay);
+        const waitMin = Math.round(waitSec / 60);
+        totalWaitTime += waitSec;
+        currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
         segmentSummary.push({
           seq: segmentSummary.length + 1,
           from: current.address,
@@ -1584,19 +1619,22 @@ export async function POST(request: NextRequest) {
           driveSeconds: segmentTime,
           distanceMeters: segmentDistance,
           dwellMinutes: dwellTime,
+          waitMinutes: waitMin,
           predictionAttempted: segUsesPrediction,
           predictionFallback: false,
         });
 
-        // 검증용 시계 업데이트: 이동 + 이 지점 체류. 상/하차 작업 시간이 하류 마감 도착에 실제로 누적되므로
-        // 체류를 포함해야 마감 위반을 정확히 검출한다(과거엔 체류를 빼 낙관적으로 계산해 지각을 놓쳤다).
-        validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
+        // 검증용 시계 업데이트: 이동 + 대기 + 이 지점 체류. 상/하차·대기 시간이 하류 마감 도착에 실제로
+        // 누적되므로 모두 포함해야 마감 위반을 정확히 검출한다(과거엔 체류를 빼 낙관적으로 계산해 지각을 놓쳤다).
+        validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (waitSec * 1000) + (dwellTime * 60 * 1000));
 
         // 경유지별 도착시간 저장
         const waypoint = waypoints[waypoints.length - 1];
         waypoint.arrivalTime = arrivalTime.toISOString();
         waypoint.departureTime = currentTime.toISOString();
         waypoint.dwellTime = dwellTime;
+        waypoint.waitTime = waitMin;
+        waypoint.serviceStartTime = serviceStart.toISOString();
         waypoint.deliveryTime = cForDest?.deliveryTime || null;
         waypoint.isNextDay = cForDest?.isNextDay || false;
         routeTimeline.push({
@@ -1606,6 +1644,8 @@ export async function POST(request: NextRequest) {
           arrivalTime: waypoint.arrivalTime,
           departureTime: waypoint.departureTime,
           dwellTime,
+          waitMinutes: waitMin,
+          serviceStartTime: serviceStart.toISOString(),
         });
       } else {
         // 예측 실패 → 일반 routes 재시도
@@ -1638,11 +1678,14 @@ export async function POST(request: NextRequest) {
           if (segUsesPrediction) predictionFallbackSegments += 1;
           validationWarnings.push(`예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`);
 
-          // 시간 업데이트(체류 포함). 검증시계도 체류 포함(하류 마감 도착에 상/하차 시간이 실제로 누적됨).
+          // 시간 업데이트(대기+체류 포함). 검증시계도 동일 — 하류 마감 도착에 대기·상/하차가 실제로 누적됨.
           const dwellTime = destinationDwell(i);
           const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
-          currentTime = new Date(currentTime.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
-          validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (dwellTime * 60 * 1000));
+          const { waitSec, serviceStart } = computeDeliveryWait(arrivalTime, targetDeliveryTime, cForDest?.isNextDay);
+          const waitMin = Math.round(waitSec / 60);
+          totalWaitTime += waitSec;
+          currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
+          validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (waitSec * 1000) + (dwellTime * 60 * 1000));
           segmentSummary.push({
             seq: segmentSummary.length + 1,
             from: current.address,
@@ -1652,6 +1695,7 @@ export async function POST(request: NextRequest) {
             driveSeconds: segmentTime,
             distanceMeters: segmentDistance,
             dwellMinutes: dwellTime,
+            waitMinutes: waitMin,
             predictionAttempted: segUsesPrediction,
             predictionFallback: true,
           });
@@ -1661,6 +1705,8 @@ export async function POST(request: NextRequest) {
           waypoint.arrivalTime = arrivalTime.toISOString();
           waypoint.departureTime = currentTime.toISOString();
           waypoint.dwellTime = dwellTime;
+          waypoint.waitTime = waitMin;
+          waypoint.serviceStartTime = serviceStart.toISOString();
           waypoint.deliveryTime = cForDest?.deliveryTime || null;
           waypoint.isNextDay = cForDest?.isNextDay || false;
           routeTimeline.push({
@@ -1670,6 +1716,8 @@ export async function POST(request: NextRequest) {
             arrivalTime: waypoint.arrivalTime,
             departureTime: waypoint.departureTime,
             dwellTime,
+            waitMinutes: waitMin,
+            serviceStartTime: serviceStart.toISOString(),
           });
         } else {
           // 모든 시도 실패 → 하드 에러(폴백 미사용)
@@ -1758,7 +1806,8 @@ export async function POST(request: NextRequest) {
       const dwellTimeAtDestination = 10; // 분
       totalDwellTime = (waypoints.length - 1) * dwellTimePerWaypoint * 60 + dwellTimeAtDestination * 60; // 초 단위
     }
-    const totalTimeWithDwell = totalTime + totalDwellTime;
+    // 구속시간(과금 기준) = 주행 + 체류 + 현장 대기. 대기는 조기배송 금지로 발생한 실구속 시간.
+    const totalTimeWithDwell = totalTime + totalDwellTime + totalWaitTime;
 
     // 최적화된 경유지 순서 정보 생성
     const optimizationInfo = optimizeOrder ? {
@@ -1841,9 +1890,10 @@ export async function POST(request: NextRequest) {
       features: segmentFeatures,
       summary: {
         totalDistance,
-        totalTime: totalTimeWithDwell, // 체류시간 포함
+        totalTime: totalTimeWithDwell, // 구속시간(주행+체류+대기)
         travelTime: totalTime, // 이동시간만
         dwellTime: totalDwellTime, // 체류시간
+        waitTime: totalWaitTime, // 조기배송 금지로 인한 현장 대기 합(초). 구속시간에 포함되어 과금.
         optimizeOrder: effectiveOptimizeOrder,
         usedTraffic,
         // 예측(타임머신) 적용 현황: fallback>0이면 그만큼 출발시각 예측이 아니라 호출시점 교통이다.

@@ -7,6 +7,7 @@ type QuoteInput = {
   time: number // seconds
   vehicleType?: string
   dwellMinutes?: number[] // per-stop dwell/handling minutes
+  waitMinutes?: number // 조기배송 금지로 인한 현장 대기 합(분). 구속시간에 포함되어 과금.
   stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
   scheduleType?: 'regular' | 'ad-hoc' // 단건: 정기/비정기
   hourlyRateOverride?: number // 협의 단가(시간당 KRW). 지정 시 운임표 대신 사용.
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     const vehicleType = String(body.vehicleType || '레이')
     const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
+    const waitMinutes = Math.max(0, Number(body.waitMinutes || 0))
     const stopsCount = Number.isFinite(body.stopsCount as any) ? Number(body.stopsCount) : dwellMinutes.length
     const scheduleType = (body.scheduleType as 'regular' | 'ad-hoc') || 'ad-hoc'
 
@@ -31,7 +33,8 @@ export async function POST(req: NextRequest) {
 
     const km = distance / 1000
     const driveMinutes = Math.ceil(time / 60)
-    const totalMinutes = driveMinutes + dwellTotalMin
+    // 구속시간 = 주행 + 체류 + 현장 대기(조기배송 금지). 시간당 과금 기준.
+    const totalMinutes = driveMinutes + dwellTotalMin + waitMinutes
 
     // 요금제별 계산
     // 1) 시간당(30분 올림, 최소 120분, 유류할증은 과금시간 기반 초과거리에만 적용)
@@ -82,6 +85,7 @@ export async function POST(req: NextRequest) {
         km,
         driveMinutes,
         dwellTotalMinutes: dwellTotalMin,
+        waitMinutes,
         totalMinutes,
         dwellMinutes,
         distance,

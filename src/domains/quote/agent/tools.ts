@@ -212,6 +212,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
+          // 조기배송 금지 현장 대기(분). calculate_quote에 waitMinutes로 그대로 넘겨라(구속시간 과금).
+          waitMinutes: Math.round(Number(summary?.waitTime || 0) / 60),
           // Tmap 경로 실측 통행료(있으면). calculate_quote에 tollAmount/tollSource로 그대로 넘겨라.
           tollAmount,
           tollSource,
@@ -237,6 +239,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         km: z.number().nonnegative(),
         driveMinutes: z.number().nonnegative(),
         dwellMinutes: z.array(z.number().nonnegative()).optional().describe('지점별 체류 시간(분) 배열'),
+        waitMinutes: z.number().nonnegative().optional().describe('optimize_route가 돌려준 조기배송 금지 현장 대기 합(분). 있으면 반드시 그대로 넘겨라. 구속시간에 포함되어 과금된다. 임의 추정 금지.'),
         stopsCount: z.number().nonnegative().optional().describe('중간 경유지 수(종착지 제외)'),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
@@ -256,12 +259,13 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .optional()
           .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'unavailable'=산출 불가). tollAmount와 함께 그대로 넘겨라."),
       }),
-      execute: async ({ km, driveMinutes, dwellMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
+      execute: async ({ km, driveMinutes, dwellMinutes, waitMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
         const body = {
           distance: km * 1000,
           time: driveMinutes * 60,
           vehicleType,
           dwellMinutes: dwellMinutes ?? [],
+          waitMinutes: waitMinutes ?? 0,
           stopsCount: stopsCount ?? (dwellMinutes?.length ?? 0),
           scheduleType,
           hourlyRateOverride: customHourlyRate,
@@ -298,6 +302,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const distanceKm = Number(meta.km ?? km);
         const driveMins = Number(meta.driveMinutes ?? driveMinutes);
         const dwellTotalMinutes = Number(meta.dwellTotalMinutes ?? (dwellMinutes?.reduce((a, b) => a + b, 0) ?? 0));
+        const waitTotalMinutes = Number(meta.waitMinutes ?? waitMinutes ?? 0);
         const totalBillMinutes = Number(json?.plans?.hourly?.billMinutes ?? 0);
         const destinationCount = Math.max(1, (stopsCount ?? dwellMinutes?.length ?? 0) + 1);
         const basis = {
@@ -306,6 +311,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           distanceKm: Number.isFinite(distanceKm) ? Number(distanceKm.toFixed(1)) : 0,
           driveMinutes: driveMins,
           dwellTotalMinutes,
+          waitTotalMinutes,
           totalBillMinutes,
           destinationCount,
         };
@@ -516,6 +522,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               const km = Number(summary?.totalDistance || 0) / 1000;
               const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
               const dwellMinutesTotal = Math.round(Number(summary?.dwellTime || 0) / 60);
+              const waitMinutesTotal = Math.round(Number(summary?.waitTime || 0) / 60);
 
               const quoteRes = await fetch(new URL('/api/quote-calculation', ctx.baseUrl), {
                 method: 'POST',
@@ -525,6 +532,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
                   time: driveMinutes * 60,
                   vehicleType,
                   dwellMinutes: dwellMinutesArr,
+                  waitMinutes: waitMinutesTotal,
                   stopsCount,
                   scheduleType,
                 }),
@@ -536,7 +544,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               const quoteJson = await quoteRes.json();
               const hourly = quoteJson?.plans?.hourly ?? {};
               const oneTimePrice = Number(hourly.total ?? 0);
-              const totalMinutes = driveMinutes + dwellMinutesTotal;
+              const totalMinutes = driveMinutes + dwellMinutesTotal + waitMinutesTotal;
               // 마감 판정: deadlineTarget 기준 도착(기본=마지막 배송 완료). 반납 복귀는 마감 대상 아님.
               const targetArrivalIso = deadline ? pickTargetArrivalIso(wps, roleMap, target) : null;
               const returnArrivalIso = hasReturn ? pickTargetArrivalIso(wps, roleMap, 'return') : null;

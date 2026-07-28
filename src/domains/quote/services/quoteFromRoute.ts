@@ -21,7 +21,8 @@ export interface RouteQuote {
   distanceKm: number; // 소수1자리
   driveMinutes: number; // ceil(travelTime/60)
   dwellTotalMin: number; // round(dwellTime/60)
-  totalBillMinutes: number; // driveMinutes + dwellTotalMin
+  waitTotalMin: number; // round(waitTime/60) — 조기배송 금지 현장 대기(구속시간 포함)
+  totalBillMinutes: number; // driveMinutes + dwellTotalMin + waitTotalMin
   billMinutes: number; // roundUpTo30Minutes(totalBillMinutes)
   destinationCount: number; // max(0, waypointCount - 1)
   hourlyTotal: number;
@@ -48,12 +49,13 @@ export function computeRouteQuote(summary: any, waypointCount: number): RouteQuo
   const totalTimeSec = Number(summary.travelTime || summary.totalTime || 0);
   const destinationCount = Math.max(0, waypointCount - 1);
   const dwellTotalMin = Math.round(Number(summary.dwellTime || 0) / 60);
+  const waitTotalMin = Math.round(Number(summary.waitTime || 0) / 60);
   const vehicleTypeLabel: '레이' | '스타렉스' = summary?.vehicleTypeCode === '2' ? '스타렉스' : '레이';
   const vehicleKey = toVehicleKey(vehicleTypeLabel);
 
   const distanceKm = totalDistanceM / 1000;
   const driveMinutes = Math.ceil(totalTimeSec / 60);
-  const totalBillMinutes = driveMinutes + dwellTotalMin;
+  const totalBillMinutes = driveMinutes + dwellTotalMin + waitTotalMin;
 
   const billMinutes = roundUpTo30Minutes(totalBillMinutes);
   const hourlyRate = pickHourlyRate(vehicleKey, billMinutes);
@@ -74,6 +76,7 @@ export function computeRouteQuote(summary: any, waypointCount: number): RouteQuo
     distanceKm: Number(distanceKm.toFixed(1)),
     driveMinutes,
     dwellTotalMin,
+    waitTotalMin,
     totalBillMinutes,
     billMinutes,
     destinationCount,

@@ -78,7 +78,8 @@ export function calculateScenarioQuote(
 
   // ── 시간당(hourly) 요금제: 30분 단위 과금 × 시간당 단가 + 유류할증(초과거리). ──
   // quote-calculation(지도/패널)과 동일 공식을 써서 카드와 패널 금액이 일치하도록 한다.
-  const totalMinutes = resolved.driveMinutes + resolved.dwellMinutes;
+  // 구속시간 = 주행 + 체류 + 현장 대기(조기배송 금지). 대기 미지정 시 0(과거 동작).
+  const totalMinutes = resolved.driveMinutes + resolved.dwellMinutes + (resolved.waitMinutes ?? 0);
   const billMinutes = roundUpTo30Minutes(totalMinutes);
   const ratePerHour = pickHourlyRate(vehicle, billMinutes);
   const hourlyBase = Math.round(ratePerHour * (billMinutes / 60));
