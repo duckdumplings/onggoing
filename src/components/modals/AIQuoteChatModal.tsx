@@ -220,7 +220,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     if (!compact) return;
     setQuoteSummary(
       latestResult?.quote
-        ? { hasQuote: true, hourly: latestResult.quote.hourly?.formatted, perJob: latestResult.quote.perJob?.formatted }
+        ? {
+            hasQuote: true,
+            hourly: latestResult.quote.hourly?.formatted,
+            ...(latestResult.quote.perJobReferenceRequested
+              ? { perJob: latestResult.quote.perJob?.formatted }
+              : {}),
+          }
         : { hasQuote: false }
     );
   }, [compact, latestResult, setQuoteSummary]);
@@ -475,6 +481,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     const scenarios = comparison?.results?.map((r: any) => ({
       label: r.label,
       recommendedPlan: r.recommendedPlan,
+      includePerJobReference: r.includePerJobReference,
       oneTimePrice: r.oneTimePrice,
       annualPrice: r.annualPrice,
       hourlyTotal: r.plans?.hourly?.total,
@@ -908,11 +915,11 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     if (structured) {
       metadata.structuredKeys = Object.keys(structured);
       const q = structured.quote as any;
-      const quoteFormatted = q?.hourly?.formatted || q?.perJob?.formatted;
+      const quoteFormatted = q?.hourly?.formatted;
       if (quoteFormatted) metadata.quote = quoteFormatted;
     }
     if (!metadata.quote && latestResult?.quote) {
-      const repQuote = latestResult.quote.hourly?.formatted || latestResult.quote.perJob?.formatted;
+      const repQuote = latestResult.quote.hourly?.formatted;
       if (repQuote) metadata.quote = repQuote;
     }
     const evidenceSources = msg.evidence?.sources;
@@ -986,7 +993,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       useExplicitDestination: Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress),
       returnToOrigin: requestData.returnToOrigin ?? false,
       roadOption: requestData.roadOption || 'time-first',
-      // 챗↔지도 일치: 툴이 실제 사용한 출발지/순서 관련 필드를 그대로 전달.
+      // 챗과 지도 일치: 도구가 실제 사용한 출발지/순서 관련 필드를 그대로 전달.
       originDwellMinutes: requestData.originDwellMinutes,
       openStart: requestData.openStart,
       startCandidateCount: requestData.startCandidateCount,
@@ -1304,10 +1311,14 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   </span>
                 </span>
                 <span className="flex items-center gap-2 shrink-0">
-                  <span className="text-right">
-                    <span className="block text-[10px] font-semibold text-muted-foreground">단건</span>
-                    <span className="block text-xs font-bold text-foreground tabular-nums">{latestResult.quote.perJob?.formatted}</span>
-                  </span>
+                  {latestResult.quote.perJobReferenceRequested && latestResult.quote.perJob && (
+                    <span className="text-right">
+                      <span className="block text-[10px] font-semibold text-muted-foreground">단건 참고</span>
+                      <span className="block text-xs font-bold text-foreground tabular-nums">
+                        {latestResult.quote.perJob.formatted ?? '운임표 범위 밖'}
+                      </span>
+                    </span>
+                  )}
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </span>
               </button>

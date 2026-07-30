@@ -106,7 +106,7 @@ export const SCENARIO_QUOTE_REGRESSION_CASES: ScenarioCase[] = [
     },
   },
   {
-    name: '레이 비정기 견적: 단건 base33,000+경유비10,000 / 시간당 53,000 → 옹고잉 유리(시간당) 대표',
+    name: '레이 비정기 견적: 공식 대표값은 시간당 53,000원, 단건은 참고값',
     run: () => {
       const s = makeCollectionScenario('3개 지점', 3, '레이', 'ad-hoc', KM20, { per: 'quarter', count: 1 });
       const r = calculateScenarioQuote(s);
@@ -118,7 +118,7 @@ export const SCENARIO_QUOTE_REGRESSION_CASES: ScenarioCase[] = [
       // 시간당: 90분(주행60+체류30) → 과금120분, 레이 26,500/h × 2h = 53,000, 유류할증 0(20km≤20km)
       assertEqual(r.plans.hourly.billMinutes, 120, 'billMinutes');
       assertEqual(r.plans.hourly.total, 53000, 'hourlyTotal');
-      // 옹고잉 유리 = 높은 쪽(시간당 53,000)
+      // 공식 대표값은 시간당 운임표 기준이다.
       assertEqual(r.recommendedPlan, 'hourly', 'recommendedPlan');
       assertEqual(r.oneTimePrice, 53000, 'oneTime');
       assertEqual(r.annualPrice, 53000 * 4, 'annual');
@@ -128,20 +128,15 @@ export const SCENARIO_QUOTE_REGRESSION_CASES: ScenarioCase[] = [
     },
   },
   {
-    name: '스타렉스 정기 견적: 단건 정기 가산(base×1.2+경유비×1.2) 산출 + 옹고잉 유리 대표값',
+    name: '스타렉스 정기 견적: 단건 참고값과 무관하게 시간당 운임이 공식 대표값',
     run: () => {
       const s = makeCollectionScenario('3개 지점', 3, '스타렉스', 'regular', KM20);
       const r = calculateScenarioQuote(s);
       // 단건 정기 요금은 plans.perJob에 그대로 보존된다.
       assertEqual(r.plans.perJob.base, perJobRegularPrice('starex', 20), 'regularBase');
       assertEqual(r.plans.perJob.stopFee, Math.round(STOP_FEE.starex * 2 * 1.2), 'regularStopFee');
-      // 대표값은 두 요금제 중 높은 쪽과 일치해야 한다.
-      const higher = Math.max(r.plans.hourly.total, r.plans.perJob.total);
-      assertEqual(r.oneTimePrice, higher, 'favorableRepresentative');
-      assert(
-        r.recommendedPlan === (r.plans.hourly.total >= r.plans.perJob.total ? 'hourly' : 'perJob'),
-        'recommendedPlanMatchesHigher'
-      );
+      assertEqual(r.oneTimePrice, r.plans.hourly.total, 'hourlyRepresentative');
+      assertEqual(r.recommendedPlan, 'hourly', 'recommendedPlan');
     },
   },
   {

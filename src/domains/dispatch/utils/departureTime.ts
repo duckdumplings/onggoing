@@ -8,6 +8,13 @@
  *   - 주말(토/일)은 운영 가정상 다음 평일(월)로 보정한다.
  * 보정 결과는 metadata로 함께 반환하여 UI가 "기준 날짜"를 사용자에게 그대로 노출할 수 있게 한다.
  */
+import {
+  atKstTime,
+  formatKstDateTimeLocal,
+  kstCalendarDayNumber,
+  kstParts,
+  kstWeekday,
+} from './kstDateTime';
 
 export interface ResolvedDeparture {
   /** "YYYY-MM-DDTHH:mm" 로컬 표현 (datetime-local 호환) */
@@ -28,27 +35,6 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function toIsoLocal(date: Date): string {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-}
-
-/**
- * 주말이면 다음 평일(월요일)로 보정. 평일이면 그대로.
- * @returns 보정 발생 여부
- */
-function adjustWeekendInPlace(date: Date): boolean {
-  const day = date.getDay(); // 0=일, 6=토
-  if (day === 0) {
-    date.setDate(date.getDate() + 1);
-    return true;
-  }
-  if (day === 6) {
-    date.setDate(date.getDate() + 2);
-    return true;
-  }
-  return false;
-}
-
 /**
  * HH:mm 입력을 오늘/내일 자동 판정 + 주말 보정하여 해석한다.
  *
@@ -62,20 +48,26 @@ export function resolveDepartureDateTime(timeHHmm: string, now: Date = new Date(
   const m = Number(match[2]);
   if (h < 0 || h > 23 || m < 0 || m > 59) return null;
 
-  const candidate = new Date(now);
-  candidate.setHours(h, m, 0, 0);
+  let candidate = atKstTime(now, timeHHmm);
+  if (!candidate) return null;
 
   // 이미 지난 시각이면 다음날로
   let rolledToNextDay = false;
   if (candidate.getTime() <= now.getTime()) {
-    candidate.setDate(candidate.getDate() + 1);
+    candidate = atKstTime(now, timeHHmm, 1)!;
     rolledToNextDay = true;
   }
 
-  const adjustedForWeekend = adjustWeekendInPlace(candidate);
+  let adjustedForWeekend = false;
+  let dayOffset = rolledToNextDay ? 1 : 0;
+  while (kstWeekday(candidate) === 0 || kstWeekday(candidate) === 6) {
+    dayOffset += 1;
+    candidate = atKstTime(now, timeHHmm, dayOffset)!;
+    adjustedForWeekend = true;
+  }
 
   return {
-    isoLocal: toIsoLocal(candidate),
+    isoLocal: formatKstDateTimeLocal(candidate),
     iso: candidate.toISOString(),
     date: candidate,
     rolledToNextDay,
@@ -87,18 +79,16 @@ export function resolveDepartureDateTime(timeHHmm: string, now: Date = new Date(
  * "5/30(금) 14:30" 형태의 간결한 한국어 라벨.
  */
 export function formatDepartureLabel(date: Date): string {
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const weekday = WEEKDAY_LABELS[date.getDay()];
-  return `${month}/${day}(${weekday}) ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const parts = kstParts(date);
+  const weekday = WEEKDAY_LABELS[kstWeekday(date)];
+  return `${parts.monthIndex + 1}/${parts.day}(${weekday}) ${pad2(parts.hour)}:${pad2(parts.minute)}`;
 }
 
 /**
  * 기준 날짜가 오늘/내일/그 이후 중 무엇인지 사람이 읽기 쉬운 라벨로.
  */
 export function describeRelativeDay(date: Date, now: Date = new Date()): '오늘' | '내일' | '모레' | null {
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const diffDays = Math.round((startOfDay(date) - startOfDay(now)) / (24 * 60 * 60 * 1000));
+  const diffDays = kstCalendarDayNumber(date) - kstCalendarDayNumber(now);
   if (diffDays === 0) return '오늘';
   if (diffDays === 1) return '내일';
   if (diffDays === 2) return '모레';

@@ -5,6 +5,7 @@ import {
   roundUpTo30Minutes,
   calculateHourlyFuelSurcharge,
   fuelSurchargeHourlyCorrect,
+  isPerJobRateSupported,
   perJobBasePrice,
   perJobRegularPrice,
 } from './pricing';
@@ -73,8 +74,10 @@ describe('perJobBasePrice / perJobRegularPrice', () => {
     expect(perJobBasePrice('ray', 3)).toBe(24000);
     expect(perJobBasePrice('starex', 3)).toBe(31000);
   });
-  it('60km 초과는 마지막 구간 요금으로 폴백', () => {
-    expect(perJobBasePrice('ray', 100)).toBe(70000);
+  it('60km 초과는 마지막 구간 요금을 임의 적용하지 않는다', () => {
+    expect(isPerJobRateSupported(60)).toBe(true);
+    expect(isPerJobRateSupported(60.1)).toBe(false);
+    expect(() => perJobBasePrice('ray', 100)).toThrow(/60km까지만/);
   });
   it('레이 정기는 스타렉스 단건 요금표를 따른다', () => {
     expect(perJobRegularPrice('ray', 3)).toBe(31000);

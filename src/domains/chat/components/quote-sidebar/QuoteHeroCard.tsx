@@ -17,7 +17,7 @@ interface QuoteHeroCardProps {
   onOpenQuoteDetail: () => void;
 }
 
-/** 견적 결과 하이라이트 카드(시간당/단건 헤드라인 + 미리보기 액션 + 인사이트). */
+/** 견적 결과 하이라이트 카드(시간당 공식 견적 + 선택적 단건 참고 + 인사이트). */
 export default function QuoteHeroCard({
   quote,
   previewMode,
@@ -36,7 +36,7 @@ export default function QuoteHeroCard({
         </span>
       </div>
       <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-4">
-        <div className="grid grid-cols-2 divide-x divide-border">
+        <div className={`grid ${quote.perJobReferenceRequested && quote.perJob ? 'grid-cols-2 divide-x divide-border' : 'grid-cols-1'}`}>
           <div className="pr-3">
             <div className="text-[10px] font-semibold text-muted-foreground mb-0.5">시간당 1회</div>
             <div className="text-xl font-black tracking-tight text-primary tabular-nums">{quote.hourly?.formatted}</div>
@@ -48,10 +48,14 @@ export default function QuoteHeroCard({
               </div>
             )}
           </div>
-          <div className="pl-3">
-            <div className="text-[10px] font-semibold text-muted-foreground mb-0.5">단건 요금제</div>
-            <div className="text-xl font-black tracking-tight text-foreground tabular-nums">{quote.perJob?.formatted}</div>
-          </div>
+          {quote.perJobReferenceRequested && quote.perJob && (
+            <div className="pl-3">
+              <div className="text-[10px] font-semibold text-muted-foreground mb-0.5">단건 참고 운임</div>
+              <div className="text-xl font-black tracking-tight text-foreground tabular-nums">
+                {quote.perJob.formatted ?? '운임표 범위 밖'}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -124,7 +128,7 @@ export default function QuoteHeroCard({
             onClick={onOpenQuoteDetail}
             className="w-full border border-border bg-card text-foreground py-2.5 rounded-xl text-sm font-semibold hover:border-primary/40 hover:text-primary transition-colors"
           >
-            전체 운임 시나리오 비교
+            산출 근거 상세
           </button>
         </div>
       </div>

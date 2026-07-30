@@ -7,6 +7,12 @@
  * roadOption='time-first'로 route-optimization에 넘기면 Tmap 예측(prediction)에서
  * 요일/시간대별 소요시간을 반영한다.
  */
+import {
+  atKstTime,
+  formatKstHHmm,
+  kstParts,
+  kstWeekday,
+} from './kstDateTime';
 
 export type DepartureDayType = 'weekday' | 'weekend';
 
@@ -43,26 +49,24 @@ function pad2(n: number): string {
 }
 
 function isWeekend(date: Date): boolean {
-  const day = date.getDay();
+  const day = kstWeekday(date);
   return day === 0 || day === 6;
 }
 
 /** now 이후, 지정 요일유형·시각의 가장 가까운 날짜를 만든다. */
 function nextOccurrence(now: Date, dayType: DepartureDayType, hour: number, minute: number): Date {
-  const candidate = new Date(now);
-  candidate.setHours(hour, minute, 0, 0);
   // 최대 14일 내에서 조건(요일유형 + now 초과)을 만족하는 첫 날을 찾는다.
   for (let i = 0; i < 14; i++) {
+    const candidate = atKstTime(now, `${pad2(hour)}:${pad2(minute)}`, i)!;
     const matchesDayType = dayType === 'weekend' ? isWeekend(candidate) : !isWeekend(candidate);
     if (matchesDayType && candidate.getTime() > now.getTime()) return candidate;
-    candidate.setDate(candidate.getDate() + 1);
-    candidate.setHours(hour, minute, 0, 0);
   }
-  return candidate;
+  return atKstTime(now, `${pad2(hour)}:${pad2(minute)}`, 14)!;
 }
 
 function formatDateLabel(date: Date): string {
-  return `${date.getMonth() + 1}/${date.getDate()}(${WEEKDAY_LABELS[date.getDay()]}) ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const parts = kstParts(date);
+  return `${parts.monthIndex + 1}/${parts.day}(${WEEKDAY_LABELS[kstWeekday(date)]}) ${pad2(parts.hour)}:${pad2(parts.minute)}`;
 }
 
 /** 프리셋 목록을 실제 미래 ISO 시각으로 해석한다. */
@@ -109,13 +113,13 @@ export function assessDeadlineFeasibility(
   if (Number.isNaN(departure.getTime())) return null;
 
   const arrival = new Date(departure.getTime() + Math.max(0, totalMinutes) * 60_000);
-  const deadline = new Date(departure);
-  deadline.setHours(h, m, 0, 0);
+  const deadline = atKstTime(departure, deadlineHHmm);
+  if (!deadline) return null;
 
   const slackMinutes = Math.round((deadline.getTime() - arrival.getTime()) / 60_000);
   return {
     arrivalIso: arrival.toISOString(),
-    arrivalLabel: `${pad2(arrival.getHours())}:${pad2(arrival.getMinutes())}`,
+    arrivalLabel: formatKstHHmm(arrival),
     meetsDeadline: slackMinutes >= 0,
     slackMinutes,
   };

@@ -11,6 +11,9 @@ interface QuoteDetailModalProps {
 /** 견적 결과의 전체 운임 시나리오(차종×스케줄)를 표로 보여주는 상세 모달. */
 export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModalProps) {
   const formatWonStr = (val: number) => `₩${Math.round(val).toLocaleString('ko-KR')}`;
+  const showPerJobReference = Boolean(q.perJobReferenceRequested);
+  const formatPerJobReference = (val: unknown) =>
+    val == null ? '운임표 범위 밖' : formatWonStr(Number(val));
 
   return (
     <div className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/40 p-4">
@@ -54,8 +57,10 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
                   <thead>
                     <tr>
                       <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tl-xl">차량/스케줄</th>
-                      <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground">시간당 요금제</th>
-                      <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tr-xl">단건 요금제</th>
+                      <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground rounded-tr-xl">시간당 요금제</th>
+                      {showPerJobReference && (
+                        <th className="py-3 px-4 bg-muted border-b border-border text-xs font-bold text-muted-foreground">단건 참고</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="text-sm">
@@ -66,9 +71,11 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
                       <td className="py-3 px-4">
                         <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</div>
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</div>
-                      </td>
+                      {showPerJobReference && (
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-foreground">{formatPerJobReference(q.scenarios.ray?.['ad-hoc']?.perJobTotal)}</div>
+                        </td>
+                      )}
                     </tr>
                     <tr className="border-b border-border hover:bg-muted transition-colors">
                       <td className="py-3 px-4 font-semibold text-foreground">
@@ -77,9 +84,11 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
                       <td className="py-3 px-4">
                         <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.hourlyTotal || 0)}</div>
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-foreground">{formatWonStr(q.scenarios.ray?.regular?.perJobTotal || 0)}</div>
-                      </td>
+                      {showPerJobReference && (
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-foreground">{formatPerJobReference(q.scenarios.ray?.regular?.perJobTotal)}</div>
+                        </td>
+                      )}
                     </tr>
                     <tr className="border-b border-border hover:bg-muted transition-colors">
                       <td className="py-3 px-4 font-semibold text-foreground">
@@ -88,9 +97,11 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
                       <td className="py-3 px-4">
                         <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</div>
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</div>
-                      </td>
+                      {showPerJobReference && (
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-foreground">{formatPerJobReference(q.scenarios.starex?.['ad-hoc']?.perJobTotal)}</div>
+                        </td>
+                      )}
                     </tr>
                     <tr className="hover:bg-muted transition-colors">
                       <td className="py-3 px-4 font-semibold text-foreground rounded-bl-xl">
@@ -99,9 +110,11 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
                       <td className="py-3 px-4">
                         <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.hourlyTotal || 0)}</div>
                       </td>
-                      <td className="py-3 px-4 rounded-br-xl">
-                        <div className="font-bold text-foreground">{formatWonStr(q.scenarios.starex?.regular?.perJobTotal || 0)}</div>
-                      </td>
+                      {showPerJobReference && (
+                        <td className="py-3 px-4 rounded-br-xl">
+                          <div className="font-bold text-foreground">{formatPerJobReference(q.scenarios.starex?.regular?.perJobTotal)}</div>
+                        </td>
+                      )}
                     </tr>
                   </tbody>
                 </table>
@@ -111,8 +124,12 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
 
           <div className="text-[11px] text-muted-foreground leading-relaxed bg-muted p-3 rounded-lg border border-border">
             * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br />
-            * 단건 요금제: 기본 운임 + 경유지 추가 요금 (경유지 {Math.max(0, (q.basis?.destinationCount || 1) - 1)}곳)<br />
-            * 정기 배송의 단건 운임은 별도 정기 요금표가 적용되며, 시간당 운임은 동일한 단가를 기초로 계산됩니다.
+            * 대표 견적과 계약 합계는 시간당 운임표만 사용합니다.
+            {showPerJobReference && (
+              <>
+                <br />* 단건 운임은 요청에 따라 표시한 참고값이며 대표 견적에는 반영하지 않습니다.
+              </>
+            )}
           </div>
         </div>
       </div>

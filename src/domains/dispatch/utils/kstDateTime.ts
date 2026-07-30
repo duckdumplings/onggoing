@@ -1,6 +1,6 @@
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-type KstDateParts = {
+export type KstDateParts = {
   year: number;
   monthIndex: number;
   day: number;
@@ -9,7 +9,7 @@ type KstDateParts = {
   second: number;
 };
 
-function kstParts(date: Date): KstDateParts {
+export function kstParts(date: Date): KstDateParts {
   const shifted = new Date(date.getTime() + KST_OFFSET_MS);
   return {
     year: shifted.getUTCFullYear(),
@@ -47,4 +47,28 @@ export function atKstTime(base: Date, hhmm: string, dayOffset = 0): Date | null 
 export function formatKstHHmm(date: Date): string {
   const parts = kstParts(date);
   return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+}
+
+export function formatKstPredictionTimestamp(date: Date): string {
+  const parts = kstParts(date);
+  return `${parts.year}-${String(parts.monthIndex + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}+0900`;
+}
+
+export function kstWeekday(date: Date): number {
+  return new Date(date.getTime() + KST_OFFSET_MS).getUTCDay();
+}
+
+export function formatKstDateTimeLocal(date: Date): string {
+  const parts = kstParts(date);
+  return `${parts.year}-${String(parts.monthIndex + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+}
+
+export function formatKstDate(date: Date): string {
+  const parts = kstParts(date);
+  return `${parts.year}-${String(parts.monthIndex + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+export function kstCalendarDayNumber(date: Date): number {
+  const parts = kstParts(date);
+  return Math.floor(Date.UTC(parts.year, parts.monthIndex, parts.day) / (24 * 60 * 60 * 1000));
 }

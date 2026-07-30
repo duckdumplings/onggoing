@@ -85,7 +85,7 @@ function fuelSourceLabelOf(
 }
 
 export function buildQuoteAgentTools(ctx: AgentToolContext) {
-  let lastRoutePricingContext: {
+  type RoutePricingContext = {
     km: number;
     driveMinutes: number;
     dwellMinutes: number[];
@@ -93,7 +93,9 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
     stopsCount: number;
     tollAmount: number | null;
     tollSource: 'api' | 'unavailable' | null;
-  } | null = null;
+  };
+  const routePricingContexts = new Map<string, RoutePricingContext>();
+  let routePricingSequence = 0;
 
   const track = (toolName: string, input: unknown, output: unknown) => {
     try {
@@ -158,7 +160,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     optimize_route: tool({
       description:
-        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서와 Tmap 경로 실측 통행료(tollAmount/tollSource)를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다. 입력(파일/메일)에 방문 시각·순번이 명확해 그 순서를 그대로 지켜야 하면 preserveOrder=true로 호출해 재정렬 없이 받은 순서대로 계산하라. 이어서 calculate_quote를 호출할 땐 여기서 받은 tollAmount/tollSource를 그대로 넘겨 실측 통행료가 반영되게 하라.',
+        '역할 태깅된 경유지로 최적 경로를 계산해 거리(km)/주행시간/순서와 Tmap 경로 실측 통행료(tollAmount/tollSource)를 반환한다. 출발지는 픽업(pickup) 중 시스템이 비용 최소로 자동 선택(open-start)하며 배송지/반납지는 출발지가 되지 않는다. 종착지는 반납(return)이 있으면 마지막 반납으로, 없으면 마지막 drop으로 고정된다(반납이 여러 번이면 그 외 반납은 중간 방문). 좌표가 없으면 내부에서 지오코딩한다. 입력(파일/메일)에 방문 시각·순번이 명확해 그 순서를 그대로 지켜야 하면 preserveOrder=true로 호출해 재정렬 없이 받은 순서대로 계산하라. 이어서 calculate_quote를 호출할 땐 여기서 받은 routePricingToken을 반드시 그대로 넘겨 해당 경로의 실측 메트릭을 결합하라.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
@@ -228,7 +230,9 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             : []),
         ];
         const resolvedStopsCount = countIntermediateStops(payload);
+        const routePricingToken = `route-${++routePricingSequence}`;
         const out = {
+          routePricingToken,
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
@@ -249,7 +253,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           // 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
           routeRequest: { ...payload, useRealtimeTraffic: true },
         };
-        lastRoutePricingContext = {
+        routePricingContexts.set(routePricingToken, {
           km: out.km,
           driveMinutes: out.driveMinutes,
           dwellMinutes: resolvedDwellMinutes,
@@ -257,7 +261,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           stopsCount: resolvedStopsCount,
           tollAmount,
           tollSource,
-        };
+        });
         track('optimize_route', payload, { km: out.km, driveMinutes: out.driveMinutes, openStart: out.openStart });
         return out;
       },
@@ -265,15 +269,23 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     calculate_quote: tool({
       description:
-        '경로 메트릭(km/주행분)과 차종/스케줄로 시간당·단건 요금을 결정론적으로 계산한다. 금액 산술은 절대 추론하지 말고 이 도구만 사용. 정기 빈도가 있으면 연 환산도 함께 반환.',
+        '경로 메트릭과 차종/스케줄로 공식 시간당 견적을 결정론적으로 계산한다. 단건은 사용자가 명시적으로 비교 요청한 경우에만 참고값으로 반환한다. 금액 산술은 절대 추론하지 말고 이 도구만 사용.',
       inputSchema: z.object({
         km: z.number().nonnegative(),
         driveMinutes: z.number().nonnegative(),
         dwellMinutes: z.array(z.number().nonnegative()).optional().describe('지점별 체류 시간(분) 배열'),
         waitMinutes: z.number().nonnegative().optional().describe('optimize_route가 돌려준 조기배송 금지 현장 대기 합(분). 있으면 반드시 그대로 넘겨라. 구속시간에 포함되어 과금된다. 임의 추정 금지.'),
         stopsCount: z.number().nonnegative().optional().describe('중간 경유지 수(출발지·최종 목적지 제외). optimize_route 직후에는 도구가 경로 구조에서 다시 계산하므로 임의 추정하지 마라.'),
+        routePricingToken: z
+          .string()
+          .optional()
+          .describe('optimize_route가 반환한 경로 식별 토큰. 경로 계산 뒤 견적할 때 반드시 그대로 넘긴다.'),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
+        includePerJobReference: z
+          .boolean()
+          .default(false)
+          .describe('사용자가 단건 운임 비교를 명시적으로 요청한 경우에만 true. 대표 견적은 항상 시간당이다.'),
         frequency: FrequencySchema.optional(),
         customHourlyRate: z
           .number()
@@ -290,10 +302,12 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .optional()
           .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'unavailable'=산출 불가). tollAmount와 함께 그대로 넘겨라."),
       }),
-      execute: async ({ km, driveMinutes, dwellMinutes, waitMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
-        // 같은 에이전트 턴에서 optimize_route가 먼저 실행됐다면 거리·체류·대기·경유지 수는
-        // LLM이 재구성한 인수가 아니라 실제 경로 페이로드/응답을 권위값으로 사용한다.
-        const routeContext = lastRoutePricingContext;
+      execute: async ({ km, driveMinutes, dwellMinutes, waitMinutes, stopsCount, routePricingToken, vehicleType, scheduleType, includePerJobReference, frequency, customHourlyRate, tollAmount, tollSource }) => {
+        // 토큰으로 지정된 정확한 경로만 권위값으로 사용한다. 여러 경로를 연속 계산해도
+        // 마지막 경로의 메트릭이 다른 견적에 섞이지 않는다.
+        const routeContext = routePricingToken
+          ? routePricingContexts.get(routePricingToken) ?? null
+          : null;
         const resolvedKm = routeContext?.km ?? km;
         const resolvedDriveMinutes = routeContext?.driveMinutes ?? driveMinutes;
         const resolvedDwellMinutes = routeContext?.dwellMinutes ?? dwellMinutes ?? [];
@@ -323,19 +337,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return { error: message };
         }
         const json = await res.json();
-        const perJobTotal = Number(json?.plans?.perJob?.total ?? 0);
+        const perJobRaw = json?.plans?.perJob ?? null;
+        const perJobTotal = perJobRaw?.total != null && Number.isFinite(Number(perJobRaw.total))
+          ? Number(perJobRaw.total)
+          : null;
         const hourlyTotal = Number(json?.plans?.hourly?.total ?? 0);
         const rateOverride = Boolean(json?.plans?.hourly?.rateOverride);
         const freq = frequency as Frequency | undefined;
-        // 추천/대표값 정책:
-        // - 협의 단가가 지정되면 시간당(협의가) 요금제를 대표값으로 사용.
-        // - 그 외 기본은 "옹고잉 유리" = 두 요금제 중 높은 쪽. (화주에게는 둘 다 제시)
-        const recommendedPlan: 'hourly' | 'perJob' = rateOverride
-          ? 'hourly'
-          : hourlyTotal >= perJobTotal
-            ? 'hourly'
-            : 'perJob';
-        const representative = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+        const recommendedPlan = 'hourly' as const;
+        const representative = hourlyTotal;
 
         // 견적 카드(거리/시간/차종)와 실비 투명성 카드가 채워지도록 basis를 결정적으로 구성한다.
         const vehicleKey: PricingVehicle = vehicleType === '스타렉스' ? 'starex' : 'ray';
@@ -389,6 +399,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const out = {
           plans: json?.plans ?? null,
           recommendedPlan,
+          perJobReferenceRequested: includePerJobReference,
           rateOverride,
           oneTimePrice: representative,
           annualPrice: annualizePrice(representative, freq),
@@ -403,12 +414,24 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             rateOverride,
             formatted: won(hourlyTotal),
           },
-          perJob: { total: perJobTotal, formatted: won(perJobTotal) },
+          perJob: includePerJobReference
+            ? {
+                ...perJobRaw,
+                total: perJobTotal,
+                referenceOnly: true,
+                formatted: perJobTotal == null ? null : won(perJobTotal),
+              }
+            : null,
           frequencyLabel: formatFrequency(freq),
           formattedOneTime: won(representative),
           formattedAnnual: won(annualizePrice(representative, freq)),
         };
-        track('calculate_quote', body, { recommendedPlan, oneTimePrice: representative, rateOverride });
+        track('calculate_quote', body, {
+          recommendedPlan,
+          oneTimePrice: representative,
+          rateOverride,
+          perJobReferenceRequested: includePerJobReference,
+        });
         return out;
       },
     }),

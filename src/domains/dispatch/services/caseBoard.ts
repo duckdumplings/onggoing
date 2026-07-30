@@ -56,8 +56,12 @@ export const CaseBoardCaseInputSchema = z.object({
   scheduleType: z.enum(['regular', 'ad-hoc']).default('regular'),
   planPreference: z
     .enum(['auto', 'hourly', 'perJob'])
-    .default('auto')
-    .describe('대표 운임 선택. auto=옹고잉 유리(시간당/단건 중 높은 쪽). 사용자가 "시간당만/단건만"으로 지정하면 hourly/perJob로 고정하라.'),
+    .default('hourly')
+    .describe('하위호환 입력. 대표 운임은 항상 hourly이며 perJob은 단건 참고 요청으로만 해석한다.'),
+  includePerJobReference: z
+    .boolean()
+    .default(false)
+    .describe('사용자가 단건 운임 비교를 명시적으로 요청한 경우에만 true.'),
   departureTime: z.string().optional().describe('출발 시각 "HH:mm". 점심/저녁은 케이스를 나눠 각각 출발시각을 넣어라.'),
   deadline: z.string().optional().describe('마감 시각 "HH:mm". 기준은 deadlineTarget(기본=마지막 배송 완료).'),
   deadlineTarget: z.enum(['delivery', 'return', 'final']).default('delivery'),
@@ -143,8 +147,10 @@ export interface CaseBoardCaseResult {
   meetsDeadline?: boolean | null;
   deadlineSlackMinutes?: number | null;
   oneTimePrice?: number;
-  recommendedPlan?: 'hourly' | 'perJob';
-  /** 대표 운임 선택 방식(auto면 옹고잉 유리). */
+  recommendedPlan?: 'hourly';
+  /** 단건 참고값 노출 여부. */
+  includePerJobReference?: boolean;
+  /** 하위호환 입력값. 대표 운임은 항상 시간당이다. */
   planPreference?: 'auto' | 'hourly' | 'perJob';
   hourlyTotal?: number;
   perJobTotal?: number;
@@ -338,17 +344,21 @@ async function computeCase(
     const quoteJson = await quoteRes.json();
     const hourly = quoteJson?.plans?.hourly ?? {};
     const hourlyTotal = Number(hourly?.total ?? 0);
-    const perJobTotal = Number(quoteJson?.plans?.perJob?.total ?? 0);
+    const perJobRaw = quoteJson?.plans?.perJob ?? null;
+    const perJobTotal =
+      perJobRaw?.total != null && Number.isFinite(Number(perJobRaw.total))
+        ? Number(perJobRaw.total)
+        : undefined;
     // 시간당 산식 투명화: 과금분/단가/유류할증(quote-calculation 응답 그대로).
     const billMinutes = Number.isFinite(Number(hourly?.billMinutes)) ? Number(hourly.billMinutes) : null;
     const ratePerHour = Number.isFinite(Number(hourly?.ratePerHour)) ? Number(hourly.ratePerHour) : null;
     const fuelSurcharge = Number.isFinite(Number(hourly?.fuelSurcharge)) ? Number(hourly.fuelSurcharge) : null;
     const fuelSurchargeBreakdown = hourly?.fuelSurchargeBreakdown ?? null;
-    // 대표 운임: 사용자가 지정(hourly/perJob)하면 그대로, auto면 옹고잉 유리(높은 쪽).
-    const pref = c.planPreference ?? 'auto';
-    const recommendedPlan: 'hourly' | 'perJob' =
-      pref === 'hourly' ? 'hourly' : pref === 'perJob' ? 'perJob' : hourlyTotal >= perJobTotal ? 'hourly' : 'perJob';
-    const oneTimePrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+    // 공식 대표 운임은 항상 시간당. 과거 planPreference=perJob은 참고값 노출 요청으로만 해석한다.
+    const pref = c.planPreference ?? 'hourly';
+    const includePerJobReference = c.includePerJobReference || pref === 'perJob';
+    const recommendedPlan = 'hourly' as const;
+    const oneTimePrice = hourlyTotal;
     const freq = c.frequency as Frequency | undefined;
 
     // 월 운행 횟수: operatingWeekdays + targetMonth 실제 달력이 우선. 없으면 monthlyVisits 폴백.
@@ -453,6 +463,7 @@ async function computeCase(
       riskGrade: deadlineRiskGrade(slackMinutes, meetsDeadline),
       oneTimePrice,
       recommendedPlan,
+      includePerJobReference,
       planPreference: pref,
       hourlyTotal,
       perJobTotal,

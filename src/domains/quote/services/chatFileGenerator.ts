@@ -29,7 +29,8 @@ export type GeneratedFileType = 'pdf' | 'xlsx' | 'md' | 'txt' | 'docx' | 'json';
 /** 견적서에 실을 시나리오 1건 요약(요금제 비교 포함). */
 export type ScenarioDocSummary = {
   label: string;
-  recommendedPlan?: 'hourly' | 'perJob';
+  recommendedPlan?: 'hourly';
+  includePerJobReference?: boolean;
   oneTimePrice?: number;
   annualPrice?: number;
   hourlyTotal?: number;
@@ -214,15 +215,23 @@ function buildMarkdown(input: GenerationInput): string {
   lines.push('');
 
   if (Array.isArray(input.scenarios) && input.scenarios.length) {
+    const showPerJobReference = input.scenarios.some((s) => s.includePerJobReference);
     lines.push('## 시나리오 비교');
-    lines.push('> 1회 운임은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준이며, 두 요금제를 함께 표기합니다.');
+    lines.push('> 1회·연 운임은 옹고잉 시간당 운임표 기준입니다.');
+    if (showPerJobReference) {
+      lines.push('> 단건 운임은 요청에 따라 참고값으로만 표기하며 대표 금액과 합계에는 반영하지 않습니다.');
+    }
     lines.push('');
-    lines.push('| 시나리오 | 채택 요금제 | 거리 | 소요 | 1회 운임 | 연 운임 | 시간당 | 단건 |');
-    lines.push('|---|---|---|---|---|---|---|---|');
+    lines.push(
+      showPerJobReference
+        ? '| 시나리오 | 기준 요금제 | 거리 | 소요 | 1회 운임 | 연 운임 | 시간당 | 단건 참고 |'
+        : '| 시나리오 | 기준 요금제 | 거리 | 소요 | 1회 운임 | 연 운임 | 시간당 |',
+    );
+    lines.push(showPerJobReference ? '|---|---|---|---|---|---|---|---|' : '|---|---|---|---|---|---|---|');
     for (const s of input.scenarios) {
       const star = s.label === input.recommendedScenarioLabel ? ' (추천)' : '';
       lines.push(
-        `| ${s.label}${star} | ${planLabel(s.recommendedPlan)} | ${s.km != null ? `${s.km.toFixed(1)}km` : '-'} | ${s.totalMinutes != null ? `${s.totalMinutes}분` : '-'} | ${won(s.oneTimePrice)} | ${won(s.annualPrice)} | ${won(s.hourlyTotal)} | ${won(s.perJobTotal)} |`
+        `| ${s.label}${star} | ${planLabel(s.recommendedPlan)} | ${s.km != null ? `${s.km.toFixed(1)}km` : '-'} | ${s.totalMinutes != null ? `${s.totalMinutes}분` : '-'} | ${won(s.oneTimePrice)} | ${won(s.annualPrice)} | ${won(s.hourlyTotal)} |${showPerJobReference ? ` ${s.includePerJobReference ? won(s.perJobTotal) : '-'} |` : ''}`
       );
     }
     lines.push('');
@@ -721,8 +730,19 @@ function generateXlsx(input: GenerationInput): GeneratedFile {
   XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
 
   if (Array.isArray(input.scenarios) && input.scenarios.length) {
+    const showPerJobReference = input.scenarios.some((s) => s.includePerJobReference);
     const scenarioRows: (string | number)[][] = [
-      ['시나리오', '채택 요금제', '거리(km)', '소요(분)', '1회 운임', '연 운임', '시간당', '단건', '추천'],
+      [
+        '시나리오',
+        '기준 요금제',
+        '거리(km)',
+        '소요(분)',
+        '1회 운임',
+        '연 운임',
+        '시간당',
+        ...(showPerJobReference ? ['단건 참고'] : []),
+        '추천',
+      ],
       ...input.scenarios.map((s) => [
         s.label,
         planLabel(s.recommendedPlan),
@@ -731,7 +751,13 @@ function generateXlsx(input: GenerationInput): GeneratedFile {
         Number.isFinite(Number(s.oneTimePrice)) ? Math.round(Number(s.oneTimePrice)) : '-',
         Number.isFinite(Number(s.annualPrice)) ? Math.round(Number(s.annualPrice)) : '-',
         Number.isFinite(Number(s.hourlyTotal)) ? Math.round(Number(s.hourlyTotal)) : '-',
-        Number.isFinite(Number(s.perJobTotal)) ? Math.round(Number(s.perJobTotal)) : '-',
+        ...(showPerJobReference
+          ? [
+              s.includePerJobReference && Number.isFinite(Number(s.perJobTotal))
+                ? Math.round(Number(s.perJobTotal))
+                : '-',
+            ]
+          : []),
         s.label === input.recommendedScenarioLabel ? '추천' : '',
       ]),
     ];
@@ -821,4 +847,3 @@ export async function generateFile(
       throw new Error(`지원하지 않는 파일 타입: ${type}`);
   }
 }
-

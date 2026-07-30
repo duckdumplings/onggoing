@@ -1,43 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { suggestCheaperNextTier } from '@/domains/quote/pricing'
 import {
-  calculateHourlyFuelSurcharge,
-  perJobBasePrice,
-  perJobRegularPrice,
-  STOP_FEE,
-  suggestCheaperNextTier,
-} from '@/domains/quote/pricing'
-import { pickHourlyRateFromPayload, resolveHourlyRateTable } from '@/domains/quote/services/rateTableService'
+  calculateFuelSurchargeFromPayload,
+  calculatePerJobReferenceFromPayloads,
+  pickHourlyRateFromPayload,
+  resolveFuelSurchargeTable,
+  resolveHourlyRateTable,
+  resolvePerJobRateTable,
+} from '@/domains/quote/services/rateTableService'
 
-type QuoteInput = {
-  distance: number // meters
-  time: number // seconds
-  vehicleType?: string
-  dwellMinutes?: number[] // per-stop dwell/handling minutes
-  waitMinutes?: number // 조기배송 금지로 인한 현장 대기 합(분). 구속시간에 포함되어 과금.
-  stopsCount?: number // optional, 중간 경유지 개수(도착지 제외)
-  scheduleType?: 'regular' | 'ad-hoc' // 단건: 정기/비정기
-  hourlyRateOverride?: number // 협의 단가(시간당 KRW). 지정 시 운임표 대신 사용.
-}
+const QuoteInputSchema = z.object({
+  distance: z.number().finite().nonnegative(), // meters
+  time: z.number().finite().nonnegative(), // seconds
+  vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
+  dwellMinutes: z.array(z.number().finite().nonnegative()).default([]),
+  waitMinutes: z.number().finite().nonnegative().default(0),
+  stopsCount: z.number().int().nonnegative().default(0),
+  scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
+  hourlyRateOverride: z.number().finite().positive().optional(),
+})
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as QuoteInput
-    const distance = Number(body.distance || 0)
-    const time = Number(body.time || 0)
-    const vehicleType = String(body.vehicleType || '레이')
-    const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
-    const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
-    const waitMinutes = Math.max(0, Number(body.waitMinutes || 0))
-    // 중간 경유지는 호출자가 경로 구조에서 명시해야 한다. 체류 배열 길이로 추정하면
-    // 출발지/최종 목적지까지 경유지로 세어 단일 배송에 정액이 붙는다.
-    const stopsCount = Number.isFinite(body.stopsCount as any) ? Math.max(0, Number(body.stopsCount)) : 0
-    const scheduleType = (body.scheduleType as 'regular' | 'ad-hoc') || 'ad-hoc'
-
-    if (!Number.isFinite(distance) || !Number.isFinite(time)) {
-      return NextResponse.json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'distance/time invalid' } }, { status: 400 })
+    const parsed = QuoteInputSchema.safeParse(await req.json())
+    if (!parsed.success) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: '거리·시간·차종·체류시간 입력을 확인해 주세요.',
+          details: parsed.error.issues,
+        },
+      }, { status: 400 })
     }
+    const body = parsed.data
+    const { distance, time, vehicleType, dwellMinutes, waitMinutes, stopsCount, scheduleType } = body
+    const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
 
-    const dwellTotalMin = dwellMinutes.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0)
+    const dwellTotalMin = dwellMinutes.reduce((a, b) => a + b, 0)
 
     const km = distance / 1000
     const driveMinutes = Math.ceil(time / 60)
@@ -47,11 +48,22 @@ export async function POST(req: NextRequest) {
     // 요금제별 계산
     // 1) 시간당(30분 올림, 최소 120분, 유류할증은 과금시간 기반 초과거리에만 적용)
     // DB rate_tables 우선 lookup, 실패 시 코드 정적 fallback 자동 적용.
-    const billMinutes = Math.max(120, Math.ceil(totalMinutes / 30) * 30)
-    const hourlyRateTable = await resolveHourlyRateTable(vehicleKey, new Date())
+    const asOf = new Date()
+    const perJobOwnPromise = resolvePerJobRateTable(vehicleKey, asOf)
+    const [hourlyRateTable, fuelSurchargeTable, perJobOwn, perJobStarex] = await Promise.all([
+      resolveHourlyRateTable(vehicleKey, asOf),
+      resolveFuelSurchargeTable(vehicleKey, asOf),
+      perJobOwnPromise,
+      vehicleKey === 'starex' ? perJobOwnPromise : resolvePerJobRateTable('starex', asOf),
+    ])
+    const unitMinutes = hourlyRateTable.payload.unitMinutes
+    const billMinutes = Math.max(
+      hourlyRateTable.payload.minBillMinutes,
+      Math.ceil(totalMinutes / unitMinutes) * unitMinutes,
+    )
     // 협의 단가(시간당) 지정 시 운임표 대신 사용. 임의 추정이 아니라 호출자가 명시한 값만 반영.
-    const overrideRate = Number(body.hourlyRateOverride)
-    const useRateOverride = Number.isFinite(overrideRate) && overrideRate > 0
+    const overrideRate = body.hourlyRateOverride
+    const useRateOverride = overrideRate != null
     const maxTableMinutes = hourlyRateTable.payload.tiers.at(-1)?.maxMinutes ?? 0
     if (!useRateOverride && billMinutes > maxTableMinutes) {
       return NextResponse.json({
@@ -66,38 +78,27 @@ export async function POST(req: NextRequest) {
     const tableRatePerHour = useRateOverride
       ? null
       : pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
-    const ratePerHour = useRateOverride ? overrideRate : Number(tableRatePerHour)
+    const ratePerHour = overrideRate ?? Number(tableRatePerHour)
     const hourlyBase = ratePerHour * (billMinutes / 60)
     // 유류할증 단일화: 포함거리·초과거리·10km 구간 수와 합계를 같은 함수에서 산출한다.
-    const fuelSurchargeBreakdown = calculateHourlyFuelSurcharge(vehicleKey, km, billMinutes)
+    const fuelSurchargeBreakdown = calculateFuelSurchargeFromPayload(
+      vehicleKey,
+      fuelSurchargeTable.payload,
+      km,
+      billMinutes,
+    )
     const hourlyFuelSurcharge = fuelSurchargeBreakdown.total
     const hourlyTotal = Math.round(hourlyBase + hourlyFuelSurcharge)
 
-    // 2) 단건(구간표 + 초과km, 경유지 정액, 정기/비정기 구분)
-    const perJobBase = perJobBasePrice(vehicleKey, km)
-    const perJobStopFee = STOP_FEE[vehicleKey] * Math.max(0, stopsCount)
-
-    // 정기/비정기 구분: 정기는 요금표 기반, 비정기는 기본 요금
-    let perJobTotal: number
-    let baseEffective: number
-    let stopFeeEffective: number
-
-    if (scheduleType === 'regular') {
-      // 정기 요금: 요금표 기반으로 계산
-      const regularBase = perJobRegularPrice(vehicleKey, km)
-      // 레이 정기는 스타렉스 경유지 정액 사용, 스타렉스 정기는 기본 경유지 정액 + 가산율
-      const regularStopFee = vehicleKey === 'ray'
-        ? STOP_FEE.starex * Math.max(0, stopsCount)  // 레이 정기: 스타렉스 경유지 정액
-        : Math.round(perJobStopFee * (Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2)))  // 스타렉스 정기: 기본 + 가산율
-      perJobTotal = regularBase + regularStopFee
-      baseEffective = regularBase
-      stopFeeEffective = regularStopFee
-    } else {
-      // 비정기 요금: 기본 요금
-      perJobTotal = perJobBase + perJobStopFee
-      baseEffective = perJobBase
-      stopFeeEffective = perJobStopFee
-    }
+    // 단건은 공식 대표값이 아니라 요청 시 제공하는 참고 운임이다.
+    const perJobReference = calculatePerJobReferenceFromPayloads({
+      vehicle: vehicleKey,
+      scheduleType,
+      km,
+      stopsCount,
+      own: perJobOwn.payload,
+      starex: perJobStarex.payload,
+    })
 
     return NextResponse.json({
       success: true,
@@ -115,8 +116,15 @@ export async function POST(req: NextRequest) {
       },
       plans: {
         hourly: (() => {
-          const dailyFromTable = Math.round(ratePerHour * (billMinutes / 60))
-          const monthly20dFromTable = dailyFromTable * 20
+          const selectedTier = hourlyRateTable.payload.tiers.find(
+            (tier) => billMinutes <= tier.maxMinutes,
+          )
+          const dailyFromTable = useRateOverride
+            ? Math.round(ratePerHour * (billMinutes / 60))
+            : Number(selectedTier?.dailyFare ?? Math.round(ratePerHour * (billMinutes / 60)))
+          const monthly20dFromTable = useRateOverride
+            ? dailyFromTable * 20
+            : Number(selectedTier?.monthly20dFare ?? dailyFromTable * 20)
           // 협의 단가 적용 시 운임표 기반 절감 조언은 의미가 없으므로 생략.
           const tierAdvice = useRateOverride ? null : suggestCheaperNextTier(vehicleKey, billMinutes)
           return {
@@ -151,17 +159,24 @@ export async function POST(req: NextRequest) {
               effectiveFrom: hourlyRateTable.effectiveFrom,
               sourceDoc: hourlyRateTable.sourceDoc,
             },
+            fuelSurchargeRateTable: {
+              source: fuelSurchargeTable.source,
+              effectiveFrom: fuelSurchargeTable.effectiveFrom,
+              sourceDoc: fuelSurchargeTable.sourceDoc,
+            },
           }
         })(),
         perJob: {
-          total: perJobTotal,
-          formatted: `₩${perJobTotal.toLocaleString('ko-KR')}`,
-          base: perJobBase,
-          stopFee: perJobStopFee,
-          baseEffective: baseEffective,
-          stopFeeEffective: stopFeeEffective,
+          ...perJobReference,
+          formatted: perJobReference.total == null
+            ? null
+            : `₩${perJobReference.total.toLocaleString('ko-KR')}`,
           scheduleType,
-          regularFactor: scheduleType === 'regular' ? Number(process.env.PER_JOB_REGULAR_FACTOR ?? 1.2) : 1,
+          rateTable: {
+            source: perJobOwn.source,
+            effectiveFrom: perJobOwn.effectiveFrom,
+            sourceDoc: perJobOwn.sourceDoc,
+          },
         }
       }
     })

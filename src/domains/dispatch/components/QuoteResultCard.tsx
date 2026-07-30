@@ -22,6 +22,7 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
   const advisor = quote.hourly?.advisor?.message;
   const fuelSurcharge = Number(quote.hourly?.fuelSurcharge ?? 0);
   const fuelBreakdown = quote.hourly?.fuelSurchargeBreakdown;
+  const showPerJobReference = Boolean(quote.perJobReferenceRequested && quote.perJob);
 
   return (
     <div className="glass-panel p-4 w-full space-y-3">
@@ -38,7 +39,7 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className={`grid gap-2 ${showPerJobReference ? 'grid-cols-2' : 'grid-cols-1'}`}>
         <div className="rounded-lg border border-border bg-card p-2.5">
           <div className="text-[11px] text-muted-foreground">시간당 1회</div>
           <div className="text-base font-bold text-primary tabular-nums">{quote.hourly?.formatted ?? '-'}</div>
@@ -49,10 +50,16 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
             </div>
           )}
         </div>
-        <div className="rounded-lg border border-border bg-card p-2.5">
-          <div className="text-[11px] text-muted-foreground">단건 요금제</div>
-          <div className="text-base font-bold text-foreground tabular-nums">{quote.perJob?.formatted ?? '-'}</div>
-        </div>
+        {showPerJobReference && (
+          <div className="rounded-lg border border-border bg-card p-2.5">
+            <div className="text-[11px] text-muted-foreground">단건 참고 운임</div>
+            <div className="text-base font-bold text-foreground tabular-nums">
+              {quote.perJob?.available === false
+                ? '운임표 범위 밖'
+                : quote.perJob?.formatted ?? '-'}
+            </div>
+          </div>
+        )}
       </div>
 
       {(basis.distanceKm != null || basis.totalBillMinutes != null) && (

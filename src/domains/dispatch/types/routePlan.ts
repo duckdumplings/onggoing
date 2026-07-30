@@ -89,6 +89,8 @@ export interface QuoteScenario {
   stops: RouteStop[];
   vehicleType: VehicleLabel;
   scheduleType: ScheduleType;
+  /** 사용자가 단건 운임 비교를 명시적으로 요청했을 때만 true. 대표 견적은 항상 시간당이다. */
+  includePerJobReference?: boolean;
   frequency?: Frequency;
   /** 사전 계산된 경로 메트릭(있으면 Tmap 재호출 생략). */
   routeMetrics?: RouteMetrics;
@@ -106,15 +108,17 @@ export interface ScenarioQuoteResult {
     return: number;
     totalStops: number;
   };
-  /** 1회 운행 운임(원). 기본은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준. */
+  /** 1회 운행 공식 운임(원). 항상 시간당 운임 기준. */
   oneTimePrice: number;
   /** 연 환산 운임(원). frequency 없으면 oneTimePrice와 동일. */
   annualPrice: number;
   /** 빈도를 사람이 읽는 라벨. 예: "연 4회 (분기 1회)". */
   frequencyLabel: string | null;
-  /** 대표값(oneTimePrice)으로 채택된 요금제. 기본은 옹고잉 유리(higher). */
-  recommendedPlan: 'hourly' | 'perJob';
-  /** 두 요금제 모두의 산출 결과. 화주 객관성/투명성 비교용. */
+  /** 대표값(oneTimePrice)으로 채택된 요금제. 공식 견적 정책상 항상 hourly. */
+  recommendedPlan: 'hourly';
+  /** 사용자가 단건 참고값을 명시적으로 요청했는지. */
+  includePerJobReference: boolean;
+  /** 시간당 공식 견적과 선택적 단건 참고값. */
   plans: {
     hourly: {
       total: number;
@@ -126,9 +130,12 @@ export interface ScenarioQuoteResult {
       fuelSurchargeBreakdown?: import('@/domains/quote/pricing').HourlyFuelSurchargeBreakdown;
     };
     perJob: {
-      total: number;
-      base: number;
-      stopFee: number;
+      available: boolean;
+      referenceOnly: true;
+      total: number | null;
+      base: number | null;
+      stopFee: number | null;
+      unavailableReason?: string;
     };
   };
   breakdown: {

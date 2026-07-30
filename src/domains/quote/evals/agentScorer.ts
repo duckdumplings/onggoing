@@ -9,7 +9,12 @@ import type { AgentEvalCase, AgentEvalExpectation } from '@/domains/quote/evals/
 
 export interface AgentResponseLike {
   assistantMessage?: string;
-  quote?: unknown;
+  quote?: {
+    recommendedPlan?: string;
+    perJobReferenceRequested?: boolean;
+    perJob?: unknown;
+    basis?: { waitTotalMinutes?: number };
+  } | null;
   scenarioComparison?: {
     results?: Array<{
       label: string;
@@ -97,6 +102,48 @@ export function scoreAgentResponse(
 
   if (e.shouldAskUser) {
     checks.push(check('asksUser', asked, !asked ? '명확화 질문이 필요했으나 없음' : undefined));
+  }
+
+  if (e.recommendedPlan) {
+    checks.push(
+      check(
+        'recommendedPlan',
+        response.quote?.recommendedPlan === e.recommendedPlan,
+        `expected ${e.recommendedPlan}, got ${response.quote?.recommendedPlan ?? 'none'}`,
+      ),
+    );
+  }
+
+  if (e.perJobReferenceRequested !== undefined) {
+    const actual = Boolean(response.quote?.perJobReferenceRequested);
+    checks.push(
+      check(
+        'perJobReferenceRequested',
+        actual === e.perJobReferenceRequested,
+        `expected ${e.perJobReferenceRequested}, got ${actual}`,
+      ),
+    );
+    if (!e.perJobReferenceRequested) {
+      checks.push(check('perJobHidden', response.quote?.perJob == null));
+    }
+  }
+
+  if (e.maxWaitMinutes !== undefined) {
+    const actual = Number(response.quote?.basis?.waitTotalMinutes);
+    checks.push(
+      check(
+        'maxWaitMinutes',
+        Number.isFinite(actual) && actual <= e.maxWaitMinutes,
+        `expected <= ${e.maxWaitMinutes}, got ${Number.isFinite(actual) ? actual : 'none'}`,
+      ),
+    );
+  }
+
+  if (e.forbiddenWonAmounts?.length) {
+    const haystack = `${text} ${JSON.stringify(response.quote ?? {})}`.replace(/[,₩원\s]/g, '');
+    for (const amount of e.forbiddenWonAmounts) {
+      checks.push(check(`forbiddenAmount:${amount}`, !haystack.includes(String(amount))));
+    }
   }
 
   const passed = checks.every((c) => c.passed);

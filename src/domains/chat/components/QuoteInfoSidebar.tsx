@@ -128,10 +128,14 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
               <div className="text-[10px] font-semibold text-muted-foreground">시간당 1회 · {quote.basis?.vehicleType}</div>
               <div className="text-base font-black tracking-tight text-primary tabular-nums truncate">{quote.hourly?.formatted}</div>
             </div>
-            <div className="text-right shrink-0">
-              <div className="text-[10px] font-semibold text-muted-foreground">단건</div>
-              <div className="text-sm font-bold text-foreground tabular-nums">{quote.perJob?.formatted}</div>
-            </div>
+            {quote.perJobReferenceRequested && quote.perJob && (
+              <div className="text-right shrink-0">
+                <div className="text-[10px] font-semibold text-muted-foreground">단건 참고</div>
+                <div className="text-sm font-bold text-foreground tabular-nums">
+                  {quote.perJob.formatted ?? '운임표 범위 밖'}
+                </div>
+              </div>
+            )}
           </button>
         )}
 

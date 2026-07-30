@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { calculateScenarioQuote } from '@/domains/dispatch/services/scenarioPricing';
+import {
+  calculateScenarioQuote,
+  type ScenarioRateTables,
+} from '@/domains/dispatch/services/scenarioPricing';
 import type { QuoteScenario, RouteMetrics } from '@/domains/dispatch/types/routePlan';
 
 /**
@@ -39,5 +42,43 @@ describe('calculateScenarioQuote — 현장 대기(구속시간) 과금', () => 
     const b = calculateScenarioQuote(scenario({ ...baseMetrics, waitMinutes: 0 }));
     expect(a.plans.hourly.total).toBe(b.plans.hourly.total);
     expect(a.plans.hourly.billMinutes).toBe(b.plans.hourly.billMinutes);
+  });
+
+  it('서버가 전달한 시행일별 DB 운임표 payload를 정적표보다 우선한다', () => {
+    const rateTables: ScenarioRateTables = {
+      hourly: {
+        currency: 'KRW',
+        unitMinutes: 30,
+        minBillMinutes: 120,
+        tiers: [{ maxMinutes: 480, ratePerHour: 12_345 }],
+      },
+      fuelSurcharge: {
+        currency: 'KRW',
+        baseKmPerHour: 10,
+        stepKm: 10,
+        stepCharge: 1111,
+        bins: [],
+      },
+      perJob: {
+        currency: 'KRW',
+        maxKm: 60,
+        stopFee: 3333,
+        tiers: [{ fromKm: 0, toKm: 60, baseFare: 22_222 }],
+        regularPolicy: { mode: 'vehicle-table', vehicle: 'starex' },
+      },
+      starexPerJob: {
+        currency: 'KRW',
+        maxKm: 60,
+        stopFee: 4444,
+        tiers: [{ fromKm: 0, toKm: 60, baseFare: 33_333 }],
+        regularPolicy: { mode: 'factor', factor: 1.2 },
+      },
+    };
+    const result = calculateScenarioQuote(scenario(baseMetrics), baseMetrics, rateTables);
+
+    expect(result.plans.hourly.ratePerHour).toBe(12_345);
+    expect(result.plans.hourly.fuelSurcharge).toBe(1111);
+    expect(result.plans.perJob.base).toBe(22_222);
+    expect(result.plans.perJob.stopFee).toBe(6666);
   });
 });

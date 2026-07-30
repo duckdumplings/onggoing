@@ -36,6 +36,7 @@ export const RouteStopSchema = z.object({
     .enum(['deadline', 'appointment'])
     .optional()
     .describe("deadline='그 시각까지'라 조기 도착 대기 없음(기본). appointment='그 시각 예약/정시 배송'이라 조기배송 금지 대기 적용."),
+  isNextDay: z.boolean().optional().describe('deliveryTime이 익일 기준이면 true.'),
   memo: z.string().optional(),
 });
 
@@ -47,6 +48,10 @@ export const QuoteScenarioSchema = z.object({
   stops: z.array(RouteStopSchema).min(1),
   vehicleType: VehicleLabelSchema.default('레이'),
   scheduleType: ScheduleTypeSchema.default('ad-hoc'),
+  includePerJobReference: z
+    .boolean()
+    .default(false)
+    .describe('사용자가 단건 운임 비교를 명시적으로 요청한 경우에만 true. 공식 대표 견적은 항상 시간당.'),
   frequency: FrequencySchema.optional(),
 });
 
@@ -79,6 +84,7 @@ export function toDomainScenario(s: z.infer<typeof QuoteScenarioSchema>): QuoteS
     stops: toDomainStops(s.stops),
     vehicleType: s.vehicleType,
     scheduleType: s.scheduleType,
+    includePerJobReference: s.includePerJobReference,
     frequency: s.frequency as Frequency | undefined,
   };
 }

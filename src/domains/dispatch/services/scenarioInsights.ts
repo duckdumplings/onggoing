@@ -43,19 +43,16 @@ export interface PriceBreakdownRow {
  * base → +경유비 → (+유류할증) → 1회 운임 → ×연N회 → 연 운임.
  */
 export function buildPriceBreakdownRows(result: ScenarioQuoteResult): PriceBreakdownRow[] {
-  const { breakdown, oneTimePrice, annualPrice, metrics, counts, recommendedPlan, plans } = result;
+  const { breakdown, oneTimePrice, annualPrice, metrics, counts, plans } = result;
   const rows: PriceBreakdownRow[] = [];
   let cumulative = 0;
 
-  const isHourly = recommendedPlan === 'hourly';
-  const baseHint = isHourly
-    ? `${result.vehicleType} 과금 ${(plans.hourly.billMinutes / 60).toFixed(1)}h × 시간당 ${won(plans.hourly.ratePerHour)}`
-    : `${result.vehicleType} ${metrics.km.toFixed(1)}km 거리 구간 요율`;
+  const baseHint = `${result.vehicleType} 과금 ${(plans.hourly.billMinutes / 60).toFixed(1)}h × 시간당 ${won(plans.hourly.ratePerHour)}`;
 
   cumulative += breakdown.base;
   rows.push({
     key: 'base',
-    label: isHourly ? '기본 시간 운임' : '기본 운임',
+    label: '기본 시간 운임',
     amount: breakdown.base,
     cumulative,
     hint: baseHint,
@@ -129,18 +126,7 @@ export function analyzeDistanceTier(
 ): DistanceTierInsight | null {
   if (!(km > 0)) return null;
   const idx = PER_JOB_TABLE.findIndex((r) => km >= r.fromKm && km <= r.toKm);
-  if (idx < 0) {
-    // 마지막 구간 초과(추가 요금 없음)
-    const last = PER_JOB_TABLE[PER_JOB_TABLE.length - 1];
-    return {
-      vehicle,
-      km,
-      currentFromKm: last.toKm,
-      currentToKm: Infinity,
-      headroomKm: null,
-      nextTierDelta: null,
-    };
-  }
+  if (idx < 0) return null;
   const current = PER_JOB_TABLE[idx];
   const next = PER_JOB_TABLE[idx + 1];
   const priceOf = (r: (typeof PER_JOB_TABLE)[number]) => (vehicle === 'ray' ? r.ray : r.starex);
@@ -167,50 +153,20 @@ export interface SavingsTip {
 }
 
 /**
- * 시나리오 견적 결과 기반 절감/안정성 제안을 만든다.
- * 단건(per-job) 요금제는 거리 구간 안정성 인사이트가 핵심이다.
+ * 시간당 공식 견적의 과금 구간 절감/안정성 제안을 만든다.
  */
 export function buildScenarioSavingsTips(result: ScenarioQuoteResult): SavingsTip[] {
   const tips: SavingsTip[] = [];
   const vehicle = toVehicleKey(result.vehicleType);
 
-  // 시간당 요금제로 추천된 경우, 거리 구간 인사이트 대신 시간 단가 절감 제안을 쓴다.
-  if (result.recommendedPlan === 'hourly') {
-    const hourlyTip = buildHourlySavingsTip(vehicle, result.plans.hourly.billMinutes);
-    if (hourlyTip) tips.push(hourlyTip);
-    return tips;
-  }
-
-  const tier = analyzeDistanceTier(vehicle, result.metrics.km);
-
-  if (tier && tier.headroomKm != null && tier.nextTierDelta != null && tier.nextTierDelta > 0) {
-    const headroom = tier.headroomKm;
-    if (headroom >= 1) {
-      tips.push({
-        id: 'distance-headroom',
-        tone: 'info',
-        message:
-          `현재 ${tier.currentFromKm}~${tier.currentToKm}km 구간 운임이에요. ` +
-          `다음 구간까지 ${headroom.toFixed(1)}km 여유가 있어 경로가 다소 늘어도 ` +
-          `운임이 ${won(tier.nextTierDelta)} 이상 오르지 않아요.`,
-      });
-    } else {
-      tips.push({
-        id: 'distance-near-boundary',
-        tone: 'info',
-        message:
-          `다음 거리 구간 경계(${tier.currentToKm}km)에 근접했어요. ` +
-          `경로가 ${headroom.toFixed(1)}km만 늘어도 1회 운임이 ${won(tier.nextTierDelta)} 오를 수 있어요.`,
-      });
-    }
-  }
-
+  const hourlyTip = buildHourlySavingsTip(vehicle, result.plans.hourly.billMinutes);
+  if (hourlyTip) tips.push(hourlyTip);
   return tips;
 }
 
 /**
  * 시간제(hourly) 견적의 단가 절감 제안. `suggestCheaperNextTier`를 그대로 카드용으로 변환한다.
- * 단건 시나리오에는 해당하지 않으며, 시간제 견적 화면에서 사용한다.
+ * 시간제 견적 화면에서 사용한다.
  */
 export function buildHourlySavingsTip(
   vehicle: PricingVehicle,

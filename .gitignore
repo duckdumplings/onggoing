@@ -41,6 +41,9 @@ Thumbs.db
 logs
 *.log
 
+# Local backup files can retain credentials or obsolete server code.
+*.backup
+
 # Runtime data
 pids
 *.pid

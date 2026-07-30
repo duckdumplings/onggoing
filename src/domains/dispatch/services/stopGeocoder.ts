@@ -32,8 +32,8 @@ export function isRegionOnlyQuery(q: string): boolean {
   return /(시|군|구|읍|면|동|리)$/.test(s);
 }
 
-function getTmapKey(): string | undefined {
-  return process.env.TMAP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY;
+function getTmapKey(override?: string): string | undefined {
+  return override || process.env.TMAP_API_KEY || process.env.NEXT_PUBLIC_TMAP_API_KEY;
 }
 
 interface GeoHit {
@@ -43,8 +43,8 @@ interface GeoHit {
 }
 
 /** Tmap POI 검색으로 단일 키워드를 좌표로 해석. POI명("노원구청")에 강함. 실패 시 null. */
-export async function geocodeViaTmapPoi(query: string): Promise<GeoHit | null> {
-  const appKey = getTmapKey();
+export async function geocodeViaTmapPoi(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
+  const appKey = getTmapKey(appKeyOverride);
   const keyword = query.trim();
   if (!appKey || !keyword) return null;
   try {
@@ -79,8 +79,8 @@ export async function geocodeViaTmapPoi(query: string): Promise<GeoHit | null> {
 }
 
 /** Tmap 전체주소 지오코딩. 도로명/지번 주소("마포구 월드컵북로 396")에 강함. 실패 시 null. */
-export async function geocodeViaTmapFullAddr(query: string): Promise<GeoHit | null> {
-  const appKey = getTmapKey();
+export async function geocodeViaTmapFullAddr(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
+  const appKey = getTmapKey(appKeyOverride);
   const fullAddr = query.trim();
   if (!appKey || !fullAddr) return null;
   try {
@@ -125,11 +125,11 @@ function looksLikeStreetAddress(q: string): boolean {
  * 단일 주소/POI를 좌표로 해석한다. 입력 형태에 따라 적합한 엔진을 먼저 시도하고
  * 실패 시 다른 엔진으로 폴백한다(도로명 주소·POI명 양쪽 모두 강건).
  */
-export async function resolveStopAddress(query: string): Promise<GeoHit | null> {
+export async function resolveStopAddress(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
   if (looksLikeStreetAddress(query)) {
-    return (await geocodeViaTmapFullAddr(query)) ?? (await geocodeViaTmapPoi(query));
+    return (await geocodeViaTmapFullAddr(query, appKeyOverride)) ?? (await geocodeViaTmapPoi(query, appKeyOverride));
   }
-  return (await geocodeViaTmapPoi(query)) ?? (await geocodeViaTmapFullAddr(query));
+  return (await geocodeViaTmapPoi(query, appKeyOverride)) ?? (await geocodeViaTmapFullAddr(query, appKeyOverride));
 }
 
 /**

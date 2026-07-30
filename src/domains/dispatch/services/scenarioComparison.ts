@@ -6,7 +6,10 @@
  * 만들고, 기준(연 비용 등)으로 정렬·추천한다.
  */
 
-import { calculateScenarioQuote } from '@/domains/dispatch/services/scenarioPricing';
+import {
+  calculateScenarioQuote,
+  type ScenarioRateTables,
+} from '@/domains/dispatch/services/scenarioPricing';
 import type {
   QuoteScenario,
   RouteMetrics,
@@ -46,10 +49,11 @@ function metricValue(r: ScenarioQuoteResult, key: ComparisonSortKey): number {
 export function compareScenarios(
   scenarios: QuoteScenario[],
   metricsByLabel: Record<string, RouteMetrics> = {},
-  sortKey: ComparisonSortKey = 'annualPrice'
+  sortKey: ComparisonSortKey = 'annualPrice',
+  rateTablesByLabel: Record<string, ScenarioRateTables> = {},
 ): ScenarioComparison {
   const results = scenarios.map((s) =>
-    calculateScenarioQuote(s, metricsByLabel[s.label])
+    calculateScenarioQuote(s, metricsByLabel[s.label], rateTablesByLabel[s.label])
   );
 
   const recommended = results.reduce<ScenarioQuoteResult | null>((best, cur) => {

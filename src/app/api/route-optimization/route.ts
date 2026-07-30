@@ -16,6 +16,8 @@ import {
   buildUserFacingAddressHints,
 } from '@/domains/dispatch/services/addressVariants';
 import { computeEarlyDeliveryWait } from '@/domains/dispatch/services/deliveryWait';
+import { getAtlanRouteFeatureCollection } from '@/domains/dispatch/services/atlanRouteFallback';
+import { resolveSegmentSchedule } from '@/domains/dispatch/services/segmentSchedule';
 import {
   atKstTime,
   formatKstHHmm,
@@ -102,6 +104,7 @@ interface RouteSegmentSummary {
   waitMinutes?: number;
   predictionAttempted: boolean;
   predictionFallback: boolean;
+  routeProvider?: 'tmap' | 'atlan-proxy';
 }
 
 interface OptimizationParams {
@@ -1481,41 +1484,25 @@ export async function POST(request: NextRequest) {
     const postOrderViolations: string[] = [];
     let maxPostLatenessMin = 0; // 권장 출발 역산용: 가장 많이 지각한 분
 
-    // 검증용 시계: 체류 미고려(요청사항)
+    // 검증용 시계: 실제 주행·체류·예약 대기를 누적해 하류 마감 가능성을 판단한다.
     let validationClock = new Date(currentTime);
 
     for (let i = 0; i < orderedDestinations.length; i++) {
       const dest = orderedDestinations[i];
       const prevAddress = i === 0 ? startLocation.address : orderedDestinations[i - 1].address;
 
-      // 배송완료시간이 있는 경우 해당 시간을 고려한 출발시간 계산
-      let segmentDepartureTime = currentTime;
-      let targetDeliveryTime = null as Date | null;
-
       const cForDest = constraintByAddress.get(dest.address);
-      if (cForDest) {
-        const deliveryTime = cForDest.deliveryTime;
-        const isNextDay = cForDest.isNextDay;
-
-        if (deliveryTime) {
-          const deliveryDateTime = atKstTime(currentTime, deliveryTime, isNextDay ? 1 : 0);
-          if (!deliveryDateTime) {
-            validationErrors.push(`경유지 ${i + 1}: 배송 시각 형식이 올바르지 않습니다 (${deliveryTime}).`);
-          } else {
-            targetDeliveryTime = deliveryDateTime;
-
-            // 배송완료시간까지 도착해야 하므로, 반복 계산으로 정확한 출발시간 계산
-            segmentDepartureTime = await calculateAccurateDepartureTime(
-              current,
-              dest,
-              deliveryDateTime,
-              tmapKey,
-              vehicleTypeCode,
-              usedTraffic,
-              vehicleType
-            );
-          }
-        }
+      const {
+        trafficDepartureTime: segmentDepartureTime,
+        targetDeliveryTime,
+        invalidDeliveryTime,
+      } = resolveSegmentSchedule({
+        timelineDepartureTime: currentTime,
+        deliveryTime: cForDest?.deliveryTime,
+        isNextDay: cForDest?.isNextDay,
+      });
+      if (invalidDeliveryTime && cForDest) {
+        validationErrors.push(`경유지 ${i + 1}: 배송 시각 형식이 올바르지 않습니다 (${cForDest.deliveryTime}).`);
       }
 
       console.log('=== Tmap API 호출 ===');
@@ -1554,7 +1541,7 @@ export async function POST(request: NextRequest) {
             return null as any;
           });
 
-      if (seg && Array.isArray(seg.features)) {
+      if (seg && Array.isArray(seg.features) && (sameCoord || seg.features.length > 0)) {
         // 거리 계산 정확성 검증
         let segmentDistance = 0;
         let segmentTime = 0;
@@ -1648,7 +1635,7 @@ export async function POST(request: NextRequest) {
         });
       } else {
         // 예측 실패 → 일반 routes 재시도
-        const routesSeg = await getTmapRoute(
+        let routesSeg = await getTmapRoute(
           { x: current.longitude, y: current.latitude },
           { x: dest.longitude, y: dest.latitude },
           tmapKey,
@@ -1659,8 +1646,16 @@ export async function POST(request: NextRequest) {
             roadOption
           }
         ).catch(() => null as any);
+        let usedAtlanFallback = false;
+        if (!routesSeg || !Array.isArray(routesSeg.features) || routesSeg.features.length === 0) {
+          routesSeg = await getAtlanRouteFeatureCollection(current, dest, {
+            departureAt: segmentDepartureTime.toISOString(),
+            vehicleTypeCode,
+          });
+          usedAtlanFallback = Boolean(routesSeg);
+        }
 
-        if (routesSeg && Array.isArray(routesSeg.features)) {
+        if (routesSeg && Array.isArray(routesSeg.features) && routesSeg.features.length > 0) {
           let segmentDistance = 0;
           let segmentTime = 0;
           for (const f of routesSeg.features) {
@@ -1675,7 +1670,11 @@ export async function POST(request: NextRequest) {
           // routes 대체 사용 경고만 남김
           tmapFallbackUsed = true;
           if (segUsesPrediction) predictionFallbackSegments += 1;
-          validationWarnings.push(`예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`);
+          validationWarnings.push(
+            usedAtlanFallback
+              ? `Tmap 불가로 Atlan 백업 경로 사용: ${current.address} → ${dest.address}`
+              : `예측 불가로 일반 routes 사용: ${current.address} → ${dest.address}`,
+          );
 
           // 시간 업데이트(대기+체류 포함). 검증시계도 동일 — 하류 마감 도착에 대기·상/하차가 실제로 누적됨.
           const dwellTime = destinationDwell(i);
@@ -1703,6 +1702,7 @@ export async function POST(request: NextRequest) {
             waitMinutes: waitMin,
             predictionAttempted: segUsesPrediction,
             predictionFallback: true,
+            routeProvider: usedAtlanFallback ? 'atlan-proxy' : 'tmap',
           });
 
           // 경유지별 도착시간 저장
@@ -1734,7 +1734,7 @@ export async function POST(request: NextRequest) {
 
     let returnedToOrigin = false;
     if (returnToOrigin && orderedDestinations.length > 0) {
-      const returnSeg = await getTmapRoute(
+      let returnSeg = await getTmapRoute(
         { x: current.longitude, y: current.latitude },
         { x: startLocation.longitude, y: startLocation.latitude },
         tmapKey,
@@ -1745,8 +1745,16 @@ export async function POST(request: NextRequest) {
           roadOption
         }
       ).catch(() => null as any);
+      let returnUsedAtlanFallback = false;
+      if (!returnSeg || !Array.isArray(returnSeg.features) || returnSeg.features.length === 0) {
+        returnSeg = await getAtlanRouteFeatureCollection(current, startLocation, {
+          departureAt: currentTime.toISOString(),
+          vehicleTypeCode,
+        });
+        returnUsedAtlanFallback = Boolean(returnSeg);
+      }
 
-      if (returnSeg && Array.isArray(returnSeg.features)) {
+      if (returnSeg && Array.isArray(returnSeg.features) && returnSeg.features.length > 0) {
         let returnDistance = 0;
         let returnTime = 0;
         for (const f of returnSeg.features) {
@@ -1769,7 +1777,8 @@ export async function POST(request: NextRequest) {
           distanceMeters: returnDistance,
           dwellMinutes: returnDwell,
           predictionAttempted: Boolean(currentTime) && (roadOption || 'time-first') === 'time-first',
-          predictionFallback: false,
+          predictionFallback: returnUsedAtlanFallback,
+          routeProvider: returnUsedAtlanFallback ? 'atlan-proxy' : 'tmap',
         });
         waypoints.push({
           latitude: startLocation.latitude,
@@ -1791,6 +1800,9 @@ export async function POST(request: NextRequest) {
         });
         currentTime = returnDeparture;
         returnedToOrigin = true;
+        if (returnUsedAtlanFallback) {
+          validationWarnings.push(`Tmap 불가로 Atlan 백업 복귀 경로 사용: ${current.address} → ${startLocation.address}`);
+        }
       } else {
         validationWarnings.push('복귀 경로를 계산하지 못해 마지막 경유지에서 종료되었습니다.');
       }
@@ -2639,132 +2651,6 @@ async function optimizeOrderDistanceBased(
   }
 }
 
-// 거리 기반 + 시간대별 예상 이동시간 계산 함수
-function calculateEstimatedTravelTime(
-  startLat: number, startLng: number,
-  endLat: number, endLng: number,
-  targetTime: Date,
-  vehicleType: string = '레이'
-): number {
-  // 직선 거리 계산 (미터)
-  const distance = haversineMeters(startLat, startLng, endLat, endLng);
-  const distanceKm = distance / 1000;
-
-  // 시간대별 평균 속도 (km/h)
-  const hour = Math.floor(kstMinutesOfDay(targetTime) / 60);
-  let averageSpeed: number;
-
-  if (hour >= 7 && hour <= 9) {
-    averageSpeed = 25; // 출근시간 (혼잡)
-  } else if (hour >= 18 && hour <= 20) {
-    averageSpeed = 30; // 퇴근시간 (혼잡)
-  } else if (hour >= 22 || hour <= 6) {
-    averageSpeed = 50; // 야간 (원활)
-  } else if (hour >= 10 && hour <= 17) {
-    averageSpeed = 40; // 주간 (보통)
-  } else {
-    averageSpeed = 35; // 기타 시간
-  }
-
-  // 차량 타입별 속도 조정
-  if (vehicleType === '스타렉스') {
-    averageSpeed *= 0.9; // 화물차는 승용차보다 느림
-  }
-
-  // 예상 이동시간 계산 (분)
-  const estimatedMinutes = (distanceKm / averageSpeed) * 60;
-
-  // 최소 10분, 최대 120분으로 제한
-  const clampedMinutes = Math.max(10, Math.min(120, estimatedMinutes));
-
-  console.log(`예상 이동시간 계산: 거리=${distanceKm.toFixed(1)}km, 시간대=${hour}시, 속도=${averageSpeed.toFixed(1)}km/h, 예상시간=${clampedMinutes.toFixed(1)}분`);
-
-  return clampedMinutes * 60 * 1000; // 밀리초로 변환
-}
-
-// 반복 계산으로 정확한 출발시간 계산 함수
-async function calculateAccurateDepartureTime(
-  start: { latitude: number; longitude: number },
-  dest: { latitude: number; longitude: number },
-  targetDeliveryTime: Date,
-  tmapKey: string,
-  vehicleTypeCode: string,
-  usedTraffic: 'realtime' | 'standard',
-  vehicleType: string
-): Promise<Date> {
-  // 1차: 예상 시간으로 계산
-  const estimatedTravelTime = calculateEstimatedTravelTime(
-    start.latitude, start.longitude,
-    dest.latitude, dest.longitude,
-    targetDeliveryTime,
-    vehicleType
-  );
-
-  let segmentDepartureTime = new Date(targetDeliveryTime.getTime() - estimatedTravelTime);
-
-  console.log(`1차 예상 출발시간: ${segmentDepartureTime.toLocaleString()}, 예상 이동시간: ${Math.round(estimatedTravelTime / 60000)}분`);
-
-  // 2차: Tmap API로 실제 시간 확인
-  try {
-    const seg = await getTmapRoute(
-      { x: start.longitude, y: start.latitude },
-      { x: dest.longitude, y: dest.latitude },
-      tmapKey,
-      {
-        vehicleTypeCode,
-        trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
-        departureAt: segmentDepartureTime.toISOString()
-      }
-    );
-
-    if (seg && Array.isArray(seg.features)) {
-      let actualTravelTime = 0;
-      for (const f of seg.features) {
-        if (f?.properties?.totalTime) actualTravelTime += f.properties.totalTime;
-      }
-
-      const actualTravelTimeMs = actualTravelTime * 1000; // 초를 밀리초로 변환
-      const timeDifference = actualTravelTimeMs - estimatedTravelTime;
-
-      console.log(`2차 실제 이동시간: ${Math.round(actualTravelTimeMs / 60000)}분, 차이: ${Math.round(timeDifference / 60000)}분`);
-
-      // 3차: 5분 이상 차이나면 출발시간 조정
-      if (Math.abs(timeDifference) > 5 * 60 * 1000) {
-        segmentDepartureTime = new Date(targetDeliveryTime.getTime() - actualTravelTimeMs);
-        console.log(`3차 조정된 출발시간: ${segmentDepartureTime.toLocaleString()}`);
-
-        // 최종 검증: 조정된 시간으로 다시 한 번 확인
-        const finalSeg = await getTmapRoute(
-          { x: start.longitude, y: start.latitude },
-          { x: dest.longitude, y: dest.latitude },
-          tmapKey,
-          {
-            vehicleTypeCode,
-            trafficInfo: usedTraffic === 'realtime' ? 'Y' : 'N',
-            departureAt: segmentDepartureTime.toISOString()
-          }
-        );
-
-        if (finalSeg && Array.isArray(finalSeg.features)) {
-          let finalTravelTime = 0;
-          for (const f of finalSeg.features) {
-            if (f?.properties?.totalTime) finalTravelTime += f.properties.totalTime;
-          }
-
-          const finalArrivalTime = new Date(segmentDepartureTime.getTime() + (finalTravelTime * 1000));
-          const finalDifference = targetDeliveryTime.getTime() - finalArrivalTime.getTime();
-
-          console.log(`최종 검증: 목표시간=${targetDeliveryTime.toLocaleString()}, 실제도착시간=${finalArrivalTime.toLocaleString()}, 차이=${Math.round(finalDifference / 60000)}분`);
-        }
-      }
-    }
-  } catch (error) {
-    console.warn(`반복 계산 중 Tmap API 오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}, 예상 시간 사용`);
-  }
-
-  return segmentDepartureTime;
-}
-
 // 최적화로 절약된 거리 계산
 function calculateDistanceSavings(
   start: { latitude: number; longitude: number },
@@ -2933,6 +2819,8 @@ async function buildRouteWithAnchors(
     const toAnchor = await move(cur, anchor.wp, now);
     if (toAnchor.mode === 'routes-fallback') {
       validationWarnings.push(`예측 불가로 일반 routes 사용: ${cur.address} → ${anchor.wp.address}`);
+    } else if (toAnchor.mode === 'atlan-fallback') {
+      validationWarnings.push(`Tmap 불가로 Atlan 백업 경로 사용: ${cur.address} → ${anchor.wp.address}`);
     }
     const arriveAt = new Date(now.getTime() + toAnchor.timeSec * 1000);
     const lateness = Math.max(0, Math.ceil((arriveAt.getTime() - anchor.due.getTime()) / 60000));
@@ -2955,6 +2843,8 @@ async function buildRouteWithAnchors(
     const toNext = await move(cur, next.wp, now);
     if (toNext.mode === 'routes-fallback') {
       validationWarnings.push(`예측 불가로 일반 routes 사용: ${cur.address} → ${next.wp.address}`);
+    } else if (toNext.mode === 'atlan-fallback') {
+      validationWarnings.push(`Tmap 불가로 Atlan 백업 경로 사용: ${cur.address} → ${next.wp.address}`);
     }
     ordered.push(next.wp);
     const dwellNext = dwellMinutes[next.idx + 1] ?? 10;

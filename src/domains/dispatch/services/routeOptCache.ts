@@ -33,13 +33,29 @@ export function normalizeRouteKey(payload: any): string {
     vehicleType: payload?.vehicleType ?? null,
     roadOption: payload?.roadOption ?? null,
     useRealtimeTraffic: Boolean(payload?.useRealtimeTraffic),
+    trafficAnchor: payload?.trafficAnchor ?? null,
     fastOrder: Boolean(payload?.fastOrder),
+    optimizeOrder: Boolean(payload?.optimizeOrder),
+    openStart: Boolean(payload?.openStart),
+    startCandidateCount: payload?.startCandidateCount ?? null,
+    returnToOrigin: Boolean(payload?.returnToOrigin),
+    useExplicitDestination: Boolean(payload?.useExplicitDestination),
+    finalDestinationAddress:
+      typeof payload?.finalDestinationAddress === 'string'
+        ? payload.finalDestinationAddress.trim()
+        : null,
     dwellMinutes: payload?.dwellMinutes ?? null,
+    originDwellMinutes: payload?.originDwellMinutes ?? null,
     // 시간제약도 키에 포함 — 같은 경로라도 시각 없이 계산된 캐시가
     // 시각 달린 재계산에 히트되면 시간제약 검증이 통째로 우회된다.
     deliveryTimes: payload?.deliveryTimes ?? null,
     earlyDeliveryForbiddenFlags: payload?.earlyDeliveryForbiddenFlags ?? null,
+    earlyToleranceMinutes: payload?.earlyToleranceMinutes ?? null,
     isNextDayFlags: payload?.isNextDayFlags ?? null,
+    stopRoles: payload?.stopRoles ?? null,
+    originRole: payload?.originRole ?? null,
+    loadKg: payload?.loadKg ?? null,
+    vehicleCapacityKg: payload?.vehicleCapacityKg ?? null,
     departureMin,
   });
 }

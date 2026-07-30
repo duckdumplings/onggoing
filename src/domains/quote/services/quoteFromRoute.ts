@@ -11,6 +11,7 @@ import {
   STOP_FEE,
   calculateHourlyFuelSurcharge,
   isHourlyRateSupported,
+  isPerJobRateSupported,
   perJobBasePrice,
   pickHourlyRate,
   roundUpTo30Minutes,
@@ -27,8 +28,8 @@ export interface RouteQuote {
   billMinutes: number; // roundUpTo30Minutes(totalBillMinutes)
   destinationCount: number; // max(0, waypointCount - 1)
   hourlyTotal: number;
-  perJobTotal: number;
-  recommendedPlan: 'hourly' | 'perJob'; // hourlyTotal <= perJobTotal ? hourly : perJob
+  perJobTotal: number | null;
+  recommendedPlan: 'hourly';
   totalPrice: number;
   hourlyBreakdown: {
     billMinutes: number;
@@ -37,7 +38,13 @@ export interface RouteQuote {
     fuelSurcharge: number;
     fuelSurchargeBreakdown: ReturnType<typeof calculateHourlyFuelSurcharge>;
   };
-  perJobBreakdown: { base: number; stopFee: number; effectiveStopsCount: number };
+  perJobBreakdown: {
+    available: boolean;
+    referenceOnly: true;
+    base: number | null;
+    stopFee: number | null;
+    effectiveStopsCount: number;
+  };
 }
 
 /**
@@ -72,13 +79,15 @@ export function computeRouteQuote(summary: any, waypointCount: number): RouteQuo
   const hourlyFuelSurcharge = fuelSurchargeBreakdown.total;
   const hourlyTotal = hourlyBase + hourlyFuelSurcharge;
 
-  const perJobBase = perJobBasePrice(vehicleKey, distanceKm);
   const effectiveStopsCount = Math.max(0, destinationCount - 1);
-  const perJobStopFee = effectiveStopsCount * STOP_FEE[vehicleKey];
-  const perJobTotal = perJobBase + perJobStopFee;
+  const perJobAvailable = isPerJobRateSupported(distanceKm);
+  const perJobBase = perJobAvailable ? perJobBasePrice(vehicleKey, distanceKm) : null;
+  const perJobStopFee = perJobAvailable ? effectiveStopsCount * STOP_FEE[vehicleKey] : null;
+  const perJobTotal =
+    perJobBase != null && perJobStopFee != null ? perJobBase + perJobStopFee : null;
 
-  const recommendedPlan: 'hourly' | 'perJob' = hourlyTotal <= perJobTotal ? 'hourly' : 'perJob';
-  const totalPrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
+  const recommendedPlan = 'hourly' as const;
+  const totalPrice = hourlyTotal;
 
   return {
     vehicleTypeLabel,
@@ -101,6 +110,8 @@ export function computeRouteQuote(summary: any, waypointCount: number): RouteQuo
       fuelSurchargeBreakdown,
     },
     perJobBreakdown: {
+      available: perJobAvailable,
+      referenceOnly: true,
       base: perJobBase,
       stopFee: perJobStopFee,
       effectiveStopsCount,

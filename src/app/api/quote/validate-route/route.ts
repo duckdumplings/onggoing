@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { validateRoute } from '@/domains/quote/services/routeValidator';
 import { ExtractedQuoteInfo } from '@/domains/quote/types/quoteExtraction';
+import { atKstTime, kstMinutesOfDay } from '@/domains/dispatch/utils/kstDateTime';
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,14 +98,12 @@ export async function POST(request: NextRequest) {
     // 출발 시간 설정
     let departureTime: Date | undefined;
     if (quoteInfo.departureTime) {
+      const now = new Date();
       const [hours, minutes] = quoteInfo.departureTime.split(':').map(Number);
-      departureTime = new Date();
-      departureTime.setHours(hours, minutes, 0, 0);
-      
-      // 과거 시간이면 다음 날로 설정
-      if (departureTime < new Date()) {
-        departureTime.setDate(departureTime.getDate() + 1);
-      }
+      const requestedMinutes = hours * 60 + minutes;
+      departureTime =
+        atKstTime(now, quoteInfo.departureTime, requestedMinutes <= kstMinutesOfDay(now) ? 1 : 0) ??
+        undefined;
     }
 
     // 차량 타입
@@ -123,6 +122,7 @@ export async function POST(request: NextRequest) {
         longitude: dest.longitude,
         deliveryTime: dest.deliveryTime,
         dwellMinutes: dest.dwellMinutes,
+        isNextDay: dest.isNextDay,
       })),
       tmapKey,
       vehicleType,
@@ -192,4 +192,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -5,6 +5,7 @@ import {
   atKstMinutesOfDay,
   kstMinutesOfDay,
 } from '@/domains/dispatch/utils/kstDateTime';
+import { fetchAtlanRouteFallback } from './atlanRouteFallback';
 
 export type Waypoint = { latitude: number; longitude: number; address: string };
 export type TrafficAnchorMode = 'today' | 'tomorrow' | 'auto';
@@ -181,7 +182,11 @@ export async function getTmapRoute(
   }
 }
 
-export type SegmentTravel = { timeSec: number; distM: number };
+export type SegmentTravel = {
+  timeSec: number;
+  distM: number;
+  mode?: 'prediction' | 'routes-fallback' | 'atlan-fallback';
+};
 
 export async function fetchSegmentTravel(
   cache: Map<string, SegmentTravel>,
@@ -192,13 +197,13 @@ export async function fetchSegmentTravel(
   vehicleTypeCode: string,
   trafficMode: 'realtime' | 'standard',
   trafficAnchor: TrafficAnchorMode,
-): Promise<{ timeSec: number; distM: number; mode?: 'prediction' | 'routes-fallback' }> {
+): Promise<SegmentTravel> {
   const anchored = anchorDepartureTime(departAt, trafficAnchor);
   const bucket = makeDepartureBucket(anchored, 5);
   const key = `${coordKey(from, to)}@${bucket}@${trafficMode}@${vehicleTypeCode}`;
   const hit = cache.get(key);
   if (hit) {
-    return { ...hit, mode: 'prediction' };
+    return hit;
   }
 
   // 1) Prediction 재시도
@@ -214,15 +219,15 @@ export async function fetchSegmentTravel(
         departureAt: anchored.toISOString()
       }
     ).catch(() => null);
-    if (result && Array.isArray(result.features)) {
+    if (result && Array.isArray(result.features) && result.features.length > 0) {
       let timeSec = 0, distM = 0;
       for (const f of result.features) {
         if (f?.properties?.totalTime) timeSec += f.properties.totalTime;
         if (f?.properties?.totalDistance) distM += f.properties.totalDistance;
       }
-      const val = { timeSec, distM };
+      const val = { timeSec, distM, mode: 'prediction' as const };
       cache.set(key, val);
-      return { ...val, mode: 'prediction' };
+      return val;
     }
     await sleep(backoffs[i]);
   }
@@ -239,19 +244,34 @@ export async function fetchSegmentTravel(
         departureAt: null
       }
     ).catch(() => null);
-    if (result && Array.isArray(result.features)) {
+    if (result && Array.isArray(result.features) && result.features.length > 0) {
       let timeSec = 0, distM = 0;
       for (const f of result.features) {
         if (f?.properties?.totalTime) timeSec += f.properties.totalTime;
         if (f?.properties?.totalDistance) distM += f.properties.totalDistance;
       }
-      const val = { timeSec, distM };
+      const val = { timeSec, distM, mode: 'routes-fallback' as const };
       cache.set(key, val);
-      return { ...val, mode: 'routes-fallback' };
+      return val;
     }
     await sleep(600 + i * 900);
   }
 
-  // 3) 모든 시도 실패 → 오류 throw (Haversine 폴백 사용하지 않음)
+  // 3) 공급사 백업 경로. 설정된 사내 Atlan proxy만 사용하며 거리 추정값은 만들지 않는다.
+  const backup = await fetchAtlanRouteFallback(from, to, {
+    departureAt: anchored.toISOString(),
+    vehicleTypeCode,
+  });
+  if (backup) {
+    const val = {
+      timeSec: backup.durationSeconds,
+      distM: backup.distanceMeters,
+      mode: 'atlan-fallback' as const,
+    };
+    cache.set(key, val);
+    return val;
+  }
+
+  // 4) 모든 시도 실패 → 오류 throw (Haversine 폴백 사용하지 않음)
   throw new Error(`TMAP_UNAVAILABLE: ${from.address} → ${to.address}`);
 }

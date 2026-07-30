@@ -18,6 +18,12 @@ import {
 } from '@/domains/dispatch/types/routePlan';
 import { getFuelPricePerLiter } from '@/domains/quote/services/fuelPriceProvider';
 import type { Vehicle } from '@/domains/quote/pricing';
+import type { ScenarioRateTables } from '@/domains/dispatch/services/scenarioPricing';
+import {
+  resolveFuelSurchargeTable,
+  resolveHourlyRateTable,
+  resolvePerJobRateTable,
+} from '@/domains/quote/services/rateTableService';
 
 /**
  * 다중 시나리오 병렬 견적 API.
@@ -50,6 +56,9 @@ function sanitizeStop(raw: unknown): RouteStop | null {
     weightKg: Number.isFinite(r.weightKg as number) ? Number(r.weightKg) : undefined,
     dwellMinutes: Number.isFinite(r.dwellMinutes as number) ? Number(r.dwellMinutes) : undefined,
     deliveryTime: r.deliveryTime ? String(r.deliveryTime) : undefined,
+    deliveryTimeType:
+      r.deliveryTimeType === 'appointment' ? 'appointment' : r.deliveryTimeType === 'deadline' ? 'deadline' : undefined,
+    isNextDay: typeof r.isNextDay === 'boolean' ? r.isNextDay : undefined,
     memo: r.memo ? String(r.memo) : undefined,
   };
 }
@@ -68,6 +77,7 @@ function sanitizeScenario(raw: unknown, index: number): QuoteScenario | null {
     stops,
     vehicleType,
     scheduleType,
+    includePerJobReference: Boolean(r.includePerJobReference),
     frequency: (r.frequency as QuoteScenario['frequency']) || undefined,
     routeMetrics: (r.routeMetrics as RouteMetrics) || undefined,
   };
@@ -151,7 +161,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const rawScenarios = Array.isArray(body?.scenarios) ? body.scenarios : [];
-    const scenarios = rawScenarios
+    const scenarios: QuoteScenario[] = rawScenarios
       .map((s: unknown, i: number) => sanitizeScenario(s, i))
       .filter((s: QuoteScenario | null): s is QuoteScenario => Boolean(s));
 
@@ -195,8 +205,45 @@ export async function POST(request: NextRequest) {
     // 경로 계산에 실패한 시나리오는 0-메트릭으로 최저가 오추천을 유발하므로 비교/추천에서 제외한다.
     // (실패 사실은 아래 routeErrors로 응답에 그대로 남긴다.)
     const failedLabels = new Set(routeErrors.map((e) => e.label));
-    const rankableScenarios = scenarios.filter((s: QuoteScenario) => !failedLabels.has(s.label));
-    const comparison = compareScenarios(rankableScenarios, metricsByLabel, sortKey);
+    const rankableScenarios: QuoteScenario[] = scenarios.filter(
+      (s: QuoteScenario) => !failedLabels.has(s.label),
+    );
+    const usedVehicleKeys: Vehicle[] = Array.from(
+      new Set<Vehicle>(
+        rankableScenarios.map((scenario: QuoteScenario) => toVehicleKey(scenario.vehicleType)),
+      ),
+    );
+    const starexPerJob = await resolvePerJobRateTable('starex');
+    const rateTablesByVehicle: Partial<Record<Vehicle, ScenarioRateTables>> = {};
+    await Promise.all(
+      usedVehicleKeys.map(async (vehicle) => {
+        const [hourly, fuelSurcharge, perJob] = await Promise.all([
+          resolveHourlyRateTable(vehicle),
+          resolveFuelSurchargeTable(vehicle),
+          vehicle === 'starex'
+            ? Promise.resolve(starexPerJob)
+            : resolvePerJobRateTable(vehicle),
+        ]);
+        rateTablesByVehicle[vehicle] = {
+          hourly: hourly.payload,
+          fuelSurcharge: fuelSurcharge.payload,
+          perJob: perJob.payload,
+          starexPerJob: starexPerJob.payload,
+        };
+      }),
+    );
+    const rateTablesByLabel = Object.fromEntries(
+      rankableScenarios.map((scenario: QuoteScenario) => [
+        scenario.label,
+        rateTablesByVehicle[toVehicleKey(scenario.vehicleType)],
+      ]),
+    ) as Record<string, ScenarioRateTables>;
+    const comparison = compareScenarios(
+      rankableScenarios,
+      metricsByLabel,
+      sortKey,
+      rateTablesByLabel,
+    );
 
     // 실비 투명성 카드가 한국 실시간 유가(오피넷)를 반영하도록 차종별 유가를 1회 조회(캐시)해 부착.
     const usedVehicles = Array.from(new Set(comparison.results.map((r) => toVehicleKey(r.vehicleType))));

@@ -24,7 +24,8 @@ const quote = {
       total: 4000,
     },
   },
-  perJob: { total: 53000 },
+  perJobReferenceRequested: false,
+  perJob: null,
 };
 
 describe('guardSingleQuoteResponse', () => {
@@ -34,6 +35,7 @@ describe('guardSingleQuoteResponse', () => {
     expect(guarded).toContain('57,000원');
     expect(guarded).toContain('유류할증');
     expect(guarded).toContain('초과 10.7km');
+    expect(guarded).not.toContain('단건');
   });
 
   it('금액은 맞지만 유류할증 설명이 빠지면 산식 한 줄을 보강한다', () => {
@@ -41,5 +43,25 @@ describe('guardSingleQuoteResponse', () => {
     expect(guarded).toContain('운임표 유류할증 확인');
     expect(guarded).toContain('10km 구간 2회');
     expect(guarded).toContain('4,000원');
+  });
+
+  it('단건을 요청하지 않았는데 본문이 언급하면 시간당 표준 요약으로 교체한다', () => {
+    const guarded = guardSingleQuoteResponse(
+      '시간당 57,000원, 단건 53,000원입니다.',
+      quote,
+    );
+    expect(guarded).toContain('시간당 운임');
+    expect(guarded).not.toContain('단건');
+  });
+
+  it('단건 비교를 요청한 경우에만 참고값으로 표시한다', () => {
+    const guarded = guardSingleQuoteResponse('', {
+      ...quote,
+      perJobReferenceRequested: true,
+      perJob: { available: true, referenceOnly: true, total: 53000 },
+    });
+    expect(guarded).toContain('단건 참고 운임');
+    expect(guarded).toContain('53,000원');
+    expect(guarded).toContain('공식 대표 견적 아님');
   });
 });

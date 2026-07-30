@@ -75,16 +75,16 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 경로 | 설명 | LOC | 위험도 |
 |---|---|---|---|
-| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap) | **3022** | **매우 높음** |
+| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap + Atlan proxy 백업) | **2912** | **매우 높음** |
 | `multi-driver-optimization/route.ts` | 다중 기사 배차 | 281 | 높음 |
-| `dispatch/scenario-quote/route.ts` | 다중 시나리오(3/5/10지점) 병렬 견적·비교 | — | 중간 |
+| `dispatch/scenario-quote/route.ts` | 다중 시나리오(3/5/10지점) 병렬 견적·비교 | 278 | 중간 |
 | `dispatch/scenario-groups/route.ts` | 시나리오 비교 결과 저장/조회 | — | 낮음 |
 | `dispatch/customers/route.ts` | 고객사(화주) 마스터 조회/생성 | — | 낮음 |
-| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 추론 기반) 메인 핸들러 | ~170 | 높음 |
+| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 추론 기반) 메인 핸들러 | 670 | 높음 |
 | `quote/extract-quote-info/route.ts` | 견적 정보 추출 | — | 중간 |
 | `quote/parse-document/route.ts` | 견적 의뢰 문서 파싱 | — | 중간 |
 | `quote/document-upload/route.ts` | 견적 문서 업로드 | — | 중간 |
-| `quote/validate-route/route.ts` | 경로 검증 | — | 중간 |
+| `quote/validate-route/route.ts` | 경로 검증 | 194 | 중간 |
 | `quote/generate-from-text/route.ts` | 텍스트 기반 견적 생성 | — | 중간 |
 | `quote/generate-risk-report/route.ts` | 리스크 리포트 생성 | — | 중간 |
 | `quote/compare-quotes/route.ts` | 견적 비교 | — | 낮음 |
@@ -92,7 +92,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `quote/chat-feedback/route.ts` | AI Chat 피드백 수집 | — | 낮음 |
 | `quote/reviews/route.ts` | 견적 검토 이력 | — | 낮음 |
 | `quote/evals/route.ts` | AI Chat 평가 실행 | — | 낮음 |
-| `quote-calculation/route.ts` | 단순 견적 계산 (legacy?) | — | 낮음 |
+| `quote-calculation/route.ts` | 시행일별 운임표 기반 결정론적 견적 계산 | 182 | 중간 |
 | `poi-search/route.ts` | Tmap POI 검색 프록시 | — | 중간 |
 | `tmap-proxy/route.ts` | Tmap 일반 프록시 | — | 중간 |
 | `bulk-analyze/route.ts` | 일괄 분석 | — | 낮음 |
@@ -105,11 +105,12 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 파일 | LOC | 우선 분리 대상 |
 |---|---|---|
-| `src/app/api/route-optimization/route.ts` | 3022 | 비즈니스 로직 → `domains/dispatch/services/` |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1541 | 스텝/메시지 컴포넌트 분리 |
+| `src/app/api/route-optimization/route.ts` | 2912 | 비즈니스 로직 → `domains/dispatch/services/` |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1552 | 스텝/메시지 컴포넌트 분리 |
 | `src/app/tmap-embed/route.ts` | 1504 | HTML 템플릿 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
-| `src/components/map/TmapMainMap.tsx` | 1324 | 지도 초기화/마커/폴리라인 hook 분리 |
+| `src/components/map/TmapMainMap.tsx` | 1297 | 지도 초기화/마커/폴리라인 hook 분리 |
+| `src/app/api/quote/agent-chat/route.ts` | 670 | 프롬프트/스트림 수집/응답 조립 분리 |
 
 ## Supabase Edge Functions
 
@@ -123,7 +124,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## DB 마이그레이션 (`supabase/migrations/`)
 
-19개 마이그레이션. 주요 테이블:
+25개 마이그레이션. 주요 테이블:
 
 - `quote_documents` — 견적 의뢰 원본 문서
 - `quote_extractions` — 추출된 견적 정보
@@ -139,6 +140,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 ## 외부 API 환경 변수
 
 - `NEXT_PUBLIC_TMAP_API_KEY`, `TMAP_API_KEY` — Tmap 다중경유지/POI/지오코딩
+- `ATLAN_ROUTE_PROXY_URL`, `ATLAN_ROUTE_PROXY_KEY` — Tmap 전 구간 실패 시 호출하는 사내 Atlan 경로 proxy(미설정 시 백업 비활성)
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_APP_URL`
 - LLM 키 (`agent-chat` 에이전트 사용): `ANTHROPIC_API_KEY`(기본) 또는 OpenAI 키(폴백) — `.env.local` 확인. 모델은 `QUOTE_AGENT_MODEL`로 지정, provider 추상화는 `src/libs/llm/provider.ts`
@@ -227,3 +229,5 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-05-29 | Phase 2 디자인 토큰 도입 | OKLCH 시맨틱 토큰, 다크모드, GlassCard tier 시스템 |
 | 2026-05-29 | dispatch 도메인 부분 구현 | 시나리오 비교/정기 빈도/역할 모델 + 신규 API 3종 + customers/recurring/scenario 마이그레이션 |
 | 2026-05-29 | 견적 챗 에이전트 전환 + 구 파이프라인 제거 | `quote/agent-chat`(tool-calling) 신설, `quote/ai-chat-generate`(2661줄 규칙 파이프라인) 삭제, 지오코더 fullAddrGeo 폴백, eval:agent 6/6 |
+| 2026-07-30 | 견적·경로 안정화 | 시간당 대표 견적 고정, 유류/단건 DB 운임표, Atlan proxy 백업, KST 시간 처리 |
+| 2026-07-30 | 경로 타임라인 기준시각 정합화 | 고정 출발과 배송 마감을 분리하고 route LOC를 2912로 갱신 |

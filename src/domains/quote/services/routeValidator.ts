@@ -1,4 +1,10 @@
 // 경로 검증 및 리스크 분석 서비스
+import { resolveStopAddress } from '@/domains/dispatch/services/stopGeocoder';
+import { getAtlanRouteFeatureCollection } from '@/domains/dispatch/services/atlanRouteFallback';
+import {
+  atKstTime,
+  formatKstPredictionTimestamp,
+} from '@/domains/dispatch/utils/kstDateTime';
 
 export interface RouteSegment {
   from: { latitude: number; longitude: number; address: string };
@@ -46,14 +52,7 @@ async function getTmapRouteSegment(
     if (departureAt) {
       // 타임머신 API 사용
       url = 'https://apis.openapi.sk.com/tmap/routes/prediction?version=1';
-      const departureDate = new Date(departureAt);
-      const year = departureDate.getFullYear();
-      const month = String(departureDate.getMonth() + 1).padStart(2, '0');
-      const day = String(departureDate.getDate()).padStart(2, '0');
-      const hours = String(departureDate.getHours()).padStart(2, '0');
-      const minutes = String(departureDate.getMinutes()).padStart(2, '0');
-      const seconds = String(departureDate.getSeconds()).padStart(2, '0');
-      const predictionTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+0900`;
+      const predictionTime = formatKstPredictionTimestamp(departureAt);
 
       body = {
         routesInfo: {
@@ -125,7 +124,20 @@ async function getTmapRouteSegment(
       time: totalTime,
     };
   } catch (error) {
-    console.error('Tmap API 호출 실패:', error);
+    const fallback = await getAtlanRouteFeatureCollection(from, to, {
+      departureAt: departureAt?.toISOString() ?? null,
+      vehicleTypeCode,
+    });
+    if (fallback) {
+      const feature = fallback.features[0] as {
+        properties?: { totalDistance?: number; totalTime?: number };
+      };
+      return {
+        distance: Number(feature.properties?.totalDistance ?? 0),
+        time: Number(feature.properties?.totalTime ?? 0),
+      };
+    }
+    console.error('Tmap/Atlan 경로 API 호출 실패:', error);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -133,45 +145,16 @@ async function getTmapRouteSegment(
 }
 
 /**
- * 주소를 좌표로 변환 (간단한 버전, Tmap geocoding 사용)
+ * 주소/POI를 공용 지오코더로 변환한다.
  */
 async function geocodeAddress(address: string, tmapKey: string): Promise<{
   latitude: number;
   longitude: number;
   address: string;
 }> {
-  const url = new URL('https://apis.openapi.sk.com/tmap/geo/geocoding');
-  url.searchParams.set('version', '1');
-  url.searchParams.set('searchKeyword', address);
-  url.searchParams.set('searchType', 'all');
-  url.searchParams.set('searchtypCd', 'A');
-  url.searchParams.set('radius', '0');
-  url.searchParams.set('page', '1');
-  url.searchParams.set('count', '1');
-  url.searchParams.set('reqCoordType', 'WGS84GEO');
-  url.searchParams.set('resCoordType', 'WGS84GEO');
-
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { appKey: tmapKey, 'Content-Type': 'application/json' },
-  });
-
-  if (!res.ok) {
-    throw new Error('Tmap geocoding failed');
-  }
-
-  const data = await res.json();
-  const poi = data?.searchPoiInfo?.pois?.poi?.[0];
-
-  if (!poi) {
-    throw new Error('주소를 찾을 수 없습니다');
-  }
-
-  return {
-    latitude: parseFloat(poi.frontLat),
-    longitude: parseFloat(poi.frontLon),
-    address: poi.name || address,
-  };
+  const hit = await resolveStopAddress(address, tmapKey);
+  if (!hit) throw new Error('주소를 찾을 수 없습니다');
+  return hit;
 }
 
 /**
@@ -185,6 +168,7 @@ export async function validateRoute(
     longitude?: number;
     deliveryTime?: string; // HH:mm
     dwellMinutes?: number;
+    isNextDay?: boolean;
   }>,
   tmapKey: string,
   vehicleType: '레이' | '스타렉스' = '레이',
@@ -253,14 +237,9 @@ export async function validateRoute(
       // 배송 목표 시간 검증
       let targetDeliveryTime: Date | undefined;
       if (dest.deliveryTime) {
-        const [hours, minutes] = dest.deliveryTime.split(':').map(Number);
-        targetDeliveryTime = new Date(currentTime);
-        targetDeliveryTime.setHours(hours, minutes, 0, 0);
-        
-        // 목표 시간이 출발 시간보다 이전이면 다음 날로 설정
-        if (targetDeliveryTime < currentTime) {
-          targetDeliveryTime.setDate(targetDeliveryTime.getDate() + 1);
-        }
+        targetDeliveryTime =
+          atKstTime(departureTime ?? currentTime, dest.deliveryTime, dest.isNextDay ? 1 : 0) ??
+          undefined;
       }
 
       const estimatedArrival = new Date(currentTime.getTime() + routeInfo.time * 1000);
@@ -285,7 +264,7 @@ export async function validateRoute(
           risks.push({
             type: 'TIME_CRITICAL',
             severity: 'medium',
-            message: `${dest.address} 배송 시간이 촉박합니다 (${Math.round(delayMinutes)}분 여유)`,
+            message: `${dest.address} 배송 시간 목표를 ${Math.round(delayMinutes)}분 초과할 가능성이 있습니다`,
             details: {
               destinationIndex: i,
               targetTime: targetDeliveryTime.toISOString(),
@@ -364,4 +343,3 @@ function calculateRiskScore(risks: RiskItem[], totalTime: number, totalDwellTime
   // 점수 제한 (최대 100)
   return Math.min(100, score);
 }
-

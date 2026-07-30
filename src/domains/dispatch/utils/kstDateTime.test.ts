@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   atKstMinutesOfDay,
   atKstTime,
+  formatKstDate,
+  formatKstDateTimeLocal,
   formatKstHHmm,
+  formatKstPredictionTimestamp,
   kstMinutesOfDay,
 } from '@/domains/dispatch/utils/kstDateTime';
 
@@ -26,5 +29,12 @@ describe('KST date-time helpers', () => {
     const instant = new Date('2026-07-31T01:20:00.000Z'); // 10:20 KST
     expect(kstMinutesOfDay(instant)).toBe(620);
     expect(atKstMinutesOfDay(instant, 11 * 60 + 30).toISOString()).toBe('2026-07-31T02:30:00.000Z');
+  });
+
+  it('Tmap 예측 시각과 datetime-local 값을 KST로 고정한다', () => {
+    const instant = new Date('2026-07-31T01:20:45.000Z'); // 10:20:45 KST
+    expect(formatKstPredictionTimestamp(instant)).toBe('2026-07-31T10:20:45+0900');
+    expect(formatKstDateTimeLocal(instant)).toBe('2026-07-31T10:20');
+    expect(formatKstDate(instant)).toBe('2026-07-31');
   });
 });

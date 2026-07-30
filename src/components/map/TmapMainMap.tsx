@@ -11,6 +11,7 @@ import {
   perJobBasePrice,
   perJobRegularPrice,
   isHourlyRateSupported,
+  isPerJobRateSupported,
   pickHourlyRate,
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
@@ -375,36 +376,14 @@ export default function TmapMainMap() {
     const hourlyFuelSurcharge = fuelSurchargeHourlyCorrect(vehicleKey, distanceKm, billMinutes);
     const hourlyTotal = hourlyBase + hourlyFuelSurcharge;
 
-    const perJobBase = perJobBasePrice(vehicleKey, distanceKm);
+    const perJobAvailable = isPerJobRateSupported(distanceKm);
+    const perJobBase = perJobAvailable ? perJobBasePrice(vehicleKey, distanceKm) : null;
     const effectiveStopsCount = Math.max(0, destinationCount - 1);
-    const perJobStopFee = effectiveStopsCount * STOP_FEE[vehicleKey];
-    const perJobTotal = perJobBase + perJobStopFee;
-    const recommendedPlan: 'hourly' | 'perJob' = hourlyTotal <= perJobTotal ? 'hourly' : 'perJob';
-    const totalPrice = recommendedPlan === 'hourly' ? hourlyTotal : perJobTotal;
-    const calculatePricing = (distance: number, billMin: number, stops: number) => {
-      const roundedBillMin = roundUpTo30Minutes(Math.max(30, billMin));
-      const calcHourlyRate = pickHourlyRate(vehicleKey, roundedBillMin);
-      const calcHourlyBase = Math.round((roundedBillMin / 60) * calcHourlyRate);
-      const calcHourlyFuel = fuelSurchargeHourlyCorrect(vehicleKey, distance, roundedBillMin);
-      const calcHourlyTotal = calcHourlyBase + calcHourlyFuel;
-
-      const calcPerJobBase = perJobBasePrice(vehicleKey, distance);
-      const calcEffectiveStops = Math.max(0, stops - 1);
-      const calcPerJobStopFee = calcEffectiveStops * STOP_FEE[vehicleKey];
-      const calcPerJobTotal = calcPerJobBase + calcPerJobStopFee;
-      const calcRecommended: 'hourly' | 'perJob' = calcHourlyTotal <= calcPerJobTotal ? 'hourly' : 'perJob';
-      const calcTotal = calcRecommended === 'hourly' ? calcHourlyTotal : calcPerJobTotal;
-
-      return {
-        hourlyTotal: calcHourlyTotal,
-        perJobTotal: calcPerJobTotal,
-        recommendedPlan: calcRecommended,
-        totalPrice: calcTotal,
-      };
-    };
-
-    const basePricing = calculatePricing(distanceKm, totalBillMinutes, destinationCount);
-
+    const perJobStopFee = perJobAvailable ? effectiveStopsCount * STOP_FEE[vehicleKey] : null;
+    const perJobTotal =
+      perJobBase != null && perJobStopFee != null ? perJobBase + perJobStopFee : null;
+    const recommendedPlan = 'hourly' as const;
+    const totalPrice = hourlyTotal;
     // 레이/스타렉스, 정기/비정기 4가지 조합 모두 계산
     const calcPricingForScenario = (veh: 'ray' | 'starex', schedule: 'regular' | 'ad-hoc') => {
       const roundedBillMin = roundUpTo30Minutes(Math.max(30, interactiveBillMinutes));
@@ -420,23 +399,25 @@ export default function TmapMainMap() {
       const calcHourlyTotal = calcHourlyBase + calcHourlyFuel;
 
       // 단건
-      let calcPerJobBase = 0;
-      if (schedule === 'regular') {
+      const calcPerJobAvailable = isPerJobRateSupported(interactiveDistanceKm);
+      let calcPerJobBase: number | null = null;
+      if (calcPerJobAvailable && schedule === 'regular') {
         calcPerJobBase = perJobRegularPrice(veh, interactiveDistanceKm);
-      } else {
+      } else if (calcPerJobAvailable) {
         calcPerJobBase = perJobBasePrice(veh, interactiveDistanceKm);
       }
       const calcEffectiveStops = Math.max(0, destinationCount - 1);
-      const calcPerJobStopFee = calcEffectiveStops * STOP_FEE[veh];
-      const calcPerJobTotal = calcPerJobBase + calcPerJobStopFee;
-      
-      const calcRecommended: 'hourly' | 'perJob' = calcHourlyTotal <= calcPerJobTotal ? 'hourly' : 'perJob';
+      const calcPerJobStopFee = calcPerJobAvailable ? calcEffectiveStops * STOP_FEE[veh] : null;
+      const calcPerJobTotal =
+        calcPerJobBase != null && calcPerJobStopFee != null
+          ? calcPerJobBase + calcPerJobStopFee
+          : null;
       
       return {
         hourlyTotal: calcHourlyTotal,
         perJobTotal: calcPerJobTotal,
-        recommendedPlan: calcRecommended,
-        totalPrice: calcRecommended === 'hourly' ? calcHourlyTotal : calcPerJobTotal,
+        recommendedPlan: 'hourly' as const,
+        totalPrice: calcHourlyTotal,
         hourlyBreakdown: { billMinutes: roundedBillMin, hourlyRate: calcHourlyRate, base: calcHourlyBase, fuelSurcharge: calcHourlyFuel },
         perJobBreakdown: { base: calcPerJobBase, stopFee: calcPerJobStopFee, effectiveStopsCount: calcEffectiveStops }
       };
@@ -456,10 +437,7 @@ export default function TmapMainMap() {
     // 현재 선택된 차량/스케줄 기준 인터랙티브 결과
     const interactivePricing = scenarios[vehicleKey][scheduleType];
     
-    const savings = Math.abs(interactivePricing.hourlyTotal - interactivePricing.perJobTotal);
-    const aiInsight = interactivePricing.recommendedPlan === 'hourly'
-      ? `시간당 요금제가 ${formatWon(savings)} 더 유리합니다! 경유지 대기 시간이 길거나 거리가 짧을수록 시간당 요금제가 추천됩니다.`
-      : `단건 요금제가 ${formatWon(savings)} 더 유리합니다! 경유지가 적고 운행 거리가 길수록 단건 요금제가 경제적입니다.`;
+    const aiInsight = '공식 견적은 옹고잉 시간당 운임표와 과금시간 기반 유류할증을 적용합니다.';
 
     const waypointRows = (((routeData as any)?.waypoints as Array<any>) || []).map((wp: any, idx: number) => ({
       order: idx + 1,
@@ -629,7 +607,7 @@ export default function TmapMainMap() {
                 <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">예상 견적</span>
                 <span className="text-right">
                   <span className="text-base font-black text-primary">{formatWon(routeQuoteDetail.totalPrice)}</span>
-                  <span className="ml-1 text-[10px] font-bold text-muted-foreground">{routeQuoteDetail.recommendedPlan === 'hourly' ? '시간당' : '단건'}</span>
+                  <span className="ml-1 text-[10px] font-bold text-muted-foreground">시간당</span>
                 </span>
               </div>
             )}
@@ -1031,7 +1009,7 @@ export default function TmapMainMap() {
                   <div className="rounded-lg border border-border bg-card p-4 mb-3 shadow-sm">
                     <h4 className="font-bold text-foreground flex items-center gap-2 mb-3">
                       <BarChart3 className="w-4 h-4 text-indigo-500" />
-                      전체 운임 시나리오 비교
+                      시간당 운임 시나리오
                     </h4>
                     
                     <div className="overflow-x-auto">
@@ -1039,30 +1017,25 @@ export default function TmapMainMap() {
                         <thead>
                           <tr>
                             <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground rounded-tl-lg">차량 / 스케줄</th>
-                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground">시간당 요금제</th>
-                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground rounded-tr-lg">단건 요금제</th>
+                            <th className="py-2 px-3 bg-muted border-b border-border text-[11px] font-bold text-muted-foreground rounded-tr-lg">시간당 요금제</th>
                           </tr>
                         </thead>
                         <tbody className="text-xs">
                           <tr className="border-b border-border hover:bg-slate-50/50">
                             <td className="py-2.5 px-3 font-semibold text-foreground">레이 <span className="text-muted-foreground font-medium text-[10px] ml-1">비정기</span></td>
                             <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.['ad-hoc']?.perJobTotal || 0)}</td>
                           </tr>
                           <tr className="border-b border-border hover:bg-slate-50/50">
                             <td className="py-2.5 px-3 font-semibold text-foreground">레이 <span className="text-muted-foreground font-medium text-[10px] ml-1">정기</span></td>
                             <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.ray?.regular?.perJobTotal || 0)}</td>
                           </tr>
                           <tr className="border-b border-border hover:bg-slate-50/50">
                             <td className="py-2.5 px-3 font-semibold text-foreground">스타렉스 <span className="text-muted-foreground font-medium text-[10px] ml-1">비정기</span></td>
                             <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.['ad-hoc']?.perJobTotal || 0)}</td>
                           </tr>
                           <tr className="hover:bg-slate-50/50">
                             <td className="py-2.5 px-3 font-semibold text-foreground rounded-bl-lg">스타렉스 <span className="text-muted-foreground font-medium text-[10px] ml-1">정기</span></td>
                             <td className="py-2.5 px-3 font-bold text-foreground">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.hourlyTotal || 0)}</td>
-                            <td className="py-2.5 px-3 font-bold text-foreground rounded-br-lg">{formatWon(routeQuoteDetail.scenarios.starex?.regular?.perJobTotal || 0)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1129,7 +1102,7 @@ export default function TmapMainMap() {
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-black text-indigo-700">{formatWon(routeQuoteDetail.interactiveScenario.pricing.totalPrice)}</div>
-                        <div className="text-[10px] font-bold text-muted-foreground">추천: {routeQuoteDetail.interactiveScenario.pricing.recommendedPlan === 'hourly' ? '시간당' : '단건'}</div>
+                        <div className="text-[10px] font-bold text-muted-foreground">기준: 시간당 운임표</div>
                       </div>
                     </div>
                   </div>

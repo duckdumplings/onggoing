@@ -149,7 +149,7 @@ function DeadlineBadge({ c }: { c: CaseBoardCaseResult }) {
 
 function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRoute: (rr: unknown) => void }) {
   const [open, setOpen] = useState(false);
-  const planLabel = c.recommendedPlan === 'perJob' ? '단건' : '시간당';
+  const planLabel = '시간당';
 
   if (c.error) {
     return (
@@ -293,8 +293,14 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
           )}
           <div className="text-muted-foreground">시간당</div>
           <div className="text-right tabular-nums text-foreground">{won(c.hourlyTotal)}</div>
-          <div className="text-muted-foreground">단건</div>
-          <div className="text-right tabular-nums text-foreground">{won(c.perJobTotal)}</div>
+          {c.includePerJobReference && (
+            <>
+              <div className="text-muted-foreground">단건 참고</div>
+              <div className="text-right tabular-nums text-foreground">
+                {c.perJobTotal == null ? '운임표 범위 밖' : won(c.perJobTotal)}
+              </div>
+            </>
+          )}
           {c.monthBasisLabel && (
             <>
               <div className="text-muted-foreground">월 기준</div>

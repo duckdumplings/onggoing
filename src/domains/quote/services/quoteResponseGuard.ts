@@ -52,26 +52,31 @@ function canonicalSingleQuote(quote: any): string {
   const hourly = quote?.hourly ?? quote?.plans?.hourly ?? {};
   const perJob = quote?.perJob ?? quote?.plans?.perJob ?? {};
   const basis = quote?.basis ?? {};
-  const recommendedPlan = quote?.recommendedPlan === 'perJob' ? 'perJob' : 'hourly';
-  const representative = Number(
-    quote?.oneTimePrice ?? (recommendedPlan === 'hourly' ? hourly?.total : perJob?.total) ?? 0,
-  );
+  const includePerJobReference = Boolean(quote?.perJobReferenceRequested);
+  const representative = Number(quote?.oneTimePrice ?? hourly?.total ?? 0);
   const rawMinutes = Number(
     basis.rawTotalMinutes ??
       Number(basis.driveMinutes ?? 0) +
         Number(basis.dwellTotalMinutes ?? 0) +
         Number(basis.waitTotalMinutes ?? 0),
   );
-  const planLabel = recommendedPlan === 'hourly' ? '시간당' : '단건';
-
-  return [
-    `운임표 기준 추천 견적은 ${won(representative)} (${planLabel})입니다.`,
+  const lines = [
+    `운임표 기준 견적은 ${won(representative)} (시간당 운임)입니다.`,
     '',
     `- 시간당 요금제: ${won(hourly?.total)} — 과금 ${Number(hourly?.billMinutes ?? 0)}분 × ${won(hourly?.ratePerHour)}/시간`,
     fuelSurchargeLine(quote),
-    `- 단건 요금제: ${won(perJob?.total)}`,
     `- 운행 기준: ${Number(basis.distanceKm ?? 0).toFixed(1)}km · 실제 구속 ${rawMinutes}분 (주행 ${Number(basis.driveMinutes ?? 0)}분 + 체류 ${Number(basis.dwellTotalMinutes ?? 0)}분 + 예약 대기 ${Number(basis.waitTotalMinutes ?? 0)}분)`,
-  ].join('\n');
+  ];
+  if (includePerJobReference) {
+    lines.splice(
+      4,
+      0,
+      perJob?.available === false
+        ? `- 단건 참고 운임: ${String(perJob?.unavailableReason || '운임표 범위 밖')}`
+        : `- 단건 참고 운임: ${won(perJob?.total)} (공식 대표 견적 아님)`,
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -79,10 +84,14 @@ function canonicalSingleQuote(quote: any): string {
  * 하나라도 도구 결과에 없는 금액이면 본문 전체를 안전한 표준 요약으로 교체한다.
  */
 export function guardSingleQuoteResponse(text: string, quote?: any): string {
-  if (!quote?.hourly || !quote?.perJob) return text;
+  if (!quote?.hourly) return text;
   const allowedAmounts = collectNumericValues(quote);
   const unsupportedAmount = extractWonAmounts(text).some((amount) => !allowedAmounts.has(amount));
-  if (!text.trim() || unsupportedAmount) return canonicalSingleQuote(quote);
+  const unauthorizedPerJob =
+    !quote?.perJobReferenceRequested && /(단건|per[\s-]?job)/i.test(text);
+  if (!text.trim() || unsupportedAmount || unauthorizedPerJob) {
+    return canonicalSingleQuote(quote);
+  }
   if (!text.includes('유류할증')) {
     return `${text.trim()}\n\n운임표 유류할증 확인:\n${fuelSurchargeLine(quote)}`;
   }

@@ -80,7 +80,7 @@ export default function ScenarioComparisonCard({
       </div>
       {rationale && <div className="mb-1 text-xs text-muted-foreground">{rationale}</div>}
       <div className="mb-3 text-[11px] text-muted-foreground">
-        1회 운임은 옹고잉 유리(시간당/단건 중 높은) 요금제 기준이며, 괄호로 대안 요금제도 함께 표기합니다.
+        1회·연 운임은 시간당 요금제 기준입니다. 단건은 요청된 시나리오에서만 참고값으로 표시합니다.
       </div>
 
       <div className="overflow-x-auto">
@@ -129,8 +129,15 @@ export default function ScenarioComparisonCard({
                     <td className="py-2 px-3 text-right text-foreground/80">
                       {won(r.oneTimePrice)}
                       <div className="text-[11px] font-normal text-muted-foreground">
-                        {r.recommendedPlan === 'hourly' ? '시간당' : '단건'} · 대안{' '}
-                        {won(r.recommendedPlan === 'hourly' ? r.plans.perJob.total : r.plans.hourly.total)}
+                        시간당
+                        {r.includePerJobReference && (
+                          <>
+                            {' · 단건 참고 '}
+                            {r.plans.perJob.total == null
+                              ? '운임표 범위 밖'
+                              : won(r.plans.perJob.total)}
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="py-2 pl-3 text-right font-semibold text-foreground">

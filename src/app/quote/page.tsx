@@ -375,11 +375,11 @@ export default function SimpleQuotePage() {
           {quote && (
             <div className="mb-2 rounded-md border border-border bg-background p-2.5 text-xs">
               <div className="flex items-baseline justify-between">
-                <span className="text-muted-foreground">추천 ({quote.recommendedPlan === 'hourly' ? '시간당' : '단건'})</span>
+                <span className="text-muted-foreground">공식 견적 (시간당)</span>
                 <span className="text-lg font-semibold text-foreground">{won(quote.totalPrice)}</span>
               </div>
               <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-                <span>시간당 {won(quote.hourlyTotal)} · 단건 {won(quote.perJobTotal)}</span>
+                <span>옹고잉 시간당 운임표 기준</span>
                 <button type="button" onClick={() => setShowBreakdown((v) => !v)} className="underline-offset-2 hover:underline">
                   {showBreakdown ? '접기' : '상세'}
                 </button>
@@ -392,8 +392,7 @@ export default function SimpleQuotePage() {
                   <p className="font-medium text-foreground">시간당 요금제</p>
                   <p>· {won(quote.hourlyBreakdown.hourlyRate)}/시간 × {(quote.hourlyBreakdown.billMinutes / 60).toFixed(1)}시간 = {won(quote.hourlyBreakdown.base)}</p>
                   <p>· 유류할증 {won(quote.hourlyBreakdown.fuelSurcharge)}</p>
-                  <p className="mt-1 font-medium text-foreground">단건 요금제</p>
-                  <p>· 기본 {won(quote.perJobBreakdown.base)} + 경유지 {won(quote.perJobBreakdown.stopFee)} ({quote.perJobBreakdown.effectiveStopsCount}곳)</p>
+                  <p className="mt-1 text-muted-foreground">단건 운임은 요청 시 견적 챗에서 참고값으로 확인할 수 있습니다.</p>
                 </div>
               )}
             </div>

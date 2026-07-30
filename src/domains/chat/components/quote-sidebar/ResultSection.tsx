@@ -113,11 +113,11 @@ export default function ResultSection({
               </button>
               <button
                 type="button"
-                onClick={() => onSend('시간당 요금제와 단건 요금제를 모두 보여줘')}
+                onClick={() => onSend('시간당 공식 견적과 단건 참고 운임을 함께 보여줘')}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors"
               >
                 <Calculator className="w-3.5 h-3.5" />
-                다른 요금제로 보기
+                단건 참고 보기
               </button>
             </>
           )}

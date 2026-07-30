@@ -21,6 +21,14 @@ export interface AgentEvalExpectation {
   shouldNotAskUser?: boolean;
   /** 명확화 질문이 와야 하는가(정보가 정말 부족한 케이스). */
   shouldAskUser?: boolean;
+  /** 공식 대표 견적 요금제. 현재 정책은 hourly만 허용한다. */
+  recommendedPlan?: 'hourly';
+  /** 단건 참고 요청 여부가 정확히 반영돼야 하는가. */
+  perJobReferenceRequested?: boolean;
+  /** 허용 가능한 현장 대기 상한(분). */
+  maxWaitMinutes?: number;
+  /** 응답 어디에도 등장하면 안 되는 잘못된 원화 금액. */
+  forbiddenWonAmounts?: number[];
 }
 
 export interface AgentEvalCase {
@@ -86,5 +94,28 @@ export const AGENT_EVAL_CASES: AgentEvalCase[] = [
     id: 'weekly-recurring',
     input: '서울시청에서 문정역까지 주 2회 정기 배송 레이 견적',
     expected: { shouldHaveQuote: true, shouldBeRecurring: true, shouldNotAskUser: true },
+  },
+  {
+    id: 'neowiz-deadline-no-phantom-wait',
+    input:
+      '옹고잉운임표 기준으로 견적짜줘. 레이 정기 기준. 상차지는 금천구 가산디지털1로 70 고정. 네오위즈 경기 성남시 분당구 대왕판교로645번길 14, 가방 1개, 10:00 상차 → 11:30 배송 마감.',
+    expected: {
+      shouldHaveQuote: true,
+      shouldNotAskUser: true,
+      recommendedPlan: 'hourly',
+      perJobReferenceRequested: false,
+      maxWaitMinutes: 0,
+      forbiddenWonAmounts: [231000, 220500],
+    },
+  },
+  {
+    id: 'explicit-per-job-reference',
+    input: '강남역에서 판교역까지 레이 시간당 견적을 내고 단건 운임도 참고로 비교해줘',
+    expected: {
+      shouldHaveQuote: true,
+      shouldNotAskUser: true,
+      recommendedPlan: 'hourly',
+      perJobReferenceRequested: true,
+    },
   },
 ];

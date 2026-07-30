@@ -55,6 +55,8 @@ export const STOP_FEE: Record<Vehicle, number> = {
   starex: 7000,
 };
 
+export const PER_JOB_REGULAR_FACTOR = 1.2;
+
 export const PER_JOB_TABLE: Array<{ fromKm: number; toKm: number; ray: number; starex: number }> = [
   { fromKm: 0, toKm: 5, ray: 24000, starex: 31000 },
   { fromKm: 5, toKm: 10, ray: 27000, starex: 34000 },
@@ -72,6 +74,14 @@ export const PER_JOB_TABLE: Array<{ fromKm: number; toKm: number; ray: number; s
 ];
 
 // PER_JOB_OVERAGE_PER_KM 제거 - 1,000원 단위 테이블 기반 계산으로 변경
+
+export function maxPerJobKm(): number {
+  return PER_JOB_TABLE[PER_JOB_TABLE.length - 1].toKm;
+}
+
+export function isPerJobRateSupported(km: number): boolean {
+  return Number.isFinite(km) && km >= 0 && km <= maxPerJobKm();
+}
 
 export function maxHourlyBillMinutes(vehicle: Vehicle): number {
   const table = HOURLY_RATE_TABLE[vehicle];
@@ -235,28 +245,29 @@ export function estimatedFuelCost(
 // 표시용 통행료는 Tmap 경로 실측(route-optimization)만 사용한다.
 
 export function perJobBasePrice(vehicle: Vehicle, km: number): number {
+  if (!isPerJobRateSupported(km)) {
+    throw new RangeError(`단건 운임표는 ${maxPerJobKm()}km까지만 참고 견적을 지원합니다.`);
+  }
   for (const r of PER_JOB_TABLE) {
     if (km >= r.fromKm && km <= r.toKm) return vehicle === 'ray' ? r.ray : r.starex;
   }
-  // 60km 초과 시 마지막 구간 요금 사용 (추가 요금 없음)
-  const last = PER_JOB_TABLE[PER_JOB_TABLE.length - 1];
-  return vehicle === 'ray' ? last.ray : last.starex;
+  throw new RangeError(`단건 운임표에서 ${km}km 구간을 찾을 수 없습니다.`);
 }
 
 export function perJobRegularPrice(vehicle: Vehicle, km: number): number {
+  if (!isPerJobRateSupported(km)) {
+    throw new RangeError(`단건 운임표는 ${maxPerJobKm()}km까지만 참고 견적을 지원합니다.`);
+  }
   // 정기 요금: 레이 정기는 스타렉스 요금표 사용, 스타렉스 정기는 기본 요금 + 가산율
   if (vehicle === 'ray') {
     // 레이 정기: 스타렉스 요금표 그대로 사용
     for (const r of PER_JOB_TABLE) {
       if (km >= r.fromKm && km <= r.toKm) return r.starex;
     }
-    // 60km 초과 시 마지막 구간 요금 사용 (추가 요금 없음)
-    const last = PER_JOB_TABLE[PER_JOB_TABLE.length - 1];
-    return last.starex;
+    throw new RangeError(`단건 운임표에서 ${km}km 구간을 찾을 수 없습니다.`);
   } else {
     // 스타렉스 정기: 기본 요금에 정기 가산율 적용 (1.2배)
     const basePrice = perJobBasePrice(vehicle, km);
-    return Math.round(basePrice * 1.2);
+    return Math.round(basePrice * PER_JOB_REGULAR_FACTOR);
   }
 }
-

@@ -31,7 +31,7 @@ describe('computeRouteQuote', () => {
     expect(typeof q.hourlyTotal).toBe('number');
     expect(typeof q.perJobTotal).toBe('number');
     expect(typeof q.totalPrice).toBe('number');
-    expect(['hourly', 'perJob']).toContain(q.recommendedPlan);
+    expect(q.recommendedPlan).toBe('hourly');
 
     // hourlyBreakdown
     expect(typeof q.hourlyBreakdown.billMinutes).toBe('number');
@@ -58,18 +58,19 @@ describe('computeRouteQuote', () => {
     expect(q.billMinutes).toBeGreaterThanOrEqual(120); // roundUpTo30Minutes 최소 120분
     expect(q.hourlyBreakdown.billMinutes).toBe(q.billMinutes);
     expect(q.hourlyTotal).toBe(q.hourlyBreakdown.base + q.hourlyBreakdown.fuelSurcharge);
-    expect(q.perJobTotal).toBe(q.perJobBreakdown.base + q.perJobBreakdown.stopFee);
+    expect(q.perJobTotal).toBe(
+      Number(q.perJobBreakdown.base) + Number(q.perJobBreakdown.stopFee),
+    );
     expect(q.perJobBreakdown.effectiveStopsCount).toBe(Math.max(0, q.destinationCount - 1));
   });
 
-  it('recommendedPlan 규칙: hourlyTotal <= perJobTotal ? hourly : perJob', () => {
+  it('대표 견적은 금액 비교와 무관하게 시간당 운임이다', () => {
     const q = computeRouteQuote(summary, 2);
     expect(q).not.toBeNull();
     if (!q) return;
 
-    const expectedPlan = q.hourlyTotal <= q.perJobTotal ? 'hourly' : 'perJob';
-    expect(q.recommendedPlan).toBe(expectedPlan);
-    expect(q.totalPrice).toBe(expectedPlan === 'hourly' ? q.hourlyTotal : q.perJobTotal);
+    expect(q.recommendedPlan).toBe('hourly');
+    expect(q.totalPrice).toBe(q.hourlyTotal);
   });
 
   it('waitTime(현장 대기)이 구속시간과 요금에 반영된다', () => {
@@ -116,5 +117,16 @@ describe('computeRouteQuote', () => {
       2,
     );
     expect(q).toBeNull();
+  });
+
+  it('60km 초과는 시간당 견적만 유지하고 단건 참고값은 미제공한다', () => {
+    const q = computeRouteQuote(
+      { totalDistance: 70_000, travelTime: 7_200, dwellTime: 0, vehicleTypeCode: '1' },
+      2,
+    );
+    expect(q?.recommendedPlan).toBe('hourly');
+    expect(q?.totalPrice).toBe(q?.hourlyTotal);
+    expect(q?.perJobTotal).toBeNull();
+    expect(q?.perJobBreakdown.available).toBe(false);
   });
 });
