@@ -44,7 +44,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | 도메인 | 위치 | 상태 | 비고 |
 |---|---|---|---|
 | `quote` | `src/domains/quote/` | 구현됨 | `pricing.ts`, `services/`, `knowledge/`, `types/`, `evals/` |
-| `dispatch` | `src/domains/dispatch/` | 부분 구현 | 시나리오 비교·정기 빈도·역할(pickup/drop) 모델 구현(`types/routePlan.ts`, `utils/frequency.ts`, `services/scenario*.ts`, `components/`). 경로 최적화 본체는 여전히 `route-optimization/route.ts` 인라인 |
+| `dispatch` | `src/domains/dispatch/` | 부분 구현 | 시나리오 비교·정기 빈도·복합 작업(pickup/drop/return)·시각 의미 모델과 다중 라인 견적책 UI 구현(`types/routePlan.ts`, `services/stop*.ts`, `services/caseBoard.ts`, `components/QuoteBook*.tsx`). 경로 최적화 본체는 여전히 `route-optimization/route.ts` 인라인 |
 | `tracking` | `src/domains/tracking/` | 미구현 | 실시간 위치 추적 (Phase 3) |
 | `auth` | `src/domains/auth/` | 미구현 | 현 인증 로직은 `src/libs/auth.tsx` |
 | `admin` | `src/domains/admin/` | 미구현 | 관리자 대시보드 (Phase 2~3) |
@@ -66,7 +66,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `services/chatFileGenerator.ts` | Chat 첨부 파일 생성 |
 | `services/toolRouter.ts` | LLM tool calling 라우팅 |
 | `services/webKnowledgeRetriever.ts` | 웹 지식 검색 |
-| `agent/` | 견적 에이전트(tool-calling): `tools.ts`(8개 도구), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
+| `agent/` | 견적 에이전트(tool-calling): `tools.ts`(1339줄, 분리 우선), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
 | `types/` | `quoteDocument.ts`, `quoteExtraction.ts`, `riskReport.ts` |
 | `evals/chatEvalCases.ts` | (구) 규칙 추출 평가 케이스 |
 | `evals/agentEvalCases.ts` / `evals/agentScorer.ts` | 에이전트 골든셋 + 채점기 (`npm run eval:agent`) |
@@ -75,12 +75,12 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 경로 | 설명 | LOC | 위험도 |
 |---|---|---|---|
-| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap + Atlan proxy 백업) | **2912** | **매우 높음** |
+| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap + Atlan proxy 백업) | **2988** | **매우 높음** |
 | `multi-driver-optimization/route.ts` | 다중 기사 배차 | 281 | 높음 |
 | `dispatch/scenario-quote/route.ts` | 다중 시나리오(3/5/10지점) 병렬 견적·비교 | 278 | 중간 |
 | `dispatch/scenario-groups/route.ts` | 시나리오 비교 결과 저장/조회 | — | 낮음 |
 | `dispatch/customers/route.ts` | 고객사(화주) 마스터 조회/생성 | — | 낮음 |
-| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 추론 기반) 메인 핸들러 | 670 | 높음 |
+| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 다중 라인 견적책 강제 라우팅) 메인 핸들러 | 689 | 높음 |
 | `quote/extract-quote-info/route.ts` | 견적 정보 추출 | — | 중간 |
 | `quote/parse-document/route.ts` | 견적 의뢰 문서 파싱 | — | 중간 |
 | `quote/document-upload/route.ts` | 견적 문서 업로드 | — | 중간 |
@@ -105,12 +105,13 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 파일 | LOC | 우선 분리 대상 |
 |---|---|---|
-| `src/app/api/route-optimization/route.ts` | 2912 | 비즈니스 로직 → `domains/dispatch/services/` |
+| `src/app/api/route-optimization/route.ts` | 2988 | 비즈니스 로직 → `domains/dispatch/services/` |
 | `src/components/modals/AIQuoteChatModal.tsx` | 1552 | 스텝/메시지 컴포넌트 분리 |
 | `src/app/tmap-embed/route.ts` | 1504 | HTML 템플릿 분리 |
+| `src/domains/quote/agent/tools.ts` | 1339 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
 | `src/components/map/TmapMainMap.tsx` | 1297 | 지도 초기화/마커/폴리라인 hook 분리 |
-| `src/app/api/quote/agent-chat/route.ts` | 670 | 프롬프트/스트림 수집/응답 조립 분리 |
+| `src/app/api/quote/agent-chat/route.ts` | 689 | 프롬프트/스트림 수집/응답 조립 분리 |
 
 ## Supabase Edge Functions
 
@@ -231,3 +232,5 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-05-29 | 견적 챗 에이전트 전환 + 구 파이프라인 제거 | `quote/agent-chat`(tool-calling) 신설, `quote/ai-chat-generate`(2661줄 규칙 파이프라인) 삭제, 지오코더 fullAddrGeo 폴백, eval:agent 6/6 |
 | 2026-07-30 | 견적·경로 안정화 | 시간당 대표 견적 고정, 유류/단건 DB 운임표, Atlan proxy 백업, KST 시간 처리 |
 | 2026-07-30 | 경로 타임라인 기준시각 정합화 | 고정 출발과 배송 마감을 분리하고 route LOC를 2912로 갱신 |
+| 2026-07-30 | 복합 작업·시각 의미·다중 라인 견적책 구현 | route/agent LOC 갱신, 견적책 UI·실도로 개략도·PDF·강제 도구 라우팅 추가 |
+| 2026-07-30 | 배송 마감 역산 제안 | 상차 미입력 시 권장 상차·출발·타임라인 자동 산출, agent tools 거대 파일 등록 |

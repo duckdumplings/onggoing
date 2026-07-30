@@ -29,6 +29,8 @@ export interface AgentEvalExpectation {
   maxWaitMinutes?: number;
   /** 응답 어디에도 등장하면 안 되는 잘못된 원화 금액. */
   forbiddenWonAmounts?: number[];
+  /** 여러 독립 배송라인 요청에서 quote_case_board가 산출해야 하는 케이스 수. */
+  caseBoardCount?: number;
 }
 
 export interface AgentEvalCase {
@@ -116,6 +118,16 @@ export const AGENT_EVAL_CASES: AgentEvalCase[] = [
       shouldNotAskUser: true,
       recommendedPlan: 'hourly',
       perJobReferenceRequested: true,
+    },
+  },
+  {
+    id: 'multi-line-composite-operations',
+    input:
+      '두 라인 한꺼번에 레이 정기 견적해줘.\nA라인: 10:20 서초대로 350 상차 시작 → 10:40 압구정로 459 상차 → 11:40 위례순환로 387 배송 → 12:00 백제고분로 488 배송 완료.\nB라인: 08:00 가산디지털1로 70 상차 시작 → 10:00 퇴계로 19 배송 및 빈 가방 4개 수거 → 가마산로 96 반납.',
+    expected: {
+      caseBoardCount: 2,
+      shouldHaveQuote: true,
+      shouldNotAskUser: true,
     },
   },
 ];

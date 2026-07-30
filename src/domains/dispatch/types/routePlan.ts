@@ -14,6 +14,30 @@ export type ScheduleType = 'regular' | 'ad-hoc';
 
 /** 경유지의 물류 역할. 수거/하차/반납/단순경유를 구분한다. */
 export type StopRole = 'pickup' | 'drop' | 'return' | 'waypoint';
+export type StopOperationType = 'pickup' | 'drop' | 'return';
+export type StopScheduleType =
+  | 'ready'
+  | 'service-start'
+  | 'departure'
+  | 'arrival-deadline'
+  | 'completion-deadline'
+  | 'appointment';
+
+export interface StopOperation {
+  type: StopOperationType;
+  /** 같은 지점에서 여러 화물을 다룰 때 구분할 업무명/화물명. */
+  label?: string;
+  quantity?: number;
+  weightKg?: number;
+}
+
+export interface StopSchedule {
+  type: StopScheduleType;
+  /** 24시간제 "HH:mm". */
+  time: string;
+  /** 해당 시각이 익일 기준인지. */
+  isNextDay?: boolean;
+}
 
 export interface RouteStop {
   address: string;
@@ -27,6 +51,13 @@ export interface RouteStop {
   quantity?: number;
   /** 체류/상하차 작업 시간(분). */
   dwellMinutes?: number;
+  /**
+   * 한 지점의 실제 작업 목록. 예: 배송 후 빈 가방 수거는
+   * [{ type: 'drop' }, { type: 'pickup' }]으로 표현한다.
+   */
+  operations?: StopOperation[];
+  /** 물품 준비·상차 시작·출발·도착/완료 마감처럼 시각의 운영 의미를 명시한다. */
+  schedule?: StopSchedule;
   /** "HH:mm" 도착 데드라인(선택). */
   deliveryTime?: string;
   /**

@@ -67,7 +67,11 @@ export function buildAddressRoleMap(
   return map;
 }
 
-export type RouteWaypointLite = { address?: string | null; arrivalTime?: string | null };
+export type RouteWaypointLite = {
+  address?: string | null;
+  arrivalTime?: string | null;
+  departureTime?: string | null;
+};
 
 /**
  * deadlineTarget에 해당하는 "마지막 도착 ISO"를 waypoints에서 고른다.
@@ -104,6 +108,40 @@ export function pickTargetArrivalIso(
     Array.from(roleMap.values()).includes('return');
   if (hasReturn && waypoints.length >= 2) return waypoints[waypoints.length - 2]?.arrivalTime ?? null;
   return lastArrival;
+}
+
+/**
+ * 마감은 기본적으로 도착이 아니라 해당 지점 작업 완료를 뜻한다.
+ * 역할별 대상 지점은 pickTargetArrivalIso와 같고, 완료시각(departureTime)을 우선한다.
+ */
+export function pickTargetCompletionIso(
+  waypoints: RouteWaypointLite[],
+  roleMap: Map<string, StopRole>,
+  target: DeadlineTarget,
+): string | null {
+  if (!waypoints.length) return null;
+  const arrival = pickTargetArrivalIso(waypoints, roleMap, target);
+  const roleOf = (wp: RouteWaypointLite): StopRole | undefined =>
+    wp?.address ? roleMap.get(wp.address.trim()) : undefined;
+  let selected: RouteWaypointLite | undefined;
+
+  if (target === 'final') {
+    selected = waypoints[waypoints.length - 1];
+  } else {
+    const wantedRole = target === 'return' ? 'return' : 'drop';
+    for (let i = waypoints.length - 1; i >= 0; i--) {
+      if (roleOf(waypoints[i]) === wantedRole) {
+        selected = waypoints[i];
+        break;
+      }
+    }
+    if (!selected && target === 'delivery' && Array.from(roleMap.values()).includes('return')) {
+      selected = waypoints[waypoints.length - 2];
+    }
+    selected ??= waypoints[waypoints.length - 1];
+  }
+
+  return selected?.departureTime ?? selected?.arrivalTime ?? arrival;
 }
 
 /** 도착 ISO(KST)와 마감 "HH:mm"으로 충족 여부·여유(분)를 판정. */

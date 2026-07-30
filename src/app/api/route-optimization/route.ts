@@ -19,6 +19,17 @@ import { computeEarlyDeliveryWait } from '@/domains/dispatch/services/deliveryWa
 import { getAtlanRouteFeatureCollection } from '@/domains/dispatch/services/atlanRouteFallback';
 import { resolveSegmentSchedule } from '@/domains/dispatch/services/segmentSchedule';
 import {
+  buildStopConstraintViolation,
+  resolveStopTimeConstraint,
+  toRouteOptimizationConstraint,
+  type ResolvedStopTimeConstraint,
+} from '@/domains/dispatch/services/stopTimeConstraint';
+import type {
+  StopOperation,
+  StopSchedule,
+  StopScheduleType,
+} from '@/domains/dispatch/types/routePlan';
+import {
   atKstTime,
   formatKstHHmm,
   kstMinutesOfDay,
@@ -76,6 +87,8 @@ interface RouteWaypoint {
   waitTime?: number;
   /** 실제 배송(작업 시작) 시각 = max(도착, 마감−여유). 대기 없으면 도착시각과 동일. */
   serviceStartTime?: string;
+  operations?: StopOperation[];
+  schedule?: StopSchedule | null;
 }
 
 interface RouteTimelineEntry {
@@ -89,6 +102,8 @@ interface RouteTimelineEntry {
   waitMinutes?: number;
   /** 실제 배송 시작 시각(대기 반영). 대기 없으면 arrivalTime과 동일. */
   serviceStartTime?: string;
+  operations?: StopOperation[];
+  schedule?: StopSchedule | null;
 }
 
 interface RouteSegmentSummary {
@@ -879,9 +894,11 @@ export async function POST(request: NextRequest) {
       roadOption = 'time-first',
       returnToOrigin = true,
       deliveryTimes = [],
+      timeConstraintTypes = [],
       // destinations 인덱스 정합. true인 지점만 예약/정시 배송으로 보고 조기배송 대기를 적용한다.
       // 미전달/false는 단순 마감(deadline)이라 일찍 배송해도 대기하지 않는다.
       earlyDeliveryForbiddenFlags = [],
+      earlyToleranceMinutesByStop = [],
       isNextDayFlags = [],
       dwellMinutes = [],
       originDwellMinutes = 0,
@@ -893,6 +910,10 @@ export async function POST(request: NextRequest) {
       // 역할 태그(선택). destinations 인덱스 정합. 미전달 시 기존처럼 목적지는 drop으로 표기.
       stopRoles = [],
       originRole,
+      stopOperations = [],
+      originOperations = [],
+      stopSchedules = [],
+      originSchedule = null,
       // 제약(optional): 적재 용량. 호출자(에이전트/UI)가 명시한 값만 사용 — 차종 kg를 임의 추정하지 않는다.
       loadKg = [],
       vehicleCapacityKg
@@ -903,6 +924,7 @@ export async function POST(request: NextRequest) {
     console.log('destinations:', destinations);
     console.log('vehicleType:', vehicleType);
     console.log('deliveryTimes:', deliveryTimes);
+    console.log('timeConstraintTypes:', timeConstraintTypes);
     console.log('earlyDeliveryForbiddenFlags:', earlyDeliveryForbiddenFlags);
     console.log('isNextDayFlags:', isNextDayFlags);
     console.log('departureAt:', departureAt);
@@ -1068,7 +1090,17 @@ export async function POST(request: NextRequest) {
     let openStartFeasible = true;
     let openStartInfeasibleReason: string | null = null;
 
-    const hasTimeConstraints = (deliveryTimes as unknown[]).some(
+    const optimizationConstraints = (deliveryTimes as unknown[]).map((time, index) =>
+      toRouteOptimizationConstraint({
+        type: (timeConstraintTypes[index] as StopScheduleType | undefined) ?? 'arrival-deadline',
+        time: typeof time === 'string' ? time : '',
+        isNextDay: Boolean(isNextDayFlags[index]),
+        dwellMinutes: Number(dwellMinutes[index] ?? 10),
+      })
+    );
+    const optimizationDeliveryTimes = optimizationConstraints.map((constraint) => constraint.time);
+    const optimizationIsNextDayFlags = optimizationConstraints.map((constraint) => constraint.isNextDay);
+    const hasTimeConstraints = optimizationDeliveryTimes.some(
       (t) => typeof t === 'string' && t.trim() !== ''
     );
     const canOpenStart =
@@ -1150,8 +1182,8 @@ export async function POST(request: NextRequest) {
     // 목적지 순서 최적화 (배송완료시간 고려)
     console.log('순서 최적화 시작:', {
       optimizeOrder: effectiveOptimizeOrder,
-      deliveryTimes,
-      isNextDayFlags,
+      deliveryTimes: optimizationDeliveryTimes,
+      isNextDayFlags: optimizationIsNextDayFlags,
       originalDestinations: destinationCoords.map(d => d.address)
     });
 
@@ -1161,13 +1193,13 @@ export async function POST(request: NextRequest) {
 
       // 시간제약 데이터 준비 (인덱스 정합성 유지)
       const timeConstraints: TimeConstraint[] = [];
-      for (let i = 0; i < deliveryTimes.length; i++) {
-        const dt = (deliveryTimes[i] || '').trim();
+      for (let i = 0; i < optimizationDeliveryTimes.length; i++) {
+        const dt = (String(optimizationDeliveryTimes[i] || '')).trim();
         if (dt !== '') {
           timeConstraints.push({
             waypointIndex: i,
             deliveryTime: dt,
-            isNextDay: !!isNextDayFlags[i]
+            isNextDay: !!optimizationIsNextDayFlags[i]
           });
         }
       }
@@ -1237,8 +1269,8 @@ export async function POST(request: NextRequest) {
         const { errors: preErrors, maxLatenessMin: preLateness } = await precheckDirectFeasibility(
           startLocation,
           destinationCoords,
-          deliveryTimes,
-          isNextDayFlags,
+          optimizationDeliveryTimes as string[],
+          optimizationIsNextDayFlags,
           departureAt as string,
           (dwellMinutes[0] ?? 10),
           tmapKey,
@@ -1334,8 +1366,8 @@ export async function POST(request: NextRequest) {
         const { ordered, totalLatenessMin } = await buildRouteWithAnchors(
           startLocation,
           destinationCoords,
-          deliveryTimes,
-          isNextDayFlags,
+          optimizationDeliveryTimes as string[],
+          optimizationIsNextDayFlags,
           depAtStr,
           tmapKey,
           vehicleTypeCode,
@@ -1429,6 +1461,10 @@ export async function POST(request: NextRequest) {
         arrivalTime: new Date(currentTime.getTime() - normalizedOriginDwellMinutes * 60 * 1000).toISOString(),
         departureTime: currentTime.toISOString(),
         dwellTime: normalizedOriginDwellMinutes,
+        operations: Array.isArray(originOperations) ? originOperations : [],
+        schedule: originSchedule && typeof originSchedule === 'object'
+          ? originSchedule as StopSchedule
+          : null,
       });
     }
 
@@ -1446,11 +1482,7 @@ export async function POST(request: NextRequest) {
     };
 
     // 주소 → 시간제약 매핑 (최종 순서에서도 정확한 매칭 보장)
-    const constraintByAddress = new Map<string, {
-      deliveryTime: string;
-      isNextDay: boolean;
-      earlyDeliveryForbidden: boolean;
-    }>();
+    const constraintByAddress = new Map<string, ResolvedStopTimeConstraint>();
     const originalIndexByAddress = new Map<string, number>();
     for (let idx = 0; idx < destinationCoords.length; idx++) {
       const raw = (deliveryTimes[idx] as any) as string | undefined;
@@ -1458,11 +1490,14 @@ export async function POST(request: NextRequest) {
       const addr = destinationCoords[idx].address;
       originalIndexByAddress.set(addr, idx);
       if (dt) {
-        constraintByAddress.set(addr, {
+        constraintByAddress.set(addr, resolveStopTimeConstraint({
           deliveryTime: dt,
+          rawType: timeConstraintTypes[idx],
           isNextDay: !!isNextDayFlags[idx],
           earlyDeliveryForbidden: !!earlyDeliveryForbiddenFlags[idx],
-        });
+          earlyToleranceMinutes: earlyToleranceMinutesByStop[idx],
+          defaultEarlyToleranceMinutes: earlyToleranceMin,
+        }));
       }
     }
 
@@ -1480,12 +1515,49 @@ export async function POST(request: NextRequest) {
     }
     const resolveDestRole = (address: string): 'pickup' | 'drop' | 'return' | 'waypoint' =>
       roleByAddress.get(address) ?? 'drop';
+    const operationsByAddress = new Map<string, StopOperation[]>();
+    const schedulesByAddress = new Map<string, StopSchedule | null>();
+    for (let idx = 0; idx < destinationCoords.length; idx++) {
+      const address = destinationCoords[idx].address;
+      const operations = Array.isArray(stopOperations[idx])
+        ? stopOperations[idx].filter((operation: unknown) => operation && typeof operation === 'object')
+        : [];
+      operationsByAddress.set(address, operations as StopOperation[]);
+      const schedule = stopSchedules[idx];
+      schedulesByAddress.set(
+        address,
+        schedule && typeof schedule === 'object' ? schedule as StopSchedule : null,
+      );
+    }
 
     const postOrderViolations: string[] = [];
     let maxPostLatenessMin = 0; // 권장 출발 역산용: 가장 많이 지각한 분
 
-    // 검증용 시계: 실제 주행·체류·예약 대기를 누적해 하류 마감 가능성을 판단한다.
-    let validationClock = new Date(currentTime);
+    const recordConstraintViolation = (input: {
+      dest: { address: string };
+      prevAddress: string;
+      routeIndex: number;
+      constraint?: ResolvedStopTimeConstraint;
+      target: Date | null;
+      arrival: Date;
+      serviceStart: Date;
+      completion: Date;
+    }) => {
+      const originIdx = originalIndexByAddress.get(input.dest.address);
+      const violation = buildStopConstraintViolation({
+        constraint: input.constraint,
+        target: input.target,
+        arrival: input.arrival,
+        serviceStart: input.serviceStart,
+        completion: input.completion,
+        stopNumber: typeof originIdx === 'number' ? originIdx + 1 : input.routeIndex + 1,
+        previousAddress: input.prevAddress,
+        address: input.dest.address,
+      });
+      if (!violation) return;
+      postOrderViolations.push(violation.message);
+      maxPostLatenessMin = Math.max(maxPostLatenessMin, violation.latenessMinutes);
+    };
 
     for (let i = 0; i < orderedDestinations.length; i++) {
       const dest = orderedDestinations[i];
@@ -1563,25 +1635,6 @@ export async function POST(request: NextRequest) {
         totalTime += segmentTime;
         waypoints.push({ latitude: dest.latitude, longitude: dest.longitude, address: dest.address });
 
-        // 배송완료시간이 있는 경우, 실제 도착시간이 목표 시간과 맞는지 확인
-        if (targetDeliveryTime) {
-          // 검증 기준 출발시각: validationClock (체류 미고려, 앞 구간 실제 주행 후 시각)
-          const actualArrival = new Date(validationClock.getTime() + (segmentTime * 1000));
-          // 동일 분 내(<= HH:MM:59)는 허용: dueEndMs와 비교
-          const dueMinMs = Math.floor(targetDeliveryTime.getTime() / 60000) * 60000;
-          const dueEndMs = dueMinMs + 59999;
-          if (actualArrival.getTime() > dueEndMs) {
-            const arrivalCeilMin = Math.ceil(actualArrival.getTime() / 60000);
-            const ceilDate = new Date(arrivalCeilMin * 60000);
-            const [hh, mm] = formatKstHHmm(ceilDate).split(':');
-            const originIdx = originalIndexByAddress.get(dest.address);
-            const idxForUser = typeof originIdx === 'number' ? originIdx + 1 : (i + 1);
-            const cdt = (cForDest && cForDest.deliveryTime) || `${hh}:${mm}`;
-            postOrderViolations.push(`경유지 ${idxForUser}: ${cdt} 도착은 불가능합니다. 최소 ${hh}:${mm}에 도착 예상됩니다. (구간: ${prevAddress} → ${dest.address})`);
-            maxPostLatenessMin = Math.max(maxPostLatenessMin, (actualArrival.getTime() - dueMinMs) / 60000);
-          }
-        }
-
         // 다음 구간을 위한 현재 시간 업데이트 (이동시간 + 대기 + 체류시간)
         const dwellTime = destinationDwell(i); // 경유지 체류시간
         const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
@@ -1590,12 +1643,22 @@ export async function POST(request: NextRequest) {
           arrival: arrivalTime,
           target: targetDeliveryTime,
           earlyDeliveryForbidden: Boolean(cForDest?.earlyDeliveryForbidden),
-          earlyToleranceMinutes: earlyToleranceMin,
+          earlyToleranceMinutes: cForDest?.earlyToleranceMinutes ?? earlyToleranceMin,
           isNextDay: cForDest?.isNextDay,
         });
         const waitMin = Math.round(waitSec / 60);
         totalWaitTime += waitSec;
         currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
+        recordConstraintViolation({
+          dest,
+          prevAddress,
+          routeIndex: i,
+          constraint: cForDest,
+          target: targetDeliveryTime,
+          arrival: arrivalTime,
+          serviceStart,
+          completion: currentTime,
+        });
         segmentSummary.push({
           seq: segmentSummary.length + 1,
           from: current.address,
@@ -1610,10 +1673,6 @@ export async function POST(request: NextRequest) {
           predictionFallback: false,
         });
 
-        // 검증용 시계 업데이트: 이동 + 대기 + 이 지점 체류. 상/하차·대기 시간이 하류 마감 도착에 실제로
-        // 누적되므로 모두 포함해야 마감 위반을 정확히 검출한다(과거엔 체류를 빼 낙관적으로 계산해 지각을 놓쳤다).
-        validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (waitSec * 1000) + (dwellTime * 60 * 1000));
-
         // 경유지별 도착시간 저장
         const waypoint = waypoints[waypoints.length - 1];
         waypoint.arrivalTime = arrivalTime.toISOString();
@@ -1623,6 +1682,8 @@ export async function POST(request: NextRequest) {
         waypoint.serviceStartTime = serviceStart.toISOString();
         waypoint.deliveryTime = cForDest?.deliveryTime || null;
         waypoint.isNextDay = cForDest?.isNextDay || false;
+        waypoint.operations = operationsByAddress.get(dest.address) ?? [];
+        waypoint.schedule = schedulesByAddress.get(dest.address) ?? null;
         routeTimeline.push({
           seq: routeTimeline.length + 1,
           address: dest.address,
@@ -1632,6 +1693,8 @@ export async function POST(request: NextRequest) {
           dwellTime,
           waitMinutes: waitMin,
           serviceStartTime: serviceStart.toISOString(),
+          operations: waypoint.operations,
+          schedule: waypoint.schedule,
         });
       } else {
         // 예측 실패 → 일반 routes 재시도
@@ -1683,13 +1746,22 @@ export async function POST(request: NextRequest) {
             arrival: arrivalTime,
             target: targetDeliveryTime,
             earlyDeliveryForbidden: Boolean(cForDest?.earlyDeliveryForbidden),
-            earlyToleranceMinutes: earlyToleranceMin,
+            earlyToleranceMinutes: cForDest?.earlyToleranceMinutes ?? earlyToleranceMin,
             isNextDay: cForDest?.isNextDay,
           });
           const waitMin = Math.round(waitSec / 60);
           totalWaitTime += waitSec;
           currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
-          validationClock = new Date(validationClock.getTime() + (segmentTime * 1000) + (waitSec * 1000) + (dwellTime * 60 * 1000));
+          recordConstraintViolation({
+            dest,
+            prevAddress,
+            routeIndex: i,
+            constraint: cForDest,
+            target: targetDeliveryTime,
+            arrival: arrivalTime,
+            serviceStart,
+            completion: currentTime,
+          });
           segmentSummary.push({
             seq: segmentSummary.length + 1,
             from: current.address,
@@ -1714,6 +1786,8 @@ export async function POST(request: NextRequest) {
           waypoint.serviceStartTime = serviceStart.toISOString();
           waypoint.deliveryTime = cForDest?.deliveryTime || null;
           waypoint.isNextDay = cForDest?.isNextDay || false;
+          waypoint.operations = operationsByAddress.get(dest.address) ?? [];
+          waypoint.schedule = schedulesByAddress.get(dest.address) ?? null;
           routeTimeline.push({
             seq: routeTimeline.length + 1,
             address: dest.address,
@@ -1723,6 +1797,8 @@ export async function POST(request: NextRequest) {
             dwellTime,
             waitMinutes: waitMin,
             serviceStartTime: serviceStart.toISOString(),
+            operations: waypoint.operations,
+            schedule: waypoint.schedule,
           });
         } else {
           // 모든 시도 실패 → 하드 에러(폴백 미사용)

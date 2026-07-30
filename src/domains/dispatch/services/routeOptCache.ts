@@ -49,11 +49,17 @@ export function normalizeRouteKey(payload: any): string {
     // 시간제약도 키에 포함 — 같은 경로라도 시각 없이 계산된 캐시가
     // 시각 달린 재계산에 히트되면 시간제약 검증이 통째로 우회된다.
     deliveryTimes: payload?.deliveryTimes ?? null,
+    timeConstraintTypes: payload?.timeConstraintTypes ?? null,
     earlyDeliveryForbiddenFlags: payload?.earlyDeliveryForbiddenFlags ?? null,
     earlyToleranceMinutes: payload?.earlyToleranceMinutes ?? null,
+    earlyToleranceMinutesByStop: payload?.earlyToleranceMinutesByStop ?? null,
     isNextDayFlags: payload?.isNextDayFlags ?? null,
     stopRoles: payload?.stopRoles ?? null,
+    stopOperations: payload?.stopOperations ?? null,
+    stopSchedules: payload?.stopSchedules ?? null,
     originRole: payload?.originRole ?? null,
+    originOperations: payload?.originOperations ?? null,
+    originSchedule: payload?.originSchedule ?? null,
     loadKg: payload?.loadKg ?? null,
     vehicleCapacityKg: payload?.vehicleCapacityKg ?? null,
     departureMin,

@@ -25,6 +25,9 @@ export interface AgentResponseLike {
     recommendedLabel?: string | null;
   } | null;
   scenarioRouteErrors?: Array<{ label: string; message: string }>;
+  caseBoard?: {
+    cases?: Array<{ label?: string; oneTimePrice?: number; error?: string }>;
+  } | null;
   followUpQuestions?: Array<{ field?: string; question: string }> | string[];
   missingFields?: string[];
 }
@@ -56,7 +59,8 @@ export function scoreAgentResponse(
   const results = comparison?.results || [];
   // 명확화 신호: ask_user 도구(구조화) 또는, 산출물(견적/비교) 없이 본문으로 되물은 경우.
   // 에이전트가 도구 대신 자연어로 되묻는 것도 정상 동작이므로 둘 다 인정한다.
-  const producedResult = Boolean(response.quote) || results.length > 0;
+  const boardCases = response.caseBoard?.cases ?? [];
+  const producedResult = Boolean(response.quote) || results.length > 0 || boardCases.length > 0;
   const askedViaTool =
     (response.followUpQuestions?.length || 0) > 0 || (response.missingFields || []).includes('clarification');
   const askedViaText = !producedResult && /[?？]/.test(text);
@@ -65,6 +69,16 @@ export function scoreAgentResponse(
   if (e.scenarioCount !== undefined) {
     checks.push(
       check('scenarioCount', results.length === e.scenarioCount, `expected ${e.scenarioCount}, got ${results.length}`)
+    );
+  }
+
+  if (e.caseBoardCount !== undefined) {
+    checks.push(
+      check(
+        'caseBoardCount',
+        boardCases.length === e.caseBoardCount,
+        `expected ${e.caseBoardCount}, got ${boardCases.length}`,
+      ),
     );
   }
 
@@ -86,7 +100,7 @@ export function scoreAgentResponse(
   }
 
   if (e.shouldHaveQuote) {
-    const hasQuote = Boolean(response.quote) || results.length > 0 || /₩\s?[\d,]/.test(text);
+    const hasQuote = Boolean(response.quote) || results.length > 0 || boardCases.length > 0 || /₩\s?[\d,]/.test(text);
     checks.push(check('hasQuote', hasQuote));
   }
 

@@ -89,6 +89,7 @@ function buildOperatingBasis(cases: CaseBoardCaseResult[]): QuotePackageOperatin
   const out: QuotePackageOperatingBasis[] = [];
   for (const c of cases) {
     if (c.error) continue;
+    if (!c.operatingWeekdaysLabel && !isFiniteNumber(c.monthlyVisits)) continue;
     const key = `${c.operatingWeekdaysLabel ?? ''}|${c.monthlyVisits ?? ''}|${c.includeHolidays ?? ''}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -122,12 +123,24 @@ export function buildQuotePackage(board: CaseBoardResult, vatRate = DEFAULT_VAT_
   }
 
   const groupRollups: QuotePackageGroupRollup[] = Array.from(groupMap.entries()).map(([group, items]) => {
-    const groupMonthly = items.reduce((sum, c) => sum + (isFiniteNumber(c.monthlyTotal) ? c.monthlyTotal : 0), 0);
+    const groupOneTime = items.reduce(
+      (sum, c) => sum + (isFiniteNumber(c.oneTimePrice) ? c.oneTimePrice : 0),
+      0,
+    );
+    const monthlyValues = items
+      .map((c) => c.monthlyTotal)
+      .filter((value): value is number => isFiniteNumber(value));
+    const groupMonthly = monthlyValues.length
+      ? monthlyValues.reduce((sum, value) => sum + value, 0)
+      : null;
     return {
       group,
-      monthlyTotal: Math.round(groupMonthly),
-      vatAmount: vatOf(groupMonthly, vatRate) ?? 0,
-      monthlyTotalWithVat: withVat(groupMonthly, vatRate) ?? 0,
+      oneTimeTotal: Math.round(groupOneTime),
+      oneTimeVatAmount: vatOf(groupOneTime, vatRate) ?? 0,
+      oneTimeTotalWithVat: withVat(groupOneTime, vatRate) ?? 0,
+      monthlyTotal: groupMonthly == null ? null : Math.round(groupMonthly),
+      vatAmount: vatOf(groupMonthly, vatRate),
+      monthlyTotalWithVat: withVat(groupMonthly, vatRate),
       riskLabel: customerNote(items),
     };
   });
@@ -136,6 +149,8 @@ export function buildQuotePackage(board: CaseBoardResult, vatRate = DEFAULT_VAT_
     group: c.group?.trim() || c.label,
     operatingDays: c.operatingWeekdaysLabel ?? '-',
     slot: slotLabel(c.label, c.departureLabel),
+    oneTimeTotal: isFiniteNumber(c.oneTimePrice) ? Math.round(c.oneTimePrice) : null,
+    oneTimeTotalWithVat: withVat(isFiniteNumber(c.oneTimePrice) ? c.oneTimePrice : null, vatRate),
     monthlyTotal: isFiniteNumber(c.monthlyTotal) ? Math.round(c.monthlyTotal) : null,
     monthlyTotalWithVat: withVat(isFiniteNumber(c.monthlyTotal) ? c.monthlyTotal : null, vatRate),
     note: riskLabelText(c.riskGrade),
@@ -154,6 +169,9 @@ export function buildQuotePackage(board: CaseBoardResult, vatRate = DEFAULT_VAT_
 
   return {
     summary: {
+      oneTimeTotal: board.rollup.oneTimeTotal,
+      oneTimeVatAmount: vatOf(board.rollup.oneTimeTotal, vatRate) ?? 0,
+      oneTimeTotalWithVat: withVat(board.rollup.oneTimeTotal, vatRate) ?? 0,
       monthlyTotal,
       vatAmount: vatOf(monthlyTotal, vatRate),
       monthlyTotalWithVat: withVat(monthlyTotal, vatRate),

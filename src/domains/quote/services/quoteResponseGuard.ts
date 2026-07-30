@@ -1,6 +1,7 @@
 import type { CaseBoardResult } from '@/domains/dispatch/services/caseBoard';
 
 function won(value: unknown): string {
+  if (value == null || value === '') return '-';
   const n = Number(value);
   return Number.isFinite(n) ? `${Math.round(n).toLocaleString('ko-KR')}원` : '-';
 }
@@ -115,10 +116,13 @@ export function guardCaseBoardResponse(text: string, board?: CaseBoardResult | n
   const authoritativeMonthly = packageMonthly ?? monthlyTotal;
   const unsupportedDeparture = containsUnsupportedDeparture(text, departures);
 
+  const monthlyBasisLine = authoritativeMonthly == null
+    ? '- 월 합계는 운행 빈도 미입력으로 미산정입니다.'
+    : `- 월 합계는 견적책 산출값 ${won(authoritativeMonthly)} 기준입니다.`;
   const guardLines = [
     '',
     '기준 확인:',
-    `- 월 합계는 케이스 보드 산출값 ${won(authoritativeMonthly)} 기준입니다.`,
+    monthlyBasisLine,
     departures.length ? `- 출발시각은 ${departures.join(' / ')} 기준이며, 다른 프리셋 출발시각으로 대체하지 않았습니다.` : null,
     vehiclePairs.length ? `- 차종은 ${vehiclePairs.join(' · ')} 기준입니다.` : null,
     unsupportedDeparture ? '- 본문에 보조 프리셋 시간이 보였다면 무시하고, 위 케이스 보드의 고정 출발시각을 기준으로 보세요.' : null,

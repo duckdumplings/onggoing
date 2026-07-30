@@ -12,6 +12,12 @@ import { z } from 'zod';
 
 import { createServerClient } from '@/libs/supabase-client';
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
+import { applyExplicitReturnHints } from '@/domains/dispatch/services/explicitRoleHints';
+import {
+  buildDeadlineSeedDepartureAt,
+  deriveDeadlineDepartureSuggestion,
+  type DeadlineDepartureSuggestion,
+} from '@/domains/dispatch/services/deadlineScheduler';
 import {
   buildRolePayload,
   countIntermediateStops,
@@ -26,7 +32,7 @@ import {
   kstMinutesOfDay,
   kstHHmm,
   buildAddressRoleMap,
-  pickTargetArrivalIso,
+  pickTargetCompletionIso,
   judgeDeadline,
 } from '@/domains/dispatch/utils/deliveryDeadline';
 import { postRouteOptimizationCached, describeRouteOptFailure } from '@/domains/dispatch/services/routeOptCache';
@@ -50,6 +56,7 @@ export interface AgentToolContext {
   baseUrl: string;
   sessionId?: string | null;
   departureAt?: string;
+  sourceText?: string;
   /** 도구 호출 추적용 콜백(트레이싱). */
   onToolEvent?: (event: { tool: string; input: unknown; output: unknown }) => void;
 }
@@ -96,6 +103,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
   };
   const routePricingContexts = new Map<string, RoutePricingContext>();
   let routePricingSequence = 0;
+  const toRoleSafeDomainStops = (stops: Parameters<typeof toDomainStops>[0]) =>
+    applyExplicitReturnHints(toDomainStops(stops), ctx.sourceText);
 
   const track = (toolName: string, input: unknown, output: unknown) => {
     try {
@@ -175,7 +184,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .describe('입력 순서를 그대로 존중(재최적화 안 함). 배송 시각/순번이 명확한 라인일 때만 true. 첫 stop=출발, 마지막=종착으로 고정된다.'),
       }),
       execute: async ({ stops, vehicleType, roadOption, departureTime, preserveOrder }) => {
-        const domainStops = toDomainStops(stops);
+        const domainStops = toRoleSafeDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
           const hit = cache.get(address.trim());
@@ -468,7 +477,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     quote_case_board: tool({
       description:
-        '여러 케이스(예: 권역×점심/저녁×요일)를 한꺼번에 받아 케이스별로 교통 반영 소요시간·마지막 배송 마감 충족(O/X)·견적(시간당/단건)·지도 경로를 한 "보드"로 산출하고, 월간/계약 합계 롤업까지 돌려준다. 사용자가 밥따봉 메모처럼 다수 라인/시간대를 한 번에 견적 요청하면(여러 권역, 점심/저녁, 요일 패턴) 라인마다 따로 산문으로 나열하지 말고 반드시 이 도구를 써라. 각 케이스는 역할 태깅된 stops를 가진다. 마감은 기본적으로 "마지막 배송(drop) 완료" 기준이며(deadlineTarget), 서초 반납 복귀는 마감 없는 업무 종료 시각이다. 월요일처럼 반납이 없으면 그 케이스에 return stop을 넣지 마라. 점심/저녁은 출발시각만 다른 별도 케이스로 나눠라. 월 합계는 monthlyVisits를 직접 적지 말고, 각 케이스의 operatingWeekdays(운행 요일)와 includeHolidays(공휴일 포함 여부)를 채워라. 특정 월 견적이면 monthlyBasis="calendar"+targetMonth, 월 평균 견적이면 monthlyBasis="average"를 사용한다. contractMonths를 주면 해당 기준으로 계약 합산까지 한다. 합산/곱셈은 도구가 한다, 본문에서 직접 곱하지 마라.',
+        '두 개 이상의 독립 배송라인 또는 권역×점심/저녁×요일 케이스를 한꺼번에 받아, 케이스별 교통 반영 소요시간·마감 충족·시간당 견적·실도로 지도와 월간/계약 합계를 하나의 견적책으로 산출한다. 여러 라인을 따로 산문 계산하지 말고 반드시 이 도구를 한 번 호출하라. 각 라인은 cases[] 한 건이며, stops의 operations로 한 지점 배송+수거를 함께 표현하고 반납/복귀는 role=return+operations return으로 보존한다. schedule.type으로 상차 시작·출발·도착 마감·완료 마감·예약 의미를 구분한다. 상차·출발 시각이 없고 마감만 있으면 케이스별 권장 상차·출발을 15분 안전여유로 자동 역산한다. 방문 순서가 명시되면 preserveOrder=true다. 마감은 기본적으로 마지막 배송 완료 기준이며, 반납 복귀는 마감 없는 업무 종료다. 월 합계는 operatingWeekdays와 includeHolidays로 계산하고, 특정 월은 monthlyBasis="calendar"+targetMonth, 월 평균은 monthlyBasis="average"를 사용한다. 합산은 도구 결과만 쓴다.',
       inputSchema: z.object({
         cases: z.array(CaseBoardCaseInputSchema).min(2),
         contractMonths: z.number().positive().optional().describe('계약 기간(개월). 계약 총액 롤업에 사용. 예: 3개월 계약이면 3. 도구가 각 월 실제 영업일로 월별 합산한다.'),
@@ -489,6 +498,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           monthlyBasis,
           targetMonth,
           departureFallback: ctx.departureAt,
+          sourceText: ctx.sourceText,
         });
         track(
           'quote_case_board',
@@ -521,7 +531,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .describe('마감 판정 기준. delivery=마지막 배송 완료(기본). return=반납 완료. final=반납 포함 최종 도착.'),
       }),
       execute: async ({ stops, vehicleType, scheduleType, frequency, customDepartureTimes, deadline, deadlineTarget }) => {
-        const domainStops = toDomainStops(stops);
+        const domainStops = toRoleSafeDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
           const hit = cache.get(address.trim());
@@ -614,8 +624,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
               const oneTimePrice = Number(hourly.total ?? 0);
               const totalMinutes = driveMinutes + dwellMinutesTotal + waitMinutesTotal;
               // 마감 판정: deadlineTarget 기준 도착(기본=마지막 배송 완료). 반납 복귀는 마감 대상 아님.
-              const targetArrivalIso = deadline ? pickTargetArrivalIso(wps, roleMap, target) : null;
-              const returnArrivalIso = hasReturn ? pickTargetArrivalIso(wps, roleMap, 'return') : null;
+              const targetArrivalIso = deadline ? pickTargetCompletionIso(wps, roleMap, target) : null;
+              const returnArrivalIso = hasReturn ? pickTargetCompletionIso(wps, roleMap, 'return') : null;
               const feasibility = deadline ? judgeDeadline(targetArrivalIso, deadline) : null;
               return {
                 ...base,
@@ -693,14 +703,14 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
     forecast_route_timeline: tool({
       description:
-        '역할 태깅된 경유지로 최적 경로를 계산해, 출발시각 기준 "경유지별 예상 도착/출발 시각" 타임라인을 돌려준다. 사용자가 "타임라인", "경유지별 도착시각", "몇 시에 어디 도착", "9시 출발하면 11시까지 가능?" 등 시각표/마감 가능성을 물으면 반드시 이 도구로 산출하라. 절대 분 단위 도착시각을 본문에서 지어내지 마라. departureTime("HH:mm")을 주면 그 시각 기준으로, 없으면 평일 오전 한산 가정으로 계산한다. deadline("HH:mm")을 주면 마감 충족 여부를 판정한다. 중요: 마감은 기본적으로 "마지막 배송(drop) 완료" 기준으로 판정한다(deadlineTarget="delivery"). 서초 반납 복귀는 마감이 없는 "업무 종료(반납완료) 시각"으로 별도 표기되며 마감 판정에 포함하지 않는다. 다만 사용자 메시지상 반납 완료 자체가 마감 기준이면 deadlineTarget="return", 전 과정(반납 포함) 최종 도착이 기준이면 "final"로 지정하라. 입력에 방문 순번/시각이 명확하면 preserveOrder=true로 받은 순서를 존중하라.',
+        '역할 태깅된 경유지로 최적 경로를 계산해, 출발시각 기준 "경유지별 예상 도착/출발 시각" 타임라인을 돌려준다. 사용자가 "타임라인", "경유지별 도착시각", "몇 시에 어디 도착", "9시 출발하면 11시까지 가능?" 등 시각표/마감 가능성을 물으면 반드시 이 도구로 산출하라. 절대 분 단위 도착시각을 본문에서 지어내지 마라. departureTime("HH:mm")을 주면 그 시각 기준으로 계산한다. departureTime이 없고 deadline 또는 stop schedule 마감이 있으면 마감 15분 안전여유를 기준으로 권장 상차·출발을 역산하고 그 시각의 전체 타임라인을 다시 계산한다. 둘 다 없을 때만 평일 오전 한산 가정을 쓴다. 중요: 마감은 기본적으로 "마지막 배송(drop) 완료" 기준으로 판정한다(deadlineTarget="delivery"). 서초 반납 복귀는 마감이 없는 "업무 종료(반납완료) 시각"으로 별도 표기되며 마감 판정에 포함하지 않는다. 다만 사용자 메시지상 반납 완료 자체가 마감 기준이면 deadlineTarget="return", 전 과정(반납 포함) 최종 도착이 기준이면 "final"로 지정하라. 입력에 방문 순번/시각이 명확하면 preserveOrder=true로 받은 순서를 존중하라.',
       inputSchema: z.object({
         stops: z.array(RouteStopSchema).min(2),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         departureTime: z
           .string()
           .optional()
-          .describe('출발 시각 "HH:mm"(24h). 예 "09:00". 사용자가 출발시각을 말하면 채워라. 없으면 평일 오전 한산 가정.'),
+          .describe('출발 시각 "HH:mm"(24h). 예 "09:00". 사용자가 출발시각을 말하면 채워라. 없고 마감이 있으면 시스템이 권장 상차·출발을 역산한다.'),
         deadline: z
           .string()
           .optional()
@@ -715,7 +725,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .describe('입력 순서를 그대로 존중(재최적화 안 함). 방문 시각/순번이 명확한 라인일 때만 true.'),
       }),
       execute: async ({ stops, vehicleType, departureTime, deadline, deadlineTarget, preserveOrder }) => {
-        const domainStops = toDomainStops(stops);
+        const domainStops = toRoleSafeDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
           const hit = cache.get(address.trim());
@@ -724,10 +734,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           }
           return address;
         };
-        // 출발시각: 사용자가 준 "HH:mm"의 다음 도래 시각(교통 예측 현실성). 없으면 컨텍스트/근미래.
+        const deadlineSeed = departureTime
+          ? null
+          : buildDeadlineSeedDepartureAt({
+              schedules: domainStops.map((stop) => stop.schedule),
+              fallbackDeadline: deadline,
+            });
+        // 출발시각이 없고 마감만 있으면 마감 근처의 교통으로 1차 경로를 구한 뒤 아래에서 역산한다.
         const departureIso = departureTime
           ? nextIsoAtHHMM(departureTime)
-          : ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
+          : deadlineSeed ?? ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
         // optimize_route와 동일한 정확해(fastOrder=false) 경로. 견적/지도와 결과가 일치한다.
         const payload = buildRolePayload({
           stops: domainStops,
@@ -739,7 +755,45 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           preserveOrder,
         });
 
-        const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, payload);
+        const roleMap = buildAddressRoleMap(domainStops, cache);
+        const target: DeadlineTarget = deadlineTarget ?? 'delivery';
+        let routePayload = payload;
+        let departureSuggestion: DeadlineDepartureSuggestion | null = null;
+        if (!departureTime && deadlineSeed && !payload.originSchedule) {
+          const seedPayload = {
+            ...payload,
+            deliveryTimes: Array.isArray(payload.deliveryTimes)
+              ? payload.deliveryTimes.map(() => '')
+              : payload.deliveryTimes,
+          };
+          const seed = await postRouteOptimizationCached(ctx.baseUrl, seedPayload);
+          if (seed.ok) {
+            const seedTimeline: any[] = Array.isArray(seed.json?.data?.timeline)
+              ? seed.json.data.timeline
+              : [];
+            const seedWaypoints: any[] = Array.isArray(seed.json?.data?.waypoints)
+              ? seed.json.data.waypoints
+              : [];
+            departureSuggestion = deriveDeadlineDepartureSuggestion({
+              seedDepartureAt: payload.departureAt ?? departureIso,
+              timeline: seedTimeline,
+              fallbackDeadline: deadline,
+              fallbackEvaluatedAt: deadline
+                ? pickTargetCompletionIso(seedWaypoints, roleMap, target)
+                : null,
+              originDwellMinutes: Number(payload.originDwellMinutes ?? 0),
+              safetyMinutes: 15,
+            });
+            if (departureSuggestion) {
+              routePayload = {
+                ...payload,
+                departureAt: departureSuggestion.departureAt,
+              };
+            }
+          }
+        }
+
+        const { ok, status, json: body } = await postRouteOptimizationCached(ctx.baseUrl, routePayload);
         if (!ok) {
           const message = describeRouteOptFailure(status, body);
           track('forecast_route_timeline', { stops: domainStops.length, departureTime }, { error: message });
@@ -747,20 +801,23 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         }
         const summary = body?.data?.summary;
         const waypoints: any[] = Array.isArray(body?.data?.waypoints) ? body.data.waypoints : [];
-        const roleMap = buildAddressRoleMap(domainStops, cache);
         // 경유지별 도착/출발 시각은 route-optimization이 departureAt 기점으로 Tmap 실측 산출한 값 그대로.
-        const timeline = waypoints.map((w, i) => ({
+        const routeTimeline: any[] = Array.isArray(body?.data?.timeline) ? body.data.timeline : [];
+        const timelineSource = routeTimeline.length ? routeTimeline : waypoints;
+        const timeline = timelineSource.map((w, i) => ({
           seq: i + 1,
           address: w?.address ?? null,
-          role: (w?.address ? roleMap.get(String(w.address).trim()) : undefined) ?? null,
+          role: w?.role ?? ((w?.address ? roleMap.get(String(w.address).trim()) : undefined) ?? null),
           arrival: kstHHmm(w?.arrivalTime),
           departure: kstHHmm(w?.departureTime),
           dwellMinutes: Number.isFinite(Number(w?.dwellTime)) ? Number(w.dwellTime) : null,
+          operations: Array.isArray(w?.operations) ? w.operations : [],
+          schedule: w?.schedule && typeof w.schedule === 'object' ? w.schedule : null,
         }));
         // 종착(반납 포함) 최종 도착 = 업무 종료 시각. 마감 판정엔 기본적으로 쓰지 않는다.
         const finalArrivalIso: string | null = waypoints.length ? waypoints[waypoints.length - 1]?.arrivalTime ?? null : null;
-        const deliveryArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'delivery');
-        const returnArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'return');
+        const deliveryArrivalIso = pickTargetCompletionIso(waypoints, roleMap, 'delivery');
+        const returnArrivalIso = pickTargetCompletionIso(waypoints, roleMap, 'return');
         const hasReturn = Array.from(roleMap.values()).includes('return');
         const km = Number(summary?.totalDistance || 0) / 1000;
         const driveMinutes = Math.round(Number(summary?.travelTime || 0) / 60);
@@ -769,8 +826,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
 
         // 마감 판정: deadlineTarget 기준 도착 시각을 같은 KST 일자의 마감과 직접 비교(타임라인과 일치).
         // 기본(delivery)은 마지막 배송 완료 기준이며, 반납 복귀(업무 종료)는 마감 대상이 아니다.
-        const target: DeadlineTarget = deadlineTarget ?? 'delivery';
-        const targetArrivalIso = pickTargetArrivalIso(waypoints, roleMap, target);
+        const targetArrivalIso = pickTargetCompletionIso(waypoints, roleMap, target);
         const { meetsDeadline, slackMinutes: deadlineSlackMinutes } = judgeDeadline(targetArrivalIso, deadline);
         const targetLabel =
           target === 'return' ? '반납 완료' : target === 'final' ? '최종 도착(반납 포함)' : '마지막 배송 완료';
@@ -779,10 +835,43 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const lowPrecisionStops = domainStops
           .map((s) => s.address)
           .filter((addr) => cache.get(addr.trim())?.lowPrecision);
+        const selectedRoad = Array.isArray(summary?.roadComparisons)
+          ? summary.roadComparisons.find((comparison: any) => comparison?.isSelected)
+          : null;
+        const tollIsApi =
+          selectedRoad?.tollSource === 'api' &&
+          Number.isFinite(Number(selectedRoad?.estimatedToll));
+        const tollAmount = tollIsApi ? Math.round(Number(selectedRoad.estimatedToll)) : null;
+        const tollSource: 'api' | 'unavailable' | null =
+          tollIsApi ? 'api' : selectedRoad ? 'unavailable' : null;
+        const resolvedDwellMinutes = [
+          Math.max(0, Number(routePayload.originDwellMinutes || 0)),
+          ...(Array.isArray(routePayload.dwellMinutes)
+            ? routePayload.dwellMinutes.map((value: unknown) => Math.max(0, Number(value) || 0))
+            : []),
+        ];
+        const stopsCount = countIntermediateStops(routePayload);
+        const waitMinutes = Math.round(Number(summary?.waitTime || 0) / 60);
+        const routePricingToken = `route-${++routePricingSequence}`;
+        routePricingContexts.set(routePricingToken, {
+          km,
+          driveMinutes,
+          dwellMinutes: resolvedDwellMinutes,
+          waitMinutes,
+          stopsCount,
+          tollAmount,
+          tollSource,
+        });
 
         const out = {
-          departureAt: departureIso,
-          departureLabel: kstHHmm(departureIso),
+          routePricingToken,
+          departureAt: routePayload.departureAt ?? departureIso,
+          departureLabel: kstHHmm(routePayload.departureAt ?? departureIso),
+          departureWasSuggested: Boolean(departureSuggestion),
+          pickupStartLabel: departureSuggestion
+            ? timeline[0]?.arrival ?? departureSuggestion.pickupStartLabel
+            : null,
+          departureSafetyMinutes: departureSuggestion?.safetyMinutes ?? null,
           timeline,
           // 마지막 배송 완료 시각(마감 기본 기준).
           deliveryArrival: kstHHmm(deliveryArrivalIso),
@@ -793,6 +882,11 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           km: Number(km.toFixed(1)),
           driveMinutes,
           dwellMinutes,
+          dwellBreakdownMinutes: resolvedDwellMinutes,
+          waitMinutes,
+          stopsCount,
+          tollAmount,
+          tollSource,
           totalMinutes,
           deadline: deadline ?? null,
           deadlineTarget: target,
@@ -806,10 +900,12 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
                 : null,
           assumption: departureTime
             ? `출발 ${kstHHmm(departureIso)} · Tmap 예측 교통 반영`
-            : '출발 시각 미지정 — 평일 오전 한산 가정 · Tmap 예측 교통 반영',
+            : departureSuggestion
+              ? `상차 시각 미지정 — 배송 마감에서 안전여유 ${departureSuggestion.safetyMinutes}분을 두고 권장 상차 ${departureSuggestion.pickupStartLabel}·출발 ${departureSuggestion.departureLabel}로 역산 · Tmap 예측 교통 반영`
+              : '출발 시각 미지정 — 평일 오전 한산 가정 · Tmap 예측 교통 반영',
           lowPrecisionStops,
           // 지도 렌더용(같은 경로를 지도에서 확인 가능).
-          routeRequest: { ...payload, useRealtimeTraffic: true },
+          routeRequest: { ...routePayload, useRealtimeTraffic: true },
         };
         track(
           'forecast_route_timeline',
@@ -976,7 +1072,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return out;
         }
 
-        const domainStops = toDomainStops(stops);
+        const domainStops = toRoleSafeDomainStops(stops);
         const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
         const toPoint = (address: string) => {
           const hit = cache.get(address.trim());
@@ -1159,7 +1255,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         frequency: FrequencySchema.optional(),
       }),
       execute: async ({ stops, frequency }) => {
-        const result = validatePlan(toDomainStops(stops), frequency as Frequency | undefined);
+        const result = validatePlan(toRoleSafeDomainStops(stops), frequency as Frequency | undefined);
         track('validate_plan', { stopCount: stops.length }, result);
         return result;
       },

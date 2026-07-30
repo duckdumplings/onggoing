@@ -356,16 +356,23 @@ async function generateQuotePackagePdf(input: GenerationInput, pkg: QuotePackage
     };
 
     if (isCustomer) {
-      text(input.sessionTitle || '월 기준 배송 견적서', margin, y, { size: 20, color: PDF_INK });
+      const monthlyMode = pkg.summary.monthlyTotal != null;
+      text(input.sessionTitle || (monthlyMode ? '월 기준 배송 견적서' : '배송 견적서'), margin, y, { size: 20, color: PDF_INK });
       text('고객용 요약 견적 · 세부 주행/체류/과금 산식 제외', margin, y + 26, { size: 9, color: PDF_MUTED });
       y += 52;
 
       const cardW = contentW / 3;
-      const cards = [
-        ['월 견적 / VAT 별도', pkg.summary.monthlyTotal],
-        [`부가세 ${Math.round(pkg.summary.vatRate * 100)}%`, pkg.summary.vatAmount],
-        ['월 견적 / VAT 포함', pkg.summary.monthlyTotalWithVat],
-      ] as const;
+      const cards: Array<readonly [string, number | null]> = monthlyMode
+        ? [
+            ['월 견적 / VAT 별도', pkg.summary.monthlyTotal],
+            [`부가세 ${Math.round(pkg.summary.vatRate * 100)}%`, pkg.summary.vatAmount],
+            ['월 견적 / VAT 포함', pkg.summary.monthlyTotalWithVat],
+          ]
+        : [
+            ['1회 견적 / VAT 별도', pkg.summary.oneTimeTotal],
+            [`부가세 ${Math.round(pkg.summary.vatRate * 100)}%`, pkg.summary.oneTimeVatAmount],
+            ['1회 견적 / VAT 포함', pkg.summary.oneTimeTotalWithVat],
+          ];
       cards.forEach(([label, value], idx) => {
         const x = margin + cardW * idx;
         doc.rect(x, y, cardW, 58).fillAndStroke(PDF_HEAD, PDF_LINE);
@@ -375,20 +382,26 @@ async function generateQuotePackagePdf(input: GenerationInput, pkg: QuotePackage
       y += 78;
 
       section('견적 기준');
-      const basis = [
-        ['운영 요일', pkg.operatingBasis.map((b) => b.weekdaysLabel).filter(Boolean).join(' / ') || '-'],
-        ['운영 회차', pkg.operatingBasis.map((b) => `${b.weekdaysLabel ?? '운영일'} 월 ${b.monthlyVisits ?? '-'}회`).join(' · ') || '-'],
-        ['산정 방식', '월 평균 운영일수 기준 · 공휴일 포함 여부 반영'],
-      ];
+      const basis = monthlyMode
+        ? [
+            ['운영 요일', pkg.operatingBasis.map((b) => b.weekdaysLabel).filter(Boolean).join(' / ') || '-'],
+            ['운영 회차', pkg.operatingBasis.map((b) => `${b.weekdaysLabel ?? '운영일'} 월 ${b.monthlyVisits ?? '-'}회`).join(' · ') || '-'],
+            ['산정 방식', '월 운영일수 기준 · 공휴일 포함 여부 반영'],
+          ]
+        : [
+            ['운영 빈도', '미확정'],
+            ['견적 단위', '라인별 1회 운행'],
+            ['산정 방식', '옹고잉 시간당 운임 기준'],
+          ];
       basis.forEach(([k, v]) => row([{ w: 95, text: k, color: PDF_MUTED }, { w: contentW - 95, text: v }], { h: 26 }));
       y += 18;
 
-      section('라인별 월 견적');
+      section(monthlyMode ? '라인별 월 견적' : '라인별 1회 견적');
       row([
         { w: contentW * 0.26, text: '라인', color: PDF_WHITE },
         { w: contentW * 0.13, text: '운영요일', color: PDF_WHITE },
         { w: contentW * 0.12, text: '구분', color: PDF_WHITE },
-        { w: contentW * 0.18, text: '월 견적', align: 'right', color: PDF_WHITE },
+        { w: contentW * 0.18, text: monthlyMode ? '월 견적' : '1회 견적', align: 'right', color: PDF_WHITE },
         { w: contentW * 0.18, text: 'VAT 포함', align: 'right', color: PDF_WHITE },
         { w: contentW * 0.13, text: '특이사항', color: PDF_WHITE },
       ], { fill: PDF_INK, h: 28 });
@@ -396,25 +409,39 @@ async function generateQuotePackagePdf(input: GenerationInput, pkg: QuotePackage
         { w: contentW * 0.26, text: r.group },
         { w: contentW * 0.13, text: r.operatingDays },
         { w: contentW * 0.12, text: r.slot },
-        { w: contentW * 0.18, text: formatWon(r.monthlyTotal), align: 'right' },
-        { w: contentW * 0.18, text: formatWon(r.monthlyTotalWithVat), align: 'right' },
+        { w: contentW * 0.18, text: formatWon(monthlyMode ? r.monthlyTotal : r.oneTimeTotal), align: 'right' },
+        { w: contentW * 0.18, text: formatWon(monthlyMode ? r.monthlyTotalWithVat : r.oneTimeTotalWithVat), align: 'right' },
         { w: contentW * 0.13, text: r.note },
       ]));
       y += 12;
-      text('월 평균 운영일수와 공휴일 포함 조건을 반영한 사전 견적입니다. 최종 운행 조건 확정 후 조정될 수 있습니다.', margin, y, { width: contentW, size: 8.5, color: PDF_MUTED });
+      text(
+        monthlyMode
+          ? '월 운영일수와 공휴일 포함 조건을 반영한 사전 견적입니다. 최종 운행 조건 확정 후 조정될 수 있습니다.'
+          : '운행 빈도 확정 전 1회 기준 사전 견적입니다. 정기 빈도 확정 시 월 견적을 별도 산출합니다.',
+        margin,
+        y,
+        { width: contentW, size: 8.5, color: PDF_MUTED },
+      );
     } else {
       text(view === 'internal-risk' ? '내부 리스크 시트' : '상세 산출 근거', margin, y, { size: 18, color: PDF_INK });
       text(input.sessionTitle || 'QuotePackage 기반 문서', margin, y + 24, { size: 9, color: PDF_MUTED });
       y += 50;
       section('요약');
+      row([{ w: contentW * 0.55, text: '1회 견적(VAT 별도)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.oneTimeTotal), align: 'right' }]);
+      row([{ w: contentW * 0.55, text: '1회 견적(VAT 포함)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.oneTimeTotalWithVat), align: 'right' }]);
       row([{ w: contentW * 0.55, text: '월 견적(VAT 별도)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.monthlyTotal), align: 'right' }]);
       row([{ w: contentW * 0.55, text: '월 견적(VAT 포함)' }, { w: contentW * 0.45, text: formatWon(pkg.summary.monthlyTotalWithVat), align: 'right' }]);
       y += 14;
       section(view === 'internal-risk' ? '리스크 및 대응' : '권역별 산출');
       const rows = view === 'internal-risk'
         ? pkg.risks.map((r) => [r.label, r.labelText, `${r.reason} ${r.recommendedAction}`])
-        : pkg.groupRollups.map((r) => [r.group, formatWon(r.monthlyTotal), r.riskLabel]);
-      row([{ w: contentW * 0.34, text: '항목', color: PDF_WHITE }, { w: contentW * 0.2, text: view === 'internal-risk' ? '등급' : '월 견적', color: PDF_WHITE }, { w: contentW * 0.46, text: '내용', color: PDF_WHITE }], { fill: PDF_INK });
+        : pkg.groupRollups.map((r) => [
+            r.group,
+            formatWon(r.monthlyTotal ?? r.oneTimeTotal),
+            r.riskLabel,
+          ]);
+      const calculationAmountLabel = pkg.summary.monthlyTotal == null ? '1회 견적' : '월 견적';
+      row([{ w: contentW * 0.34, text: '항목', color: PDF_WHITE }, { w: contentW * 0.2, text: view === 'internal-risk' ? '등급' : calculationAmountLabel, color: PDF_WHITE }, { w: contentW * 0.46, text: '내용', color: PDF_WHITE }], { fill: PDF_INK });
       rows.forEach(([a, b, c]) => row([{ w: contentW * 0.34, text: a }, { w: contentW * 0.2, text: b }, { w: contentW * 0.46, text: c }]));
     }
     doc.end();

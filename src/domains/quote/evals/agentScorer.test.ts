@@ -48,4 +48,31 @@ describe('agentScorer quote policy checks', () => {
       ]),
     );
   });
+
+  it('다중 라인 요청은 지정한 수의 견적책 라인이 있어야 통과시킨다', () => {
+    const multiLineCase: AgentEvalCase = {
+      id: 'multi-line',
+      input: '두 라인 견적',
+      expected: {
+        caseBoardCount: 2,
+        shouldHaveQuote: true,
+        shouldNotAskUser: true,
+      },
+    };
+    const passed = scoreAgentResponse(multiLineCase, {
+      caseBoard: {
+        cases: [
+          { label: 'A라인', oneTimePrice: 60_000 },
+          { label: 'B라인', oneTimePrice: 72_000 },
+        ],
+      },
+    });
+    const failed = scoreAgentResponse(multiLineCase, {
+      quote: { recommendedPlan: 'hourly' },
+    });
+
+    expect(passed.passed).toBe(true);
+    expect(failed.passed).toBe(false);
+    expect(failed.checks.find((check) => check.name === 'caseBoardCount')?.passed).toBe(false);
+  });
 });

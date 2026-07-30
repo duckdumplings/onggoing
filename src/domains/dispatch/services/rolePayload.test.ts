@@ -33,7 +33,14 @@ describe('buildRolePayload deliveryTimes 배선', () => {
     // ordered = [상차2, 중간 drop들..., 마지막 drop(종착)]
     expect(payload.destinations).toEqual(['선릉로129길 9-6', '선릉로 513', '언주로 871', '선릉로 830']);
     expect(payload.deliveryTimes).toEqual(['11:00', '11:30', '11:50', '12:50']);
+    expect(payload.timeConstraintTypes).toEqual([
+      'arrival-deadline',
+      'appointment',
+      'arrival-deadline',
+      'arrival-deadline',
+    ]);
     expect(payload.earlyDeliveryForbiddenFlags).toEqual([false, true, false, false]);
+    expect(payload.earlyToleranceMinutesByStop).toEqual([0, 15, 0, 0]);
     expect(payload.isNextDayFlags).toEqual([false, false, true, false]);
   });
 
@@ -65,5 +72,39 @@ describe('buildRolePayload deliveryTimes 배선', () => {
     expect(payload.deliveryTimes).toEqual(['', '15:00']);
     expect(payload.earlyDeliveryForbiddenFlags).toEqual([false, false]);
     expect(payload.isNextDayFlags).toEqual([false, false]);
+  });
+
+  it('복합 작업과 상차 시작시각을 경로 페이로드에 보존한다', () => {
+    const stops: RouteStop[] = [
+      {
+        address: '서초대로 350',
+        role: 'pickup',
+        dwellMinutes: 15,
+        schedule: { type: 'service-start', time: '10:20' },
+      },
+      {
+        address: '남풍산업',
+        role: 'drop',
+        operations: [
+          { type: 'drop', quantity: 4 },
+          { type: 'pickup', quantity: 4, label: '빈 가방' },
+        ],
+        schedule: { type: 'completion-deadline', time: '12:00' },
+      },
+    ];
+
+    const payload = buildRolePayload({
+      stops,
+      toPoint,
+      vehicleType: '레이',
+      departureAt: '2026-07-31T00:00:00.000Z',
+      preserveOrder: true,
+    });
+
+    expect(payload.departureAt).toBe('2026-07-31T01:35:00.000Z');
+    expect(payload.originSchedule).toEqual({ type: 'service-start', time: '10:20' });
+    expect(payload.stopOperations[0]).toEqual(stops[1].operations);
+    expect(payload.timeConstraintTypes).toEqual(['completion-deadline']);
+    expect(payload.deliveryTimes).toEqual(['12:00']);
   });
 });

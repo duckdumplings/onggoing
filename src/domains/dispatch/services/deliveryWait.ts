@@ -18,7 +18,7 @@ export function computeEarlyDeliveryWait(input: {
     isNextDay,
   } = input;
 
-  if (!target || !earlyDeliveryForbidden || earlyToleranceMinutes <= 0 || isNextDay) {
+  if (!target || !earlyDeliveryForbidden || earlyToleranceMinutes < 0 || isNextDay) {
     return { waitSec: 0, serviceStart: arrival };
   }
 

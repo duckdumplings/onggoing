@@ -16,6 +16,26 @@ import type {
 } from '@/domains/dispatch/types/routePlan';
 
 export const StopRoleSchema = z.enum(['pickup', 'drop', 'return', 'waypoint']);
+export const StopOperationSchema = z.object({
+  type: z.enum(['pickup', 'drop', 'return']).describe('이 지점에서 수행할 실제 작업. 배송 후 수거면 drop과 pickup을 둘 다 넣고, 반납지는 return을 쓴다.'),
+  label: z.string().optional().describe('화물/업무 구분명. 예: 도시락 배송, 빈 가방 수거.'),
+  quantity: z.number().nonnegative().optional(),
+  weightKg: z.number().nonnegative().optional(),
+});
+export const StopScheduleSchema = z.object({
+  type: z
+    .enum([
+      'ready',
+      'service-start',
+      'departure',
+      'arrival-deadline',
+      'completion-deadline',
+      'appointment',
+    ])
+    .describe('ready=물품 준비, service-start=작업 시작, departure=차량 출발, arrival-deadline=도착 마감, completion-deadline=작업 완료 마감, appointment=예약시각.'),
+  time: z.string().regex(/^\d{1,2}:\d{2}$/).describe('24시간제 HH:mm.'),
+  isNextDay: z.boolean().optional(),
+});
 
 export const FrequencySchema = z.object({
   per: z.enum(['day', 'week', 'month', 'quarter', 'year']),
@@ -31,6 +51,13 @@ export const RouteStopSchema = z.object({
   weightKg: z.number().optional().describe('지점별 물량(kg).'),
   quantity: z.number().optional().describe('지점별 물량 개수(예: 도시락 30). weightKg(kg)와 별개. 차종·체류시간 판단 참고용.'),
   dwellMinutes: z.number().optional().describe('상하차/작업 체류 시간(분).'),
+  operations: z
+    .array(StopOperationSchema)
+    .optional()
+    .describe('한 지점의 복합 작업. "배송 및 수거"는 [{type:"drop"},{type:"pickup"}]처럼 둘 다 넣는다. role은 경로상의 대표 역할로 유지한다.'),
+  schedule: StopScheduleSchema
+    .optional()
+    .describe('시각의 운영 의미. "10:20 상차"가 상차 시작이면 service-start, "10:20 출발"이면 departure로 구분한다.'),
   deliveryTime: z.string().optional().describe("'HH:mm' 배송(drop) 도착 마감 전용. 상차(pickup)의 '물품 준비 시각'은 여기 넣지 마라(도착 마감으로 오인돼 비현실 충돌을 유발) — 준비시각은 출발시각/방문 순서로 다뤄라."),
   deliveryTimeType: z
     .enum(['deadline', 'appointment'])

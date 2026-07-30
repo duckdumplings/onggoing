@@ -30,4 +30,16 @@ describe('computeEarlyDeliveryWait', () => {
     expect(result.waitSec / 60).toBe(34);
     expect(result.serviceStart.toISOString()).toBe('2026-07-31T02:15:00.000Z');
   });
+
+  it('작업 시작시각은 조기 허용 없이 해당 시각까지 대기한다', () => {
+    const result = computeEarlyDeliveryWait({
+      arrival,
+      target,
+      earlyDeliveryForbidden: true,
+      earlyToleranceMinutes: 0,
+    });
+
+    expect(result.waitSec / 60).toBe(49);
+    expect(result.serviceStart.toISOString()).toBe('2026-07-31T02:30:00.000Z');
+  });
 });

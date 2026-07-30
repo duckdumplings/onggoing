@@ -3,6 +3,11 @@
 // 동일 로직(originStop = pickups[0], finalDrop 고정)이 3곳 중복돼 있었다. 단일화 + open-start 기본 규칙 적용.
 
 import type { RouteStop, StopRole } from '@/domains/dispatch/types/routePlan';
+import {
+  resolveOriginDepartureAt,
+  resolveStopOperations,
+  resolveStopSchedule,
+} from '@/domains/dispatch/services/stopSemantics';
 
 /**
  * 역할별 기본 체류(상하차/작업) 시간(분). 미지정 stop에 적용.
@@ -54,6 +59,22 @@ export function countIntermediateStops(payload: {
   return Math.max(0, destinationCount - (payload.useExplicitDestination ? 1 : 0));
 }
 
+function stopSemantics(stop: RouteStop) {
+  const schedule = resolveStopSchedule(stop);
+  return {
+    deliveryTime: schedule?.time ?? '',
+    timeConstraintType: schedule?.type ?? null,
+    earlyDeliveryForbidden:
+      schedule?.type === 'appointment' ||
+      schedule?.type === 'service-start' ||
+      schedule?.type === 'ready',
+    earlyToleranceMinutes: schedule?.type === 'appointment' ? 15 : 0,
+    isNextDay: Boolean(schedule?.isNextDay),
+    operations: resolveStopOperations(stop),
+    schedule,
+  };
+}
+
 /**
  * open-start 적용 규칙: 픽업 후보 ≥2 + 단일 고정 하차 + 출발지 고정 지정 없음.
  * 이 조건에서 route-optimization이 시작점도 비용 최소화 변수로 선택한다.
@@ -77,6 +98,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     const origin = stops[0];
     const rest = stops.slice(1);
     const finalStop = rest[rest.length - 1] ?? null;
+    const restSemantics = rest.map(stopSemantics);
     return {
       origins: [toPoint(origin.address)],
       destinations: rest.map((s) => toPoint(s.address)),
@@ -86,19 +108,25 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
       optimizeOrder: false,
       returnToOrigin: false,
       roadOption,
-      departureAt,
+      departureAt: resolveOriginDepartureAt(origin, departureAt),
       dwellMinutes: rest.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
       originDwellMinutes: origin.dwellMinutes ?? defaultDwellForRole(origin.role),
       // 지점별 도착 데드라인. destinations와 인덱스 정합, 빈 문자열 = 제약 없음.
       // route-optimization이 사전(직행검증)·사후(ETA) 검증과 위반 시 조정 제안을 수행한다.
-      deliveryTimes: rest.map((s) => s.deliveryTime ?? ''),
+      deliveryTimes: restSemantics.map((s) => s.deliveryTime),
+      timeConstraintTypes: restSemantics.map((s) => s.timeConstraintType),
       // 단순 마감에는 대기를 만들지 않는다. 예약/정시 배송으로 명시된 지점만 조기배송 금지 적용.
-      earlyDeliveryForbiddenFlags: rest.map((s) => s.deliveryTimeType === 'appointment'),
-      isNextDayFlags: rest.map((s) => Boolean(s.isNextDay)),
+      earlyDeliveryForbiddenFlags: restSemantics.map((s) => s.earlyDeliveryForbidden),
+      earlyToleranceMinutesByStop: restSemantics.map((s) => s.earlyToleranceMinutes),
+      isNextDayFlags: restSemantics.map((s) => s.isNextDay),
       // destinations 인덱스 정합 역할 배열. route-optimization이 타임라인/지도 role 표기에 사용
       // (없으면 모든 경유지를 drop으로 하드코딩해 수거지가 배송으로 잘못 표기됨).
       stopRoles: rest.map((s) => s.role),
+      stopOperations: restSemantics.map((s) => s.operations),
+      stopSchedules: restSemantics.map((s) => s.schedule),
       originRole: origin.role,
+      originOperations: resolveStopOperations(origin),
+      originSchedule: resolveStopSchedule(origin),
       openStart: false,
       startCandidateCount: 1,
       fastOrder: false,
@@ -121,6 +149,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
   const ordered = finalStop ? [...orderedMiddle, finalStop] : orderedMiddle;
 
   const openStart = !forceFixedOrigin && Boolean(finalStop) && pickups.length >= 2;
+  const orderedSemantics = ordered.map(stopSemantics);
 
   return {
     origins: [toPoint(originStop.address)],
@@ -131,17 +160,23 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     optimizeOrder: true,
     returnToOrigin: false,
     roadOption,
-    departureAt,
+    departureAt: resolveOriginDepartureAt(originStop, departureAt),
     dwellMinutes: ordered.map((s) => s.dwellMinutes ?? defaultDwellForRole(s.role)),
     originDwellMinutes: originStop.dwellMinutes ?? defaultDwellForRole(originStop.role),
     // 지점별 도착 데드라인(빈 문자열 = 제약 없음). 시간제약이 하나라도 있으면
     // route-optimization이 open-start를 스스로 비활성화하고 due 기반 순서/검증을 적용한다.
-    deliveryTimes: ordered.map((s) => s.deliveryTime ?? ''),
-    earlyDeliveryForbiddenFlags: ordered.map((s) => s.deliveryTimeType === 'appointment'),
-    isNextDayFlags: ordered.map((s) => Boolean(s.isNextDay)),
+    deliveryTimes: orderedSemantics.map((s) => s.deliveryTime),
+    timeConstraintTypes: orderedSemantics.map((s) => s.timeConstraintType),
+    earlyDeliveryForbiddenFlags: orderedSemantics.map((s) => s.earlyDeliveryForbidden),
+    earlyToleranceMinutesByStop: orderedSemantics.map((s) => s.earlyToleranceMinutes),
+    isNextDayFlags: orderedSemantics.map((s) => s.isNextDay),
     // destinations 인덱스 정합 역할 배열(재정렬 시 route-optimization이 원본 인덱스로 되짚어 사용).
     stopRoles: ordered.map((s) => s.role),
+    stopOperations: orderedSemantics.map((s) => s.operations),
+    stopSchedules: orderedSemantics.map((s) => s.schedule),
     originRole: originStop.role,
+    originOperations: resolveStopOperations(originStop),
+    originSchedule: resolveStopSchedule(originStop),
     openStart,
     // 출발지 후보를 픽업으로 제한(origin + 그 외 픽업). 배송지/반납지는 출발지가 될 수 없다.
     startCandidateCount: pickups.length,

@@ -30,6 +30,10 @@ describe('normalizeRouteKey', () => {
     ['returnToOrigin', true],
     ['useExplicitDestination', false],
     ['earlyToleranceMinutes', 5],
+    ['timeConstraintTypes', ['completion-deadline']],
+    ['earlyToleranceMinutesByStop', [0]],
+    ['stopOperations', [[{ type: 'drop' }, { type: 'pickup' }]]],
+    ['originSchedule', { type: 'service-start', time: '10:20' }],
     ['vehicleCapacityKg', 100],
     ['loadKg', [20]],
   ])('%s 조건이 바뀌면 캐시를 분리한다', (field, value) => {

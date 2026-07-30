@@ -8,6 +8,7 @@ import {
   guardCaseBoardResponse,
   guardSingleQuoteResponse,
 } from '@/domains/quote/services/quoteResponseGuard';
+import { shouldForceQuoteCaseBoard } from '@/domains/quote/services/multiLineIntent';
 import { retrieveFeedbackGuidance } from '@/domains/quote/services/ragRetriever';
 import { createServerClient } from '@/libs/supabase-client';
 
@@ -56,20 +57,26 @@ const SYSTEM_PROMPT = `당신은 "옹고잉" 사륜차량 물류 서비스의 �
 
 [출발시간/요일 — 견적에 영향]
 - 옹고잉 요금에는 심야·주말 할증이 없다. 그러나 시간당 요금제는 "소요시간"으로 과금되므로, 출발시간/요일에 따른 교통량 차이로 소요시간이 변하면 견적도 달라진다. "출발시간은 요금에 영향 없다"고 단정하지 마라.
+- 상차·출발 시각은 없고 배송 마감만 있으면 시간을 다시 묻지 마라. forecast_route_timeline을 departureTime 없이 호출해 마감 15분 안전여유 기준의 pickupStartLabel·departureLabel과 전체 timeline을 받아라. 이어서 그 도구가 준 routePricingToken·km·driveMinutes·dwellBreakdownMinutes·waitMinutes·stopsCount를 calculate_quote에 그대로 넘겨 견적·지도·타임라인의 기준 경로를 일치시켜라. 이때 optimize_route를 다시 호출해 중복 Tmap 요청을 만들지 마라. 다중 라인은 quote_case_board가 케이스별로 같은 역산을 자동 수행한다.
 - 사용자가 출발시간/요일에 따른 차이를 묻거나(예: "주말 기준으로도", "출발시간 따라 다르지?") 시간 민감도를 알고 싶어하면 compare_departure_times 도구로 평일/주말 × 시간대 매트릭스를 계산해 표(마크다운)로 제시하라. 단, 사용자가 "09:00 출발 고정", "14:00 출발 고정"처럼 확정 출발시각을 준 본 견적에서는 그 시각을 임의로 08:00/10:00/18:00 프리셋으로 대체하지 마라. 비교 도구를 보조로 쓰더라도 customDepartureTimes에 사용자가 지정한 시각을 반드시 포함하고, 본 견적 결론은 지정 시각 기준 결과로만 작성하라.
-- 사용자가 도착 마감(예: "오후 3시까지 마지막 배송", "12시 전에 끝나야 함")을 말하면 compare_departure_times의 deadline에 "HH:mm"으로 넣어라. 도구가 각 출발의 예상 도착시각(deliveryArrivalLabel)과 마감 충족 여부(meetsDeadline)를 돌려준다. 마감을 지키는 출발 중 최저가(recommendedId)를 권장하고, 표에 도착시각·마감 충족(O/X)을 함께 표기하라. deadlineInfeasible=true면 어떤 출발도 마감을 못 지키므로, 출발을 앞당기거나 체류시간 단축/지점 분할이 필요하다고 솔직히 안내하라(불가능한 마감을 가능한 것처럼 말하지 마라).
+- 사용자가 마감에 맞는 여러 대안 출발시각 비교까지 요청하면 compare_departure_times의 deadline에 "HH:mm"으로 넣어라. 도구가 각 출발의 예상 완료시각(deliveryArrivalLabel)과 마감 충족 여부(meetsDeadline)를 돌려준다. 마감을 지키는 출발 중 최저가(recommendedId)를 권장하고, 표에 완료시각·마감 충족(O/X)을 함께 표기하라. deadlineInfeasible=true면 어떤 출발도 마감을 못 지키므로, 출발을 앞당기거나 체류시간 단축/지점 분할이 필요하다고 솔직히 안내하라(불가능한 마감을 가능한 것처럼 말하지 마라).
 - 일반 견적에서는 현재 견적이 어떤 출발 가정(예: 평일 오전 한산 시간대)인지 명시하라.
 
-[도착 목표 — 마감과 예약시각 구분]
-- "11:30까지/마감/이전 배송"은 deliveryTimeType="deadline"이다. 일찍 배송해도 되므로 현장 대기를 과금하지 않는다.
-- "11:30 예약/정시 배송/11:30부터 수령/조기배송 금지"는 deliveryTimeType="appointment"다. 이때만 예약시각 15분 전보다 이른 도착을 현장 대기로 계산한다.
+[지점 작업·시각 의미]
+- 한 지점에서 "배송 및 수거", "납품 후 빈 가방 회수"를 함께 하면 operations에 drop과 pickup을 둘 다 넣어라. 주소를 두 번 복제하거나 한 작업을 누락하지 마라. role은 대표 흐름(보통 drop)으로 두고 실제 작업은 operations가 진실원이다.
+- 반납/복귀 지점은 role="return", operations=[{type:"return"}]으로 기록한다. 배송(drop)으로 바꾸지 마라.
+- "10:20 상차"는 기본적으로 schedule={type:"service-start",time:"10:20"}로 해석한다. 상차 체류가 15분이면 실제 출발은 10:35다. 사용자가 "10:20 출발"이라고 했을 때만 departure를 쓴다.
+- "10:20 물품 준비"는 ready, "11:30 도착까지"는 arrival-deadline, "12:00 배송 완료까지"는 completion-deadline, "11:30 예약/정시"는 appointment다.
+- 구형 deliveryTime/deliveryTimeType도 받을 수 있지만 새 견적에서는 schedule.type으로 의미를 명시하라.
+- "11:30까지/마감/이전 배송"은 schedule.type="arrival-deadline"이다. 일찍 배송해도 되므로 현장 대기를 과금하지 않는다.
+- "11:30 예약/정시 배송/11:30부터 수령/조기배송 금지"는 schedule.type="appointment"다. 예약시각 15분 전보다 이른 도착만 현장 대기로 계산한다.
 - 표현이 단순히 "예상 타임라인 11:30 배송"처럼 모호하면 기본은 deadline으로 두고, 예약·조기배송 금지를 임의로 가정하지 마라.
 - 마감의 운영상 권장 목표는 15~20분 전이지만 이는 출발 조정 제안 기준이다. deadline 입력에 현장 대기를 자동 생성하는 근거로 쓰지 마라.
 - 도구가 돌려준 마감 여유 분(slack)으로 판단하라: slack<0 위반, 0≤slack<15 아슬아슬, 15≤slack≤20 이상적, slack>20 너무 이름. 시각·수치는 도구 값만 사용한다.
-- 상차(pickup) 시각은 '마감'이 아니라 '물품 준비 시각'이다. 준비시각보다 일찍 도착하면 대기가 발생한다. 상차 준비시각은 deliveryTime(도착 마감)에 넣지 말고 departureTime/방문 순서로 다뤄, 그 시각 이후 상차되도록 출발을 잡아라.
+- 상차 시각과 출발 시각을 같다고 두지 마라. 상차 시작은 service-start, 물품 준비는 ready, 상차 완료 후 차량 출발은 departure로 구분한다.
 
 [타임라인/도착시각 — 절대 지어내지 마라]
-- 사용자 입력(표/메모/메일)에 지점별 도착 시각이 있으면(예: 하차지마다 "11:30", "12:50") 해당 stop의 deliveryTime에 "HH:mm"으로 반드시 옮겨 넣고, 의미에 따라 deliveryTimeType을 deadline/appointment로 구분하라. 상차지의 "물품 준비 시각"은 deliveryTime이 아니라 출발시각(departureTime)/방문 순서로 다뤄라.
+- 사용자 입력(표/메모/메일)에 지점별 시각이 있으면 schedule.time에 옮기고 ready/service-start/departure/arrival-deadline/completion-deadline/appointment 중 운영 의미를 함께 지정하라.
 - 사용자가 "타임라인", "경유지별/지점별 도착시각", "몇 시에 어디 도착", "9시 출발하면 11시까지 가능해?" 등 시각표나 마감 가능성을 물으면 반드시 forecast_route_timeline 도구로 산출하라. "09:20 강동점, 09:35 잠실점"처럼 경유지별 도착시각을 본문에서 임의로 적는 것은 명백한 환각이며 금지한다(요금 금액과 똑같이, 시각도 도구가 준 값만 쓴다).
 - 사용자가 출발시각(예: "9시 출발")을 말하면 departureTime에 "HH:mm"으로 넣어라. 도착 마감(예: "11시까지")이 있으면 deadline에 넣어 마감 충족 여부(meetsDeadline)를 판정받아라. 절대 프리셋 시간대(10:00 등)로 9시 출발 질문에 답하지 마라 — 사용자가 말한 출발시각 그대로 계산하라.
 - [마감 기준 — 매우 중요] 마감은 기본적으로 "마지막 배송(drop) 완료"에 적용된다(deadlineTarget="delivery", 기본값). 서초 반납 복귀는 마감이 없는 "업무 종료(반납완료) 시각"이다 — 반납 복귀 시각이 마감을 넘어도 배송이 마감 전 끝났으면 충족이다. 도구가 deliveryArrival(배송 완료)과 returnArrival(반납 완료=업무 종료)을 분리해 돌려준다. 절대 반납 복귀 시각으로 "마감 불가"라고 단정하지 마라. 다만 사용자가 "반납까지 11시 안에"처럼 반납 완료를 마감 기준으로 말하면 deadlineTarget="return", 전 과정 최종 도착이 기준이면 "final"로 지정하라.
@@ -85,6 +92,7 @@ const SYSTEM_PROMPT = `당신은 "옹고잉" 사륜차량 물류 서비스의 �
 
 [멀티 케이스 견적 보드]
 - 사용자가 밥따봉 메모처럼 여러 권역(라인) × 점심/저녁 × 요일 패턴의 견적을 "한꺼번에" 요청하면, 라인마다 따로 산문으로 답하지 말고 quote_case_board를 한 번 호출해 케이스 보드(케이스별 소요·마감 충족 O/X·견적·지도 경로 + 월간/계약 롤업)를 만들어라.
+- 두 개 이상의 독립 배송라인을 한 메시지에 주면 월간 요청이 아니어도 quote_case_board를 우선 사용하라. 각 라인을 cases[] 한 건으로 분리하고, 라인 내부의 방문 순서가 명시되면 preserveOrder=true로 유지한다.
 - [도구 선택 고정] 여러 권역/라인의 월 기준 견적이고 점심·저녁 출발시각이 명시되어 있으면 compare_departure_times로 출발시간을 추천하지 마라. quote_case_board가 본 계산이고, compare_departure_times는 사용자가 "대안 출발시간도 비교해줘"라고 별도 요청한 경우에만 보조로 쓴다. 09:00 고정 요청을 08:00 출근 프리셋으로 바꿔 "09시 불가"라고 말하는 것은 금지다.
 - 각 케이스(cases[])는: label(예 "강동&잠실&송파&하남 점심"), group(권역 묶음, 예 "권역1"), 역할 태깅된 stops(수거/배송/반납), vehicleType, departureTime("HH:mm"), deadline("HH:mm"), deadlineTarget(기본 delivery), includePerJobReference, operatingWeekdays(운행 요일 0=일~6=토), includeHolidays(공휴일에도 운행하면 true)로 구성한다. 보드에는 targetMonth("YYYY-MM")와 contractMonths를 채워라.
 - [월 기준 — 매우 중요] 월 운행 횟수를 직접 숫자로 적지 마라(4주·24회 식 암산 금지). 라인별 operatingWeekdays와 includeHolidays를 채우고, 사용자가 특정 월(예: 2026년 8월)을 말하면 monthlyBasis="calendar"+targetMonth로 실제 달력을 센다. 사용자가 "월 평균 운영일수", "평균 월 기준"을 원하면 monthlyBasis="average"로 연간 평균 주수 기반 월 횟수를 쓰라. 예: 점심이 "월~토, 공휴일 포함"이면 operatingWeekdays=[1,2,3,4,5,6], includeHolidays=true. 월요일 점심(반납 없음) 케이스는 operatingWeekdays=[1]. 저녁이 월~금이면 [1,2,3,4,5].
@@ -313,7 +321,7 @@ const STEP_LABELS: Record<string, string> = {
   geocode_addresses: '주소 좌표 변환',
   optimize_route: '경로 최적화',
   compare_scenarios: '시나리오 비교 계산',
-  quote_case_board: '케이스 보드 산출',
+  quote_case_board: '다중 라인 견적책 산출',
   calculate_quote: '견적 산출',
   forecast_route_timeline: '도착시각 타임라인',
   audit_delivery_timeline: '지연 진단 분석',
@@ -359,6 +367,7 @@ export async function POST(request: NextRequest) {
       baseUrl: request.url,
       sessionId,
       departureAt,
+      sourceText: message,
       onToolEvent: (e) => {
         trace.push(e);
         void saveToolCallLog({ sessionId, tool: e.tool, input: e.input as any, output: e.output as any });
@@ -411,6 +420,7 @@ export async function POST(request: NextRequest) {
     }
 
     const systemPrompt = SYSTEM_PROMPT + contextNote + mapRouteNote + summaryNote + feedbackNote;
+    const forceQuoteCaseBoard = shouldForceQuoteCaseBoard(message);
 
     const result = streamText({
       model,
@@ -419,6 +429,15 @@ export async function POST(request: NextRequest) {
       tools,
       temperature: AGENT_DEFAULTS.temperature,
       stopWhen: stepCountIs(AGENT_DEFAULTS.maxSteps),
+      prepareStep: forceQuoteCaseBoard
+        ? ({ stepNumber }) =>
+            stepNumber === 0
+              ? {
+                  activeTools: ['quote_case_board'],
+                  toolChoice: { type: 'tool', toolName: 'quote_case_board' },
+                }
+              : {}
+        : undefined,
     });
 
     const acc: CollectedOutputs = {

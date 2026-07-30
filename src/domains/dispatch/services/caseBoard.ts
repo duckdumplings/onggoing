@@ -12,6 +12,12 @@
 import { z } from 'zod';
 
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
+import { applyExplicitReturnHints } from '@/domains/dispatch/services/explicitRoleHints';
+import {
+  buildDeadlineSeedDepartureAt,
+  deriveDeadlineDepartureSuggestion,
+  type DeadlineDepartureSuggestion,
+} from '@/domains/dispatch/services/deadlineScheduler';
 import {
   buildRolePayload,
   countIntermediateStops,
@@ -24,7 +30,7 @@ import {
   nextIsoAtHHMM,
   kstHHmm,
   buildAddressRoleMap,
-  pickTargetArrivalIso,
+  pickTargetCompletionIso,
   judgeDeadline,
 } from '@/domains/dispatch/utils/deliveryDeadline';
 import {
@@ -34,7 +40,12 @@ import {
   consecutiveMonths,
   describeWeekdays,
 } from '@/domains/dispatch/utils/monthlyBasis';
-import type { Frequency, StopRole } from '@/domains/dispatch/types/routePlan';
+import type {
+  Frequency,
+  StopOperation,
+  StopRole,
+  StopSchedule,
+} from '@/domains/dispatch/types/routePlan';
 import { FrequencySchema, RouteStopSchema, toDomainStops } from '@/domains/quote/agent/workingMemory';
 import type { QuotePackage, QuotePackageGroupRollup } from '@/domains/dispatch/types/quotePackage';
 
@@ -62,7 +73,7 @@ export const CaseBoardCaseInputSchema = z.object({
     .boolean()
     .default(false)
     .describe('사용자가 단건 운임 비교를 명시적으로 요청한 경우에만 true.'),
-  departureTime: z.string().optional().describe('출발 시각 "HH:mm". 점심/저녁은 케이스를 나눠 각각 출발시각을 넣어라.'),
+  departureTime: z.string().optional().describe('출발 시각 "HH:mm". 없고 마감이 있으면 시스템이 15분 안전여유로 권장 상차·출발을 역산한다.'),
   deadline: z.string().optional().describe('마감 시각 "HH:mm". 기준은 deadlineTarget(기본=마지막 배송 완료).'),
   deadlineTarget: z.enum(['delivery', 'return', 'final']).default('delivery'),
   frequency: FrequencySchema.optional(),
@@ -93,6 +104,8 @@ export interface CaseBoardInput {
   targetMonth?: string;
   /** 케이스에 출발시각이 없을 때 쓸 폴백 ISO(견적-지도 일치용 고정 스냅샷). */
   departureFallback?: string;
+  /** 역할 오분류 보정용 사용자 원문. 반납/복귀처럼 명시적인 힌트만 사용한다. */
+  sourceText?: string;
 }
 
 export type DeadlineRiskGrade = 'safe' | 'caution' | 'danger' | 'recheck' | 'infeasible' | 'none';
@@ -122,6 +135,8 @@ export interface CaseTimelineEntry {
   dwellMinutes: number | null;
   /** 조기배송 금지로 인한 현장 대기(분). 구속시간에 과금됨. */
   waitMinutes?: number | null;
+  operations?: StopOperation[];
+  schedule?: StopSchedule | null;
 }
 
 export interface CaseBoardCaseResult {
@@ -144,6 +159,10 @@ export interface CaseBoardCaseResult {
   deliveryArrival?: string | null;
   /** 반납 완료(=업무 종료) 시각. 반납 없으면 null. 마감 대상 아님. */
   returnArrival?: string | null;
+  /** 상차 시각 미입력 시 배송 마감에서 역산한 권장 시각. */
+  departureWasSuggested?: boolean;
+  pickupStartLabel?: string | null;
+  departureSafetyMinutes?: number | null;
   meetsDeadline?: boolean | null;
   deadlineSlackMinutes?: number | null;
   oneTimePrice?: number;
@@ -244,12 +263,13 @@ async function computeCase(
   departureFallback: string,
   targetMonth: string,
   monthlyBasis: 'calendar' | 'average',
-  idx: number
+  idx: number,
+  sourceText?: string,
 ): Promise<CaseBoardCaseResult> {
   const id = `case-${idx + 1}`;
   const baseInfo = { id, label: c.label, group: c.group, vehicleType: c.vehicleType };
   try {
-    const domainStops = toDomainStops(c.stops);
+    const domainStops = applyExplicitReturnHints(toDomainStops(c.stops), sourceText);
     const cache = await geocodeStopAddresses(domainStops.map((s) => s.address));
     const toPoint = (address: string) => {
       const hit = cache.get(address.trim());
@@ -258,7 +278,15 @@ async function computeCase(
       }
       return address;
     };
-    const departureIso = c.departureTime ? nextIsoAtHHMM(c.departureTime) : departureFallback;
+    const deadlineSeed = c.departureTime
+      ? null
+      : buildDeadlineSeedDepartureAt({
+          schedules: domainStops.map((stop) => stop.schedule),
+          fallbackDeadline: c.deadline,
+        });
+    const departureIso = c.departureTime
+      ? nextIsoAtHHMM(c.departureTime)
+      : deadlineSeed ?? departureFallback;
     const payload = buildRolePayload({
       stops: domainStops,
       toPoint,
@@ -269,8 +297,52 @@ async function computeCase(
       preserveOrder: c.preserveOrder,
       useRealtimeTraffic: true,
     });
+    const roleMap = buildAddressRoleMap(domainStops, cache);
+    const target: DeadlineTarget = c.deadlineTarget ?? 'delivery';
+    const shouldSuggestDeparture =
+      !c.departureTime &&
+      Boolean(deadlineSeed) &&
+      !payload.originSchedule;
+    let departureSuggestion: DeadlineDepartureSuggestion | null = null;
+    let activePayload = payload;
 
-    let { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, payload);
+    if (shouldSuggestDeparture) {
+      const seedPayload = {
+        ...payload,
+        deliveryTimes: Array.isArray(payload.deliveryTimes)
+          ? payload.deliveryTimes.map(() => '')
+          : payload.deliveryTimes,
+      };
+      const seed = await postRouteOptimizationCached(baseUrl, seedPayload);
+      if (seed.ok) {
+        const seedTimeline: any[] = Array.isArray(seed.json?.data?.timeline)
+          ? seed.json.data.timeline
+          : [];
+        const seedWaypoints: any[] = Array.isArray(seed.json?.data?.waypoints)
+          ? seed.json.data.waypoints
+          : [];
+        const fallbackCompletion = c.deadline
+          ? pickTargetCompletionIso(seedWaypoints, roleMap, target)
+          : null;
+        departureSuggestion = deriveDeadlineDepartureSuggestion({
+          seedDepartureAt: payload.departureAt ?? departureIso,
+          timeline: seedTimeline,
+          fallbackDeadline: c.deadline,
+          fallbackEvaluatedAt: fallbackCompletion,
+          originDwellMinutes: Number(payload.originDwellMinutes ?? 0),
+          safetyMinutes: 15,
+        });
+        if (departureSuggestion) {
+          activePayload = {
+            ...payload,
+            departureAt: departureSuggestion.departureAt,
+          };
+        }
+      }
+    }
+
+    let routeRequestPayload = activePayload;
+    let { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, activePayload);
     // 시간제약 위반 케이스: 불투명 에러로 버리지 않고, 참고가 있는 infeasible 케이스로 유지한다.
     let deadlineInfeasible = false;
     let infeasibleReason: string | undefined;
@@ -284,15 +356,16 @@ async function computeCase(
         infeasibleReason = errs.length ? errs.join(' ') : describeRouteOptFailure(status, body);
         // 시각 제약을 모두 비운 페이로드로 1회 재시도해 참고용 summary/waypoints/timeline/가격을 얻는다.
         const retryPayload = {
-          ...payload,
-          deliveryTimes: Array.isArray(payload.deliveryTimes)
-            ? payload.deliveryTimes.map(() => '')
-            : payload.deliveryTimes,
+          ...activePayload,
+          deliveryTimes: Array.isArray(activePayload.deliveryTimes)
+            ? activePayload.deliveryTimes.map(() => '')
+            : activePayload.deliveryTimes,
         };
         const retry = await postRouteOptimizationCached(baseUrl, retryPayload);
         if (!retry.ok) {
           return { ...baseInfo, error: describeRouteOptFailure(retry.status, retry.json) };
         }
+        routeRequestPayload = retryPayload;
         ok = retry.ok;
         status = retry.status;
         body = retry.json;
@@ -303,12 +376,10 @@ async function computeCase(
 
     const summary = body?.data?.summary;
     const waypoints: any[] = Array.isArray(body?.data?.waypoints) ? body.data.waypoints : [];
-    const roleMap = buildAddressRoleMap(domainStops, cache);
     const hasReturn = Array.from(roleMap.values()).includes('return');
-    const target: DeadlineTarget = c.deadlineTarget ?? 'delivery';
-    const deliveryArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'delivery');
-    const returnArrivalIso = pickTargetArrivalIso(waypoints, roleMap, 'return');
-    const targetArrivalIso = pickTargetArrivalIso(waypoints, roleMap, target);
+    const deliveryArrivalIso = pickTargetCompletionIso(waypoints, roleMap, 'delivery');
+    const returnArrivalIso = pickTargetCompletionIso(waypoints, roleMap, 'return');
+    const targetArrivalIso = pickTargetCompletionIso(waypoints, roleMap, target);
     const judged = c.deadline
       ? judgeDeadline(targetArrivalIso, c.deadline)
       : { meetsDeadline: null, slackMinutes: null };
@@ -331,7 +402,10 @@ async function computeCase(
         distance: km * 1000,
         time: driveMinutes * 60,
         vehicleType: c.vehicleType,
-        dwellMinutes: payload.dwellMinutes,
+        dwellMinutes: [
+          Number(payload.originDwellMinutes ?? 0),
+          ...(Array.isArray(payload.dwellMinutes) ? payload.dwellMinutes : []),
+        ],
         waitMinutes,
         stopsCount,
         scheduleType: c.scheduleType,
@@ -399,6 +473,8 @@ async function computeCase(
         : Number.isFinite(Number(w?.waitTime))
           ? Number(w.waitTime)
           : null,
+      operations: Array.isArray(w?.operations) ? w.operations : [],
+      schedule: w?.schedule && typeof w.schedule === 'object' ? w.schedule : null,
     }));
 
     // 격자 미니맵용 폴리라인: 출발지 + 최적 순서 경유지(좌표).
@@ -447,7 +523,12 @@ async function computeCase(
 
     const result: CaseBoardCaseResult = {
       ...baseInfo,
-      departureLabel: kstHHmm(departureIso),
+      departureLabel: kstHHmm(activePayload.departureAt ?? departureIso),
+      departureWasSuggested: Boolean(departureSuggestion),
+      pickupStartLabel: departureSuggestion
+        ? timeline[0]?.arrival ?? departureSuggestion.pickupStartLabel
+        : null,
+      departureSafetyMinutes: departureSuggestion?.safetyMinutes ?? null,
       km: Number(km.toFixed(1)),
       driveMinutes,
       dwellMinutes,
@@ -483,7 +564,9 @@ async function computeCase(
       timeline,
       schematic,
       routeGeometry,
-      routeRequest: { ...payload, useRealtimeTraffic: true },
+      // 마감 불가 케이스는 제약 없는 참고 경로로 지도만 렌더한다.
+      // 원 제약을 다시 보내면 미리보기 API도 같은 400으로 실패해 지도가 열리지 않는다.
+      routeRequest: { ...routeRequestPayload, useRealtimeTraffic: true },
       lowPrecisionStops,
     };
     return {
@@ -514,7 +597,7 @@ export async function computeCaseBoard(baseUrl: string, input: CaseBoardInput): 
   const targetMonth = input.targetMonth ?? defaultTargetMonth();
   const monthlyBasis = input.monthlyBasis ?? 'calendar';
   const results = await mapPool(input.cases, CASE_CONCURRENCY, (c, idx) =>
-    computeCase(baseUrl, c, departureFallback, targetMonth, monthlyBasis, idx)
+    computeCase(baseUrl, c, departureFallback, targetMonth, monthlyBasis, idx, input.sourceText)
   );
 
   const valid = results.filter((r) => !r.error && typeof r.oneTimePrice === 'number');

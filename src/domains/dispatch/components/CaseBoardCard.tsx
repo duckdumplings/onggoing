@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Check, X, Map as MapIcon, ChevronDown, AlertTriangle, Clock, Layers } from 'lucide-react';
-import type { CaseBoardResult, CaseBoardCaseResult, CaseSchematicPoint } from '@/domains/dispatch/services/caseBoard';
+import { Check, X, Map as MapIcon, ChevronDown, AlertTriangle, Clock } from 'lucide-react';
+import CaseRouteSchematic from '@/domains/dispatch/components/CaseRouteSchematic';
+import QuoteBookOverview from '@/domains/dispatch/components/QuoteBookOverview';
+import type { CaseBoardResult, CaseBoardCaseResult } from '@/domains/dispatch/services/caseBoard';
+import { formatStopOperations, formatStopSchedule } from '@/domains/dispatch/services/stopSemantics';
 
 interface CaseBoardCardProps {
   board: CaseBoardResult;
@@ -40,75 +43,6 @@ const ROLE_LABEL: Record<string, string> = {
   return: '반납',
   waypoint: '경유',
 };
-
-/**
- * 케이스 경로의 격자 미니맵. routeGeometry(Tmap 실도로 좌표)가 있으면 실제 도로 모양으로 그리고,
- * 없을 때만 지점을 잇는 점선(개략)으로 폴백한다. 여러 라인을 한눈에 비교하는 용도.
- */
-function CaseSchematicMap({ points, polyline }: { points?: CaseSchematicPoint[]; polyline?: { lat: number; lng: number }[] }) {
-  const geom = useMemo(() => {
-    const nodes = (points ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    const road = (polyline ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    const all = [...road, ...nodes];
-    if (all.length === 0) return null;
-    const W = 132;
-    const H = 84;
-    const PAD = 10;
-    const lats = all.map((p) => p.lat);
-    const lngs = all.map((p) => p.lng);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    const spanLat = maxLat - minLat || 1;
-    const spanLng = maxLng - minLng || 1;
-    const single = all.length === 1;
-    const project = (p: { lat: number; lng: number }) => ({
-      x: single ? W / 2 : PAD + ((p.lng - minLng) / spanLng) * (W - 2 * PAD),
-      y: single ? H / 2 : PAD + ((maxLat - p.lat) / spanLat) * (H - 2 * PAD),
-    });
-    const roadPath =
-      road.length > 1
-        ? road.map((p, i) => { const q = project(p); return `${i === 0 ? 'M' : 'L'}${q.x.toFixed(1)},${q.y.toFixed(1)}`; }).join(' ')
-        : null;
-    return { W, H, roadPath, nodes: nodes.map((p) => ({ ...project(p), role: p.role })) };
-  }, [points, polyline]);
-
-  if (!geom) {
-    return (
-      <div className="flex h-[84px] w-full items-center justify-center rounded-lg bg-muted text-[10px] text-muted-foreground">
-        경로 미리보기 없음
-      </div>
-    );
-  }
-
-  // 실도로 좌표가 없을 때만 지점 연결선을 점선(개략)으로 그린다 — 직선이 실제 경로로 오인되지 않게.
-  const dashedPath =
-    !geom.roadPath && geom.nodes.length > 1
-      ? geom.nodes.map((n, i) => `${i === 0 ? 'M' : 'L'}${n.x.toFixed(1)},${n.y.toFixed(1)}`).join(' ')
-      : null;
-
-  return (
-    <svg
-      viewBox={`0 0 ${geom.W} ${geom.H}`}
-      className="h-[84px] w-full rounded-lg bg-muted"
-      role="img"
-      aria-label={geom.roadPath ? '실제 도로 경로 개략도' : '경로 개략도(직선 근사)'}
-    >
-      {geom.roadPath ? (
-        <path d={geom.roadPath} fill="none" stroke="currentColor" strokeWidth={1.6} className="text-primary/60" strokeLinejoin="round" strokeLinecap="round" />
-      ) : dashedPath ? (
-        <path d={dashedPath} fill="none" stroke="currentColor" strokeWidth={1.2} strokeDasharray="3 2" className="text-primary/30" strokeLinejoin="round" />
-      ) : null}
-      {geom.nodes.map((n, i) => (
-        <g key={i} className={ROLE_DOT_CLASS[n.role] ?? 'text-muted-foreground'}>
-          <circle cx={n.x} cy={n.y} r={i === 0 ? 3.4 : 2.6} fill="currentColor" />
-          {i === 0 && <circle cx={n.x} cy={n.y} r={5.2} fill="none" stroke="currentColor" strokeWidth={1} className="opacity-50" />}
-        </g>
-      ))}
-    </svg>
-  );
-}
 
 type RiskGrade = NonNullable<CaseBoardCaseResult['riskGrade']>;
 
@@ -165,14 +99,23 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
 
   return (
     <div className="rounded-xl border border-border bg-card p-3">
-      <CaseSchematicMap points={c.schematic} polyline={c.routeGeometry} />
+      <CaseRouteSchematic points={c.schematic} polyline={c.routeGeometry} />
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">{c.label}</div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {c.departureLabel ? `출발 ${c.departureLabel}` : '출발 미지정'} · {c.vehicleType}
+            {c.departureWasSuggested && c.pickupStartLabel
+              ? `권장 상차 ${c.pickupStartLabel} · 출발 ${c.departureLabel ?? '-'}`
+              : c.departureLabel
+                ? `출발 ${c.departureLabel}`
+                : '출발 미지정'} · {c.vehicleType}
             {c.operatingWeekdaysLabel ? ` · ${c.operatingWeekdaysLabel}` : ''}
           </div>
+          {c.departureWasSuggested && (
+            <div className="mt-0.5 text-[10px] text-primary">
+              배송 마감에서 안전여유 {c.departureSafetyMinutes ?? 15}분을 두고 역산했어요.
+            </div>
+          )}
         </div>
         <div className="text-right">
           <div className="text-sm font-bold tabular-nums text-foreground">{won(c.oneTimePrice)}</div>
@@ -225,25 +168,36 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
             경유지 타임라인
           </div>
           <ol className="space-y-0.5 text-[11px]">
-            {c.timeline!.map((t) => (
-              <li key={t.seq} className="flex items-center gap-2">
-                <span className={`w-9 text-right tabular-nums ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
-                  {t.arrival ?? '-'}
-                </span>
-                <span className={`rounded px-1 text-[9px] font-semibold ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
-                  {ROLE_LABEL[t.role ?? 'waypoint']}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-foreground">{t.address ?? '-'}</span>
-                {t.waitMinutes != null && t.waitMinutes > 0 && (
-                  <span
-                    className="whitespace-nowrap rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700"
-                    title="조기배송 금지로 현장 대기 후 배송(구속시간에 과금)"
-                  >
-                    대기 {t.waitMinutes}분
+            {c.timeline!.map((t) => {
+              const operationLabel = t.operations?.length
+                ? formatStopOperations(t.operations)
+                : ROLE_LABEL[t.role ?? 'waypoint'];
+              const scheduleLabel = formatStopSchedule(t.schedule);
+              return (
+                <li key={t.seq} className="flex items-center gap-2">
+                  <span className={`w-9 text-right tabular-nums ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
+                    {t.arrival ?? '-'}
                   </span>
-                )}
-              </li>
-            ))}
+                  <span className={`rounded px-1 text-[9px] font-semibold ${ROLE_DOT_CLASS[t.role ?? 'waypoint']}`}>
+                    {operationLabel}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-foreground">{t.address ?? '-'}</span>
+                  {scheduleLabel && (
+                    <span className="hidden whitespace-nowrap text-[9px] text-muted-foreground sm:inline">
+                      {scheduleLabel}
+                    </span>
+                  )}
+                  {t.waitMinutes != null && t.waitMinutes > 0 && (
+                    <span
+                      className="whitespace-nowrap rounded bg-warning-muted px-1 text-[9px] font-medium text-warning"
+                      title="조기배송 금지로 현장 대기 후 배송(구속시간에 과금)"
+                    >
+                      대기 {t.waitMinutes}분
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </div>
       )}
@@ -337,6 +291,7 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
 
 export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardProps) {
   const cases = useMemo(() => board.cases ?? [], [board.cases]);
+  const [selectedCaseId, setSelectedCaseId] = useState(() => cases[0]?.id ?? '');
 
   // group 키별로 묶되, 입력 순서를 보존한다.
   const groups = useMemo(() => {
@@ -357,31 +312,17 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
 
   const r = board.rollup;
   const quotePackage = board.quotePackage;
+  const selectedCase = cases.find((result) => result.id === selectedCaseId) ?? cases[0];
   const showGroupLabel = groups.length > 1 || (groups.length === 1 && groups[0].key !== '기타');
 
   return (
     <div className="glass-panel w-full p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
-          <Layers className="h-4 w-4 text-muted-foreground" />
-          케이스 견적 보드
-        </div>
-        <span className="text-[11px] text-muted-foreground">{cases.length}개 케이스</span>
-      </div>
-
-      {/* 롤업 요약 */}
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <RollupChip label="1회 합계" value={won(r.oneTimeTotal)} />
-        <RollupChip
-          label={r.targetMonth ? `${r.targetMonth} 월 합계` : '월 합계'}
-          value={r.monthlyTotal != null ? won(r.monthlyTotal) : '미산정'}
-        />
-        <RollupChip
-          label={r.contractMonths != null ? `계약 ${r.contractMonths}개월` : '계약 합계'}
-          value={r.contractTotal != null ? won(r.contractTotal) : '미산정'}
-        />
-        <RollupChip label="연 합계" value={r.annualTotal != null ? won(r.annualTotal) : '미산정'} />
-      </div>
+      <QuoteBookOverview
+        board={board}
+        selectedCase={selectedCase}
+        onSelect={setSelectedCaseId}
+        onPreviewRoute={onPreviewRoute}
+      />
 
       {Array.isArray(r.contractBreakdown) && r.contractBreakdown.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground">
@@ -420,7 +361,9 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
           {quotePackage.groupRollups.map((g) => (
             <div key={g.group} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-border px-2.5 py-1.5 text-[11px] last:border-b-0">
               <span className="truncate font-medium text-foreground">{g.group}</span>
-              <span className="text-right tabular-nums text-foreground">{won(g.monthlyTotal)}</span>
+              <span className="text-right tabular-nums text-foreground">
+                {g.monthlyTotal == null ? '미산정' : won(g.monthlyTotal)}
+              </span>
               <span className="text-right text-muted-foreground">{g.riskLabel}</span>
             </div>
           ))}
@@ -465,15 +408,6 @@ export default function CaseBoardCard({ board, onPreviewRoute }: CaseBoardCardPr
       </div>
 
       <div className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{board.basis}</div>
-    </div>
-  );
-}
-
-function RollupChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card px-2.5 py-1.5">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div className="text-sm font-bold tabular-nums text-foreground">{value}</div>
     </div>
   );
 }

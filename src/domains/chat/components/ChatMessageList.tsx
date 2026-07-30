@@ -144,7 +144,51 @@ const MessageBubble = React.memo(function MessageBubble({
                 <AuditTimelineCard audit={msg.structured.auditTimeline} />
               )}
               {msg.structured.caseBoard && (
-                <CaseBoardCard board={msg.structured.caseBoard} onPreviewRoute={onPreviewRoute} />
+                <>
+                  <CaseBoardCard board={msg.structured.caseBoard} onPreviewRoute={onPreviewRoute} />
+                  <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-foreground">견적책 발행</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                        고객 공유용 요약과 내부 확인용 계산 근거를 분리해 저장합니다.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGenerateFile('pdf', {
+                            structured: msg.structured,
+                            documentView: 'customer-summary',
+                          })
+                        }
+                        disabled={isGeneratingFile}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                      >
+                        {isGeneratingFile ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileText className="h-3.5 w-3.5" />
+                        )}
+                        고객용 견적책 PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onGenerateFile('pdf', {
+                            structured: msg.structured,
+                            documentView: 'calculation-basis',
+                          })
+                        }
+                        disabled={isGeneratingFile}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        계산 근거 PDF
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
               {!msg.structured.scenarioComparison && Boolean(msg.structured.quote) && (
                 <QuoteResultCard quote={msg.structured.quote} onOpenPanel={onOpenQuotePanel} />

@@ -3,6 +3,9 @@ import type { DeadlineRiskGrade } from '@/domains/dispatch/services/caseBoard';
 export type QuoteDocumentView = 'customer-summary' | 'calculation-basis' | 'internal-risk';
 
 export interface QuotePackageSummary {
+  oneTimeTotal: number;
+  oneTimeVatAmount: number;
+  oneTimeTotalWithVat: number;
   monthlyTotal: number | null;
   vatAmount: number | null;
   monthlyTotalWithVat: number | null;
@@ -21,9 +24,12 @@ export interface QuotePackageOperatingBasis {
 
 export interface QuotePackageGroupRollup {
   group: string;
-  monthlyTotal: number;
-  vatAmount: number;
-  monthlyTotalWithVat: number;
+  oneTimeTotal: number;
+  oneTimeVatAmount: number;
+  oneTimeTotalWithVat: number;
+  monthlyTotal: number | null;
+  vatAmount: number | null;
+  monthlyTotalWithVat: number | null;
   riskLabel: string;
 }
 
@@ -31,6 +37,8 @@ export interface QuotePackageCustomerRow {
   group: string;
   operatingDays: string;
   slot: string;
+  oneTimeTotal: number | null;
+  oneTimeTotalWithVat: number | null;
   monthlyTotal: number | null;
   monthlyTotalWithVat: number | null;
   note: string;

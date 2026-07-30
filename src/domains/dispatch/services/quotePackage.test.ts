@@ -15,6 +15,7 @@ describe('QuotePackage monthly quote invariants', () => {
     const pkg = buildQuotePackage(BABTTABONG_CASE_BOARD_GOLDEN);
 
     expect(pkg.summary.monthlyTotal).toBe(BABTTABONG_CASE_BOARD_GOLDEN.rollup.monthlyTotal);
+    expect(pkg.summary.oneTimeTotal).toBe(BABTTABONG_CASE_BOARD_GOLDEN.rollup.oneTimeTotal);
     expect(pkg.groupRollups).toHaveLength(2);
     expect(pkg.customerRows.map((row) => row.slot)).toEqual(['점심', '저녁']);
     expect(BABTTABONG_CASE_BOARD_GOLDEN.cases.map((c) => c.departureLabel)).toEqual(['09:00', '14:00']);
@@ -33,9 +34,38 @@ describe('QuotePackage monthly quote invariants', () => {
       BABTTABONG_CASE_BOARD_GOLDEN
     );
 
-    expect(guarded).toContain('월 합계는 케이스 보드 산출값');
+    expect(guarded).toContain('월 합계는 견적책 산출값');
     expect(guarded).toContain('09:00 / 14:00 기준');
     expect(guarded).toContain('강남&대치 저녁: 스타렉스');
     expect(guarded).toContain('보조 프리셋 시간이 보였다면 무시');
+  });
+
+  it('운행 빈도가 없으면 월 견적을 0원으로 만들지 않는다', () => {
+    const board = {
+      ...BABTTABONG_CASE_BOARD_GOLDEN,
+      cases: BABTTABONG_CASE_BOARD_GOLDEN.cases.map((c) => ({
+        ...c,
+        monthlyTotal: undefined,
+        monthlyVisits: undefined,
+        operatingWeekdaysLabel: null,
+      })),
+      rollup: {
+        ...BABTTABONG_CASE_BOARD_GOLDEN.rollup,
+        monthlyTotal: null,
+      },
+    };
+    const pkg = buildQuotePackage(board);
+    const guarded = guardCaseBoardResponse('2개 라인 견적입니다.', {
+      ...board,
+      quotePackage: pkg,
+    });
+
+    expect(pkg.summary.monthlyTotal).toBeNull();
+    expect(pkg.summary.oneTimeTotal).toBe(board.rollup.oneTimeTotal);
+    expect(pkg.customerRows.every((row) => row.oneTimeTotal != null)).toBe(true);
+    expect(pkg.groupRollups.every((group) => group.monthlyTotal == null)).toBe(true);
+    expect(pkg.operatingBasis).toEqual([]);
+    expect(guarded).toContain('운행 빈도 미입력으로 미산정');
+    expect(guarded).not.toContain('월 합계는 견적책 산출값 0원');
   });
 });
