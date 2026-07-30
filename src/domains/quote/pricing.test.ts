@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   pickHourlyRate,
+  isHourlyRateSupported,
   roundUpTo30Minutes,
+  calculateHourlyFuelSurcharge,
   fuelSurchargeHourlyCorrect,
   perJobBasePrice,
   perJobRegularPrice,
@@ -29,8 +31,10 @@ describe('pickHourlyRate', () => {
     expect(pickHourlyRate('starex', 150)).toBe(34000);
     expect(pickHourlyRate('starex', 150)).toBeLessThan(pickHourlyRate('starex', 120));
   });
-  it('표 범위를 넘으면 마지막 구간 단가로 폴백한다', () => {
-    expect(pickHourlyRate('ray', 1000)).toBe(21000);
+  it('표 범위를 넘으면 마지막 단가를 임의 연장하지 않는다', () => {
+    expect(isHourlyRateSupported('ray', 480)).toBe(true);
+    expect(isHourlyRateSupported('ray', 510)).toBe(false);
+    expect(() => pickHourlyRate('ray', 510)).toThrow(/480분까지만/);
   });
 });
 
@@ -48,6 +52,19 @@ describe('fuelSurchargeHourlyCorrect', () => {
     // 45km, 기본 20km → 초과 25km → ceil(25/10)=3 bins
     expect(fuelSurchargeHourlyCorrect('ray', 45, 120)).toBe(6000);
     expect(fuelSurchargeHourlyCorrect('starex', 45, 120)).toBe(8400);
+  });
+  it('운임표 산식 근거를 합계와 함께 반환한다', () => {
+    const breakdown = calculateHourlyFuelSurcharge('ray', 30.7, 120);
+    expect(breakdown).toEqual({
+      vehicle: 'ray',
+      actualDistanceKm: 30.7,
+      includedDistanceKm: 20,
+      excessDistanceKm: 10.7,
+      stepKm: 10,
+      stepCharge: 2000,
+      chargedBins: 2,
+      total: 4000,
+    });
   });
 });
 

@@ -805,7 +805,9 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       }
 
       const hasQuote = Boolean(payload.quote);
-      const text = (liveText || payload.assistantMessage || '').trim();
+      // 서버는 마지막 도구 호출 이후의 최종 문장만 assistantMessage로 정리한다.
+      // 전체 liveText를 우선하면 도구 호출 전 임의 산술과 최종 계산값이 한 말풍선에 함께 남는다.
+      const text = (payload.assistantMessage || liveText || '').trim();
       const structured = buildStructuredFromPayload(payload);
 
       if (liveCreated) {
@@ -979,6 +981,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       useRealtimeTraffic: requestData.useRealtimeTraffic,
       departureAt: requestData.departureAt || null,
       deliveryTimes: requestData.deliveryTimes || [],
+      earlyDeliveryForbiddenFlags: requestData.earlyDeliveryForbiddenFlags || [],
       isNextDayFlags: requestData.isNextDayFlags || [],
       useExplicitDestination: Boolean(requestData.useExplicitDestination || requestData.finalDestinationAddress),
       returnToOrigin: requestData.returnToOrigin ?? false,

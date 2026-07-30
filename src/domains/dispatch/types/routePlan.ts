@@ -29,6 +29,11 @@ export interface RouteStop {
   dwellMinutes?: number;
   /** "HH:mm" 도착 데드라인(선택). */
   deliveryTime?: string;
+  /**
+   * deadline은 해당 시각까지 완료하면 되는 상한이고, appointment는 조기배송 금지 예약시각이다.
+   * 미지정 시 deadline으로 처리해 단순 마감에 현장 대기를 만들지 않는다.
+   */
+  deliveryTimeType?: 'deadline' | 'appointment';
   /** deliveryTime이 익일 기준인지. */
   isNextDay?: boolean;
   priority?: 'high' | 'medium' | 'low';
@@ -118,6 +123,7 @@ export interface ScenarioQuoteResult {
       ratePerHour: number;
       base: number;
       fuelSurcharge: number;
+      fuelSurchargeBreakdown?: import('@/domains/quote/pricing').HourlyFuelSurchargeBreakdown;
     };
     perJob: {
       total: number;

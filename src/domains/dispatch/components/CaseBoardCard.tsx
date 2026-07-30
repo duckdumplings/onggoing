@@ -266,6 +266,17 @@ function CaseTile({ c, onPreviewRoute }: { c: CaseBoardCaseResult; onPreviewRout
                 과금 {c.billMinutes}분 × {c.ratePerHour.toLocaleString('ko-KR')}원/h
                 {c.fuelSurcharge ? ` + 유류 ${c.fuelSurcharge.toLocaleString('ko-KR')}` : ''}
               </div>
+              {c.fuelSurchargeBreakdown && (
+                <>
+                  <div className="text-muted-foreground">유류할증 기준</div>
+                  <div className="text-right tabular-nums text-foreground">
+                    기본 {c.fuelSurchargeBreakdown.includedDistanceKm.toFixed(1)}km
+                    {c.fuelSurchargeBreakdown.excessDistanceKm > 0
+                      ? ` · 초과 ${c.fuelSurchargeBreakdown.excessDistanceKm.toFixed(1)}km · ${c.fuelSurchargeBreakdown.stepKm}km ${c.fuelSurchargeBreakdown.chargedBins}구간`
+                      : ' 이내'}
+                  </div>
+                </>
+              )}
             </>
           )}
           {c.riskReason && (

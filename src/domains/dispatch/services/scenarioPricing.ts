@@ -12,7 +12,8 @@ import {
   perJobRegularPrice,
   pickHourlyRate,
   roundUpTo30Minutes,
-  fuelSurchargeHourlyCorrect,
+  calculateHourlyFuelSurcharge,
+  isHourlyRateSupported,
   STOP_FEE,
   type Vehicle as PricingVehicle,
 } from '@/domains/quote/pricing';
@@ -81,9 +82,13 @@ export function calculateScenarioQuote(
   // 구속시간 = 주행 + 체류 + 현장 대기(조기배송 금지). 대기 미지정 시 0(과거 동작).
   const totalMinutes = resolved.driveMinutes + resolved.dwellMinutes + (resolved.waitMinutes ?? 0);
   const billMinutes = roundUpTo30Minutes(totalMinutes);
+  if (!isHourlyRateSupported(vehicle, billMinutes)) {
+    throw new RangeError(`시간당 운임표 범위 초과: ${billMinutes}분 운행은 운영팀 확인이 필요합니다.`);
+  }
   const ratePerHour = pickHourlyRate(vehicle, billMinutes);
   const hourlyBase = Math.round(ratePerHour * (billMinutes / 60));
-  const hourlyFuel = fuelSurchargeHourlyCorrect(vehicle, resolved.km, billMinutes);
+  const fuelSurchargeBreakdown = calculateHourlyFuelSurcharge(vehicle, resolved.km, billMinutes);
+  const hourlyFuel = fuelSurchargeBreakdown.total;
   const hourlyTotal = hourlyBase + hourlyFuel;
 
   // ── 기본 추천은 "옹고잉 유리" = 두 요금제 중 높은 쪽. (화주에게는 둘 다 제시) ──
@@ -114,6 +119,7 @@ export function calculateScenarioQuote(
         ratePerHour,
         base: hourlyBase,
         fuelSurcharge: hourlyFuel,
+        fuelSurchargeBreakdown,
       },
       perJob: {
         total: perJobTotal,

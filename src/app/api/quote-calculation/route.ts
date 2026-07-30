@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { perJobBasePrice, perJobRegularPrice, STOP_FEE, fuelSurchargeHourlyCorrect, suggestCheaperNextTier } from '@/domains/quote/pricing'
+import {
+  calculateHourlyFuelSurcharge,
+  perJobBasePrice,
+  perJobRegularPrice,
+  STOP_FEE,
+  suggestCheaperNextTier,
+} from '@/domains/quote/pricing'
 import { pickHourlyRateFromPayload, resolveHourlyRateTable } from '@/domains/quote/services/rateTableService'
 
 type QuoteInput = {
@@ -22,7 +28,9 @@ export async function POST(req: NextRequest) {
     const vehicleKey = vehicleType === '스타렉스' ? 'starex' : 'ray'
     const dwellMinutes = Array.isArray(body.dwellMinutes) ? body.dwellMinutes.map((n) => Math.max(0, Number(n || 0))) : []
     const waitMinutes = Math.max(0, Number(body.waitMinutes || 0))
-    const stopsCount = Number.isFinite(body.stopsCount as any) ? Number(body.stopsCount) : dwellMinutes.length
+    // 중간 경유지는 호출자가 경로 구조에서 명시해야 한다. 체류 배열 길이로 추정하면
+    // 출발지/최종 목적지까지 경유지로 세어 단일 배송에 정액이 붙는다.
+    const stopsCount = Number.isFinite(body.stopsCount as any) ? Math.max(0, Number(body.stopsCount)) : 0
     const scheduleType = (body.scheduleType as 'regular' | 'ad-hoc') || 'ad-hoc'
 
     if (!Number.isFinite(distance) || !Number.isFinite(time)) {
@@ -41,14 +49,28 @@ export async function POST(req: NextRequest) {
     // DB rate_tables 우선 lookup, 실패 시 코드 정적 fallback 자동 적용.
     const billMinutes = Math.max(120, Math.ceil(totalMinutes / 30) * 30)
     const hourlyRateTable = await resolveHourlyRateTable(vehicleKey, new Date())
-    const tableRatePerHour = pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
     // 협의 단가(시간당) 지정 시 운임표 대신 사용. 임의 추정이 아니라 호출자가 명시한 값만 반영.
     const overrideRate = Number(body.hourlyRateOverride)
     const useRateOverride = Number.isFinite(overrideRate) && overrideRate > 0
-    const ratePerHour = useRateOverride ? overrideRate : tableRatePerHour
+    const maxTableMinutes = hourlyRateTable.payload.tiers.at(-1)?.maxMinutes ?? 0
+    if (!useRateOverride && billMinutes > maxTableMinutes) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'RATE_TABLE_RANGE_EXCEEDED',
+          message: `시간당 운임표는 최대 ${maxTableMinutes / 60}시간까지 자동 견적을 지원합니다. ${billMinutes / 60}시간 운행은 운영팀 확인이 필요합니다.`,
+          details: { billMinutes, maxTableMinutes, vehicleType },
+        },
+      }, { status: 422 })
+    }
+    const tableRatePerHour = useRateOverride
+      ? null
+      : pickHourlyRateFromPayload(hourlyRateTable.payload, billMinutes)
+    const ratePerHour = useRateOverride ? overrideRate : Number(tableRatePerHour)
     const hourlyBase = ratePerHour * (billMinutes / 60)
-    // 유류할증 단일화: pricing.fuelSurchargeHourlyCorrect 사용(과금시간×10km 포함거리, 초과분 10km당 정액).
-    const hourlyFuelSurcharge = fuelSurchargeHourlyCorrect(vehicleKey, km, billMinutes)
+    // 유류할증 단일화: 포함거리·초과거리·10km 구간 수와 합계를 같은 함수에서 산출한다.
+    const fuelSurchargeBreakdown = calculateHourlyFuelSurcharge(vehicleKey, km, billMinutes)
+    const hourlyFuelSurcharge = fuelSurchargeBreakdown.total
     const hourlyTotal = Math.round(hourlyBase + hourlyFuelSurcharge)
 
     // 2) 단건(구간표 + 초과km, 경유지 정액, 정기/비정기 구분)
@@ -105,6 +127,7 @@ export async function POST(req: NextRequest) {
             rateOverride: useRateOverride,
             tableRatePerHour,
             fuelSurcharge: hourlyFuelSurcharge,
+            fuelSurchargeBreakdown,
             tiers: {
               perTrip: {
                 value: hourlyTotal,
@@ -146,5 +169,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: { code: 'SERVER_ERROR', message: e?.message || 'unknown' } }, { status: 500 })
   }
 }
-
-

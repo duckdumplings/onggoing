@@ -75,7 +75,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 경로 | 설명 | LOC | 위험도 |
 |---|---|---|---|
-| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap) | **2875** | **매우 높음** |
+| `route-optimization/route.ts` | 단일/다중 경유지 경로 최적화 (Tmap) | **3022** | **매우 높음** |
 | `multi-driver-optimization/route.ts` | 다중 기사 배차 | 281 | 높음 |
 | `dispatch/scenario-quote/route.ts` | 다중 시나리오(3/5/10지점) 병렬 견적·비교 | — | 중간 |
 | `dispatch/scenario-groups/route.ts` | 시나리오 비교 결과 저장/조회 | — | 낮음 |
@@ -105,11 +105,11 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 | 파일 | LOC | 우선 분리 대상 |
 |---|---|---|
-| `src/app/api/route-optimization/route.ts` | 2875 | 비즈니스 로직 → `domains/dispatch/services/` |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1863 | 스텝/메시지 컴포넌트 분리 |
-| `src/app/tmap-embed/route.ts` | 1377 | HTML 템플릿 분리 |
-| `src/components/panels/RouteOptimizerPanel.tsx` | 1245 | 입력/결과/지도 컨트롤 3분할 |
-| `src/components/map/TmapMainMap.tsx` | 1214 | 지도 초기화/마커/폴리라인 hook 분리 |
+| `src/app/api/route-optimization/route.ts` | 3022 | 비즈니스 로직 → `domains/dispatch/services/` |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1541 | 스텝/메시지 컴포넌트 분리 |
+| `src/app/tmap-embed/route.ts` | 1504 | HTML 템플릿 분리 |
+| `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
+| `src/components/map/TmapMainMap.tsx` | 1324 | 지도 초기화/마커/폴리라인 hook 분리 |
 
 ## Supabase Edge Functions
 

@@ -109,4 +109,12 @@ describe('computeRouteQuote', () => {
     );
     expect(q?.driveMinutes).toBe(Math.ceil(2760 / 60));
   });
+
+  it('8시간 운임표 범위를 넘으면 마지막 단가로 자동 연장하지 않는다', () => {
+    const q = computeRouteQuote(
+      { ...summary, travelTime: 9 * 60 * 60, dwellTime: 0, waitTime: 0 },
+      2,
+    );
+    expect(q).toBeNull();
+  });
 });

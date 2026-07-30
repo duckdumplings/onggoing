@@ -73,12 +73,23 @@ export const PER_JOB_TABLE: Array<{ fromKm: number; toKm: number; ray: number; s
 
 // PER_JOB_OVERAGE_PER_KM 제거 - 1,000원 단위 테이블 기반 계산으로 변경
 
+export function maxHourlyBillMinutes(vehicle: Vehicle): number {
+  const table = HOURLY_RATE_TABLE[vehicle];
+  return table[table.length - 1].maxMinutes;
+}
+
+export function isHourlyRateSupported(vehicle: Vehicle, billMinutes: number): boolean {
+  return billMinutes <= maxHourlyBillMinutes(vehicle);
+}
+
 export function pickHourlyRate(vehicle: Vehicle, billMinutes: number): number {
   const table = HOURLY_RATE_TABLE[vehicle];
   for (const row of table) {
     if (billMinutes <= row.maxMinutes) return row.ratePerHour;
   }
-  return table[table.length - 1].ratePerHour;
+  throw new RangeError(
+    `${vehicle} 시간당 운임표는 ${maxHourlyBillMinutes(vehicle)}분까지만 자동 견적을 지원합니다.`,
+  );
 }
 
 export type HourlyTierAdvice = {
@@ -155,29 +166,45 @@ export function roundUpTo30Minutes(minutes: number): number {
   return Math.ceil(minMinutes / 30) * 30;
 }
 
+export type HourlyFuelSurchargeBreakdown = {
+  vehicle: Vehicle;
+  actualDistanceKm: number;
+  includedDistanceKm: number;
+  excessDistanceKm: number;
+  stepKm: number;
+  stepCharge: number;
+  chargedBins: number;
+  total: number;
+};
+
 // 유류할증(시간당 요금제): 과금시간×10km 포함거리, 초과분 10km당 정액(레이 2,000 / 스타렉스 2,800).
-// 시간당 요금제의 유일한 유류할증 계산 경로. (구 거리-단독 fuelSurchargeHourly는 2026-06 제거)
-export function fuelSurchargeHourlyCorrect(vehicle: Vehicle, km: number, billMinutes: number): number {
-  // 기본거리 = 과금시간 × 10km
+// 시간당 요금제의 유일한 유류할증 계산 경로. 합계와 산식 근거를 함께 반환한다.
+export function calculateHourlyFuelSurcharge(
+  vehicle: Vehicle,
+  km: number,
+  billMinutes: number,
+): HourlyFuelSurchargeBreakdown {
   const baseDistance = (billMinutes / 60) * 10;
+  const actualDistanceKm = Math.max(0, Number(km) || 0);
+  const excessDistance = Math.max(0, actualDistanceKm - baseDistance);
+  const stepKm = 10;
+  const stepCharge = vehicle === 'ray' ? 2000 : 2800;
+  const chargedBins = excessDistance > 0 ? Math.ceil(excessDistance / stepKm) : 0;
 
-  // 기본거리 이내면 유류할증 없음
-  if (km <= baseDistance) return 0;
+  return {
+    vehicle,
+    actualDistanceKm,
+    includedDistanceKm: baseDistance,
+    excessDistanceKm: excessDistance,
+    stepKm,
+    stepCharge,
+    chargedBins,
+    total: chargedBins * stepCharge,
+  };
+}
 
-  // 초과거리 = 총거리 - 기본거리
-  const excessDistance = km - baseDistance;
-
-  // 초과거리가 10km 이하면 첫 번째 구간 요금
-  if (excessDistance <= 10) {
-    return vehicle === 'ray' ? 2000 : 2800;
-  }
-
-  // 10km 초과 시 10km 단위로 추가 요금
-  const extraBins = Math.ceil(excessDistance / 10);
-  const stepRay = 2000;
-  const stepStarex = 2800;
-
-  return vehicle === 'ray' ? stepRay * extraBins : stepStarex * extraBins;
+export function fuelSurchargeHourlyCorrect(vehicle: Vehicle, km: number, billMinutes: number): number {
+  return calculateHourlyFuelSurcharge(vehicle, km, billMinutes).total;
 }
 
 // 차종별 연비 (km/L). 레이 8km/L, 스타렉스 6km/L.
@@ -232,5 +259,4 @@ export function perJobRegularPrice(vehicle: Vehicle, km: number): number {
     return Math.round(basePrice * 1.2);
   }
 }
-
 

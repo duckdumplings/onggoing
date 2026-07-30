@@ -10,6 +10,7 @@ import {
   fuelSurchargeHourlyCorrect,
   perJobBasePrice,
   perJobRegularPrice,
+  isHourlyRateSupported,
   pickHourlyRate,
   roundUpTo30Minutes,
 } from '@/domains/quote/pricing';
@@ -357,8 +358,18 @@ export default function TmapMainMap() {
     const distanceKm = totalDistanceM / 1000;
     const driveMinutes = Math.ceil(totalTimeSec / 60);
     const totalBillMinutes = driveMinutes + dwellTotalMin + waitTotalMin;
+    const interactiveDistanceKm = Number((distanceKm * (1 + sliderExtraDistancePercent / 100)).toFixed(1));
+    const interactiveBillMinutes = totalBillMinutes + sliderExtraWaitMin;
 
     const billMinutes = roundUpTo30Minutes(totalBillMinutes);
+    const interactiveRoundedBillMinutes = roundUpTo30Minutes(Math.max(30, interactiveBillMinutes));
+    if (
+      !isHourlyRateSupported(vehicleKey, billMinutes) ||
+      !isHourlyRateSupported('ray', interactiveRoundedBillMinutes) ||
+      !isHourlyRateSupported('starex', interactiveRoundedBillMinutes)
+    ) {
+      return null;
+    }
     const hourlyRate = pickHourlyRate(vehicleKey, billMinutes);
     const hourlyBase = Math.round((billMinutes / 60) * hourlyRate);
     const hourlyFuelSurcharge = fuelSurchargeHourlyCorrect(vehicleKey, distanceKm, billMinutes);
@@ -394,9 +405,6 @@ export default function TmapMainMap() {
 
     const basePricing = calculatePricing(distanceKm, totalBillMinutes, destinationCount);
 
-    const interactiveDistanceKm = Number((distanceKm * (1 + sliderExtraDistancePercent / 100)).toFixed(1));
-    const interactiveBillMinutes = totalBillMinutes + sliderExtraWaitMin;
-    
     // 레이/스타렉스, 정기/비정기 4가지 조합 모두 계산
     const calcPricingForScenario = (veh: 'ray' | 'starex', schedule: 'regular' | 'ad-hoc') => {
       const roundedBillMin = roundUpTo30Minutes(Math.max(30, interactiveBillMinutes));

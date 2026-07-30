@@ -46,6 +46,14 @@ export interface BuildRolePayloadOptions {
   preserveOrder?: boolean;
 }
 
+export function countIntermediateStops(payload: {
+  destinations?: unknown[];
+  useExplicitDestination?: boolean;
+}): number {
+  const destinationCount = Array.isArray(payload.destinations) ? payload.destinations.length : 0;
+  return Math.max(0, destinationCount - (payload.useExplicitDestination ? 1 : 0));
+}
+
 /**
  * open-start 적용 규칙: 픽업 후보 ≥2 + 단일 고정 하차 + 출발지 고정 지정 없음.
  * 이 조건에서 route-optimization이 시작점도 비용 최소화 변수로 선택한다.
@@ -84,6 +92,8 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
       // 지점별 도착 데드라인. destinations와 인덱스 정합, 빈 문자열 = 제약 없음.
       // route-optimization이 사전(직행검증)·사후(ETA) 검증과 위반 시 조정 제안을 수행한다.
       deliveryTimes: rest.map((s) => s.deliveryTime ?? ''),
+      // 단순 마감에는 대기를 만들지 않는다. 예약/정시 배송으로 명시된 지점만 조기배송 금지 적용.
+      earlyDeliveryForbiddenFlags: rest.map((s) => s.deliveryTimeType === 'appointment'),
       isNextDayFlags: rest.map((s) => Boolean(s.isNextDay)),
       // destinations 인덱스 정합 역할 배열. route-optimization이 타임라인/지도 role 표기에 사용
       // (없으면 모든 경유지를 drop으로 하드코딩해 수거지가 배송으로 잘못 표기됨).
@@ -127,6 +137,7 @@ export function buildRolePayload(opts: BuildRolePayloadOptions) {
     // 지점별 도착 데드라인(빈 문자열 = 제약 없음). 시간제약이 하나라도 있으면
     // route-optimization이 open-start를 스스로 비활성화하고 due 기반 순서/검증을 적용한다.
     deliveryTimes: ordered.map((s) => s.deliveryTime ?? ''),
+    earlyDeliveryForbiddenFlags: ordered.map((s) => s.deliveryTimeType === 'appointment'),
     isNextDayFlags: ordered.map((s) => Boolean(s.isNextDay)),
     // destinations 인덱스 정합 역할 배열(재정렬 시 route-optimization이 원본 인덱스로 되짚어 사용).
     stopRoles: ordered.map((s) => s.role),

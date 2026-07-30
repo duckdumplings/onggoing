@@ -12,7 +12,10 @@
 import { z } from 'zod';
 
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
-import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
+import {
+  buildRolePayload,
+  countIntermediateStops,
+} from '@/domains/dispatch/services/rolePayload';
 import { postRouteOptimizationCached, describeRouteOptFailure } from '@/domains/dispatch/services/routeOptCache';
 import { buildQuotePackage, buildRiskAction, buildRiskReason } from '@/domains/dispatch/services/quotePackageBuilder';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
@@ -149,6 +152,14 @@ export interface CaseBoardCaseResult {
   billMinutes?: number | null;
   ratePerHour?: number | null;
   fuelSurcharge?: number | null;
+  fuelSurchargeBreakdown?: {
+    includedDistanceKm: number;
+    excessDistanceKm: number;
+    stepKm: number;
+    stepCharge: number;
+    chargedBins: number;
+    total: number;
+  } | null;
   annualPrice?: number;
   monthlyTotal?: number;
   monthlyVisits?: number;
@@ -305,7 +316,7 @@ async function computeCase(
     const waitMinutes = Math.round(Number(summary?.waitTime || 0) / 60);
     const predictionAttemptedSegments = Number(summary?.predictionAttemptedSegments ?? 0) || 0;
     const predictionFallbackSegments = Number(summary?.predictionFallbackSegments ?? 0) || 0;
-    const stopsCount = Math.max(0, payload.destinations.length - (payload.useExplicitDestination ? 1 : 0));
+    const stopsCount = countIntermediateStops(payload);
 
     const quoteRes = await fetch(new URL('/api/quote-calculation', baseUrl), {
       method: 'POST',
@@ -332,6 +343,7 @@ async function computeCase(
     const billMinutes = Number.isFinite(Number(hourly?.billMinutes)) ? Number(hourly.billMinutes) : null;
     const ratePerHour = Number.isFinite(Number(hourly?.ratePerHour)) ? Number(hourly.ratePerHour) : null;
     const fuelSurcharge = Number.isFinite(Number(hourly?.fuelSurcharge)) ? Number(hourly.fuelSurcharge) : null;
+    const fuelSurchargeBreakdown = hourly?.fuelSurchargeBreakdown ?? null;
     // 대표 운임: 사용자가 지정(hourly/perJob)하면 그대로, auto면 옹고잉 유리(높은 쪽).
     const pref = c.planPreference ?? 'auto';
     const recommendedPlan: 'hourly' | 'perJob' =
@@ -447,6 +459,7 @@ async function computeCase(
       billMinutes,
       ratePerHour,
       fuelSurcharge,
+      fuelSurchargeBreakdown,
       annualPrice,
       monthlyTotal,
       monthlyVisits,

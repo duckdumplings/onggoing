@@ -12,7 +12,10 @@ import { z } from 'zod';
 
 import { createServerClient } from '@/libs/supabase-client';
 import { geocodeStopAddresses } from '@/domains/dispatch/services/stopGeocoder';
-import { buildRolePayload } from '@/domains/dispatch/services/rolePayload';
+import {
+  buildRolePayload,
+  countIntermediateStops,
+} from '@/domains/dispatch/services/rolePayload';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
 import { resolveDeparturePresets } from '@/domains/dispatch/utils/departureMatrix';
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
@@ -82,6 +85,16 @@ function fuelSourceLabelOf(
 }
 
 export function buildQuoteAgentTools(ctx: AgentToolContext) {
+  let lastRoutePricingContext: {
+    km: number;
+    driveMinutes: number;
+    dwellMinutes: number[];
+    waitMinutes: number;
+    stopsCount: number;
+    tollAmount: number | null;
+    tollSource: 'api' | 'unavailable' | null;
+  } | null = null;
+
   const track = (toolName: string, input: unknown, output: unknown) => {
     try {
       ctx.onToolEvent?.({ tool: toolName, input, output });
@@ -208,10 +221,19 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const tollAmount = tollIsApi ? Math.round(Number(selectedRoad.estimatedToll)) : null;
         const tollSource: 'api' | 'unavailable' | null =
           tollIsApi ? 'api' : selectedRoad ? 'unavailable' : null;
+        const resolvedDwellMinutes = [
+          Math.max(0, Number(payload.originDwellMinutes || 0)),
+          ...(Array.isArray(payload.dwellMinutes)
+            ? payload.dwellMinutes.map((value: unknown) => Math.max(0, Number(value) || 0))
+            : []),
+        ];
+        const resolvedStopsCount = countIntermediateStops(payload);
         const out = {
           km: Number(summary?.totalDistance || 0) / 1000,
           driveMinutes: Math.round(Number(summary?.travelTime || 0) / 60),
           dwellMinutes: Math.round(Number(summary?.dwellTime || 0) / 60),
+          dwellBreakdownMinutes: resolvedDwellMinutes,
+          stopsCount: resolvedStopsCount,
           // 조기배송 금지 현장 대기(분). calculate_quote에 waitMinutes로 그대로 넘겨라(구속시간 과금).
           waitMinutes: Math.round(Number(summary?.waitTime || 0) / 60),
           // Tmap 경로 실측 통행료(있으면). calculate_quote에 tollAmount/tollSource로 그대로 넘겨라.
@@ -227,6 +249,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           // 지도 렌더용 경로 페이로드(좌표 해석본). 클라이언트가 그대로 재사용한다.
           routeRequest: { ...payload, useRealtimeTraffic: true },
         };
+        lastRoutePricingContext = {
+          km: out.km,
+          driveMinutes: out.driveMinutes,
+          dwellMinutes: resolvedDwellMinutes,
+          waitMinutes: out.waitMinutes,
+          stopsCount: resolvedStopsCount,
+          tollAmount,
+          tollSource,
+        };
         track('optimize_route', payload, { km: out.km, driveMinutes: out.driveMinutes, openStart: out.openStart });
         return out;
       },
@@ -240,7 +271,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         driveMinutes: z.number().nonnegative(),
         dwellMinutes: z.array(z.number().nonnegative()).optional().describe('지점별 체류 시간(분) 배열'),
         waitMinutes: z.number().nonnegative().optional().describe('optimize_route가 돌려준 조기배송 금지 현장 대기 합(분). 있으면 반드시 그대로 넘겨라. 구속시간에 포함되어 과금된다. 임의 추정 금지.'),
-        stopsCount: z.number().nonnegative().optional().describe('중간 경유지 수(종착지 제외)'),
+        stopsCount: z.number().nonnegative().optional().describe('중간 경유지 수(출발지·최종 목적지 제외). optimize_route 직후에는 도구가 경로 구조에서 다시 계산하므로 임의 추정하지 마라.'),
         vehicleType: z.enum(['레이', '스타렉스']).default('레이'),
         scheduleType: z.enum(['regular', 'ad-hoc']).default('ad-hoc'),
         frequency: FrequencySchema.optional(),
@@ -260,13 +291,23 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           .describe("optimize_route의 tollSource 값('api'=Tmap 실측, 'unavailable'=산출 불가). tollAmount와 함께 그대로 넘겨라."),
       }),
       execute: async ({ km, driveMinutes, dwellMinutes, waitMinutes, stopsCount, vehicleType, scheduleType, frequency, customHourlyRate, tollAmount, tollSource }) => {
+        // 같은 에이전트 턴에서 optimize_route가 먼저 실행됐다면 거리·체류·대기·경유지 수는
+        // LLM이 재구성한 인수가 아니라 실제 경로 페이로드/응답을 권위값으로 사용한다.
+        const routeContext = lastRoutePricingContext;
+        const resolvedKm = routeContext?.km ?? km;
+        const resolvedDriveMinutes = routeContext?.driveMinutes ?? driveMinutes;
+        const resolvedDwellMinutes = routeContext?.dwellMinutes ?? dwellMinutes ?? [];
+        const resolvedWaitMinutes = routeContext?.waitMinutes ?? waitMinutes ?? 0;
+        const resolvedStopsCount = routeContext?.stopsCount ?? stopsCount ?? 0;
+        const resolvedTollAmount = routeContext?.tollAmount ?? tollAmount;
+        const resolvedTollSource = routeContext?.tollSource ?? tollSource;
         const body = {
-          distance: km * 1000,
-          time: driveMinutes * 60,
+          distance: resolvedKm * 1000,
+          time: resolvedDriveMinutes * 60,
           vehicleType,
-          dwellMinutes: dwellMinutes ?? [],
-          waitMinutes: waitMinutes ?? 0,
-          stopsCount: stopsCount ?? (dwellMinutes?.length ?? 0),
+          dwellMinutes: resolvedDwellMinutes,
+          waitMinutes: resolvedWaitMinutes,
+          stopsCount: resolvedStopsCount,
           scheduleType,
           hourlyRateOverride: customHourlyRate,
         };
@@ -299,12 +340,13 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         // 견적 카드(거리/시간/차종)와 실비 투명성 카드가 채워지도록 basis를 결정적으로 구성한다.
         const vehicleKey: PricingVehicle = vehicleType === '스타렉스' ? 'starex' : 'ray';
         const meta = json?.meta ?? {};
-        const distanceKm = Number(meta.km ?? km);
-        const driveMins = Number(meta.driveMinutes ?? driveMinutes);
-        const dwellTotalMinutes = Number(meta.dwellTotalMinutes ?? (dwellMinutes?.reduce((a, b) => a + b, 0) ?? 0));
-        const waitTotalMinutes = Number(meta.waitMinutes ?? waitMinutes ?? 0);
+        const distanceKm = Number(meta.km ?? resolvedKm);
+        const driveMins = Number(meta.driveMinutes ?? resolvedDriveMinutes);
+        const dwellTotalMinutes = Number(meta.dwellTotalMinutes ?? resolvedDwellMinutes.reduce((a, b) => a + b, 0));
+        const waitTotalMinutes = Number(meta.waitMinutes ?? resolvedWaitMinutes);
         const totalBillMinutes = Number(json?.plans?.hourly?.billMinutes ?? 0);
-        const destinationCount = Math.max(1, (stopsCount ?? dwellMinutes?.length ?? 0) + 1);
+        const rawTotalMinutes = driveMins + dwellTotalMinutes + waitTotalMinutes;
+        const destinationCount = Math.max(1, resolvedStopsCount + 1);
         const basis = {
           vehicleType,
           scheduleType,
@@ -312,6 +354,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           driveMinutes: driveMins,
           dwellTotalMinutes,
           waitTotalMinutes,
+          rawTotalMinutes,
           totalBillMinutes,
           destinationCount,
         };
@@ -322,8 +365,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
         const fuelSourceLabel = fuelSourceLabelOf(fuel, vehicleKey);
         // 통행료: optimize_route의 Tmap 실측(tollSource='api', 무료도로 0원 포함)만 사용한다.
         // 실측이 없으면 추정하지 않고 null로 둔다(통행료는 견적서 항목이 아니라 실주행 하이패스 실비 정산).
-        const hasApiToll = tollSource === 'api' && Number.isFinite(Number(tollAmount));
-        const tollValue: number | null = hasApiToll ? Math.round(Number(tollAmount)) : null;
+        const hasApiToll = resolvedTollSource === 'api' && Number.isFinite(Number(resolvedTollAmount));
+        const tollValue: number | null = hasApiToll ? Math.round(Number(resolvedTollAmount)) : null;
         const tollSourceResolved: 'api' | 'unavailable' = hasApiToll ? 'api' : 'unavailable';
         const tollSourceLabel = hasApiToll ? 'Tmap 경로 실측 통행료' : '실주행 하이패스 실비 정산(경로 기반 산출 불가)';
         const tollNote = hasApiToll
@@ -355,6 +398,8 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
             total: hourlyTotal,
             ratePerHour: Number(json?.plans?.hourly?.ratePerHour ?? 0),
             billMinutes: Number(json?.plans?.hourly?.billMinutes ?? 0),
+            fuelSurcharge: Number(json?.plans?.hourly?.fuelSurcharge ?? 0),
+            fuelSurchargeBreakdown: json?.plans?.hourly?.fuelSurchargeBreakdown ?? null,
             rateOverride,
             formatted: won(hourlyTotal),
           },
@@ -472,7 +517,7 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           fastOrder: true,
         });
         const dwellMinutesArr = basePayload.dwellMinutes;
-        const stopsCount = Math.max(0, basePayload.destinations.length - (basePayload.useExplicitDestination ? 1 : 0));
+        const stopsCount = countIntermediateStops(basePayload);
         const freq = frequency as Frequency | undefined;
         const roleMap = buildAddressRoleMap(domainStops, cache);
         const target: DeadlineTarget = deadlineTarget ?? 'delivery';

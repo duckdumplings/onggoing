@@ -32,6 +32,10 @@ export const RouteStopSchema = z.object({
   quantity: z.number().optional().describe('지점별 물량 개수(예: 도시락 30). weightKg(kg)와 별개. 차종·체류시간 판단 참고용.'),
   dwellMinutes: z.number().optional().describe('상하차/작업 체류 시간(분).'),
   deliveryTime: z.string().optional().describe("'HH:mm' 배송(drop) 도착 마감 전용. 상차(pickup)의 '물품 준비 시각'은 여기 넣지 마라(도착 마감으로 오인돼 비현실 충돌을 유발) — 준비시각은 출발시각/방문 순서로 다뤄라."),
+  deliveryTimeType: z
+    .enum(['deadline', 'appointment'])
+    .optional()
+    .describe("deadline='그 시각까지'라 조기 도착 대기 없음(기본). appointment='그 시각 예약/정시 배송'이라 조기배송 금지 대기 적용."),
   memo: z.string().optional(),
 });
 

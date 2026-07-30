@@ -47,12 +47,11 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 
 | 파일 | LOC | 분리 우선순위 | 분리 후 목표 위치 |
 |---|---|---|---|
-| `src/app/api/route-optimization/route.ts` | 2875 | 매우 높음 | `domains/dispatch/services/` |
-| `src/app/api/quote/ai-chat-generate/route.ts` | 2661 | 매우 높음 | `domains/quote/services/` (일부 이미 분리됨) |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1863 | 높음 | `modals/ai-quote/` 스텝별 분리 |
-| `src/app/tmap-embed/route.ts` | 1377 | 높음 | Tmap embed HTML 템플릿 분리 |
-| `src/components/panels/RouteOptimizerPanel.tsx` | 1245 | 높음 | 입력 폼/결과 카드/지도 컨트롤 3분할 |
-| `src/components/map/TmapMainMap.tsx` | 1214 | 중간 | 지도 초기화/마커/폴리라인 hook 분리 |
+| `src/app/api/route-optimization/route.ts` | 3022 | 매우 높음 | `domains/dispatch/services/` |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1541 | 높음 | `modals/ai-quote/` 스텝별 분리 |
+| `src/app/tmap-embed/route.ts` | 1504 | 높음 | Tmap embed HTML 템플릿 분리 |
+| `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 높음 | 입력 폼/결과 카드/지도 컨트롤 3분할 |
+| `src/components/map/TmapMainMap.tsx` | 1324 | 중간 | 지도 초기화/마커/폴리라인 hook 분리 |
 
 **유지보수**:
 - 분리 작업으로 800줄(컴포넌트) / 400줄(API route) 이하가 되면 이 표에서 제거하고 §갱신 이력에 기록

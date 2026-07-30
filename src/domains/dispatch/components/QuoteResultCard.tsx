@@ -20,6 +20,8 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
   const perDay = quote.hourly?.tiers?.perDay?.formatted;
   const perMonth = quote.hourly?.tiers?.perMonth20d?.formatted;
   const advisor = quote.hourly?.advisor?.message;
+  const fuelSurcharge = Number(quote.hourly?.fuelSurcharge ?? 0);
+  const fuelBreakdown = quote.hourly?.fuelSurchargeBreakdown;
 
   return (
     <div className="glass-panel p-4 w-full space-y-3">
@@ -61,19 +63,34 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
               {basis.distanceKm}km
             </span>
           )}
-          {basis.totalBillMinutes != null && (
+          {(basis.rawTotalMinutes != null || basis.totalBillMinutes != null) && (
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              총 {basis.totalBillMinutes}분
+              실제 {basis.rawTotalMinutes ?? basis.totalBillMinutes}분
               {(basis.driveMinutes != null || basis.dwellTotalMinutes != null) && (
                 <span className="text-muted-foreground/70">
-                  (운행 {basis.driveMinutes ?? 0}분 + 체류 {basis.dwellTotalMinutes ?? 0}분)
+                  (운행 {basis.driveMinutes ?? 0}분 + 체류 {basis.dwellTotalMinutes ?? 0}분 + 예약 대기 {basis.waitTotalMinutes ?? 0}분)
                 </span>
+              )}
+              {basis.totalBillMinutes != null && (
+                <span className="text-muted-foreground/70">· 과금 {basis.totalBillMinutes}분</span>
               )}
             </span>
           )}
         </div>
       )}
+
+      <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+        <span className="font-semibold text-foreground">유류할증 {fuelSurcharge.toLocaleString('ko-KR')}원</span>
+        {fuelBreakdown && (
+          <span className="mt-0.5 block">
+            기본거리 {Number(fuelBreakdown.includedDistanceKm ?? 0).toFixed(1)}km
+            {Number(fuelBreakdown.excessDistanceKm ?? 0) > 0
+              ? ` · 초과 ${Number(fuelBreakdown.excessDistanceKm).toFixed(1)}km · ${fuelBreakdown.stepKm}km 구간 ${fuelBreakdown.chargedBins}회`
+              : ' 이내'}
+          </span>
+        )}
+      </div>
 
       {advisor && (
         <div className="rounded-lg bg-warning-muted px-3 py-2 text-[11px] leading-snug text-warning">

@@ -1,6 +1,11 @@
 // 구간 실측 + 캐시 프리미티브 (route-optimization 모놀리스에서 추출한 공용 모듈).
 // route-optimization route.ts와 routeMatrix.ts가 동일 소스를 공유해 중복/표류를 막는다.
 
+import {
+  atKstMinutesOfDay,
+  kstMinutesOfDay,
+} from '@/domains/dispatch/utils/kstDateTime';
+
 export type Waypoint = { latitude: number; longitude: number; address: string };
 export type TrafficAnchorMode = 'today' | 'tomorrow' | 'auto';
 
@@ -27,34 +32,21 @@ export function quickEtaMinutes(from: Waypoint, to: Waypoint): number {
   return Math.max(10, Math.round((d / 1000) / vKmh * 60));
 }
 
-function setTimeOfDay(base: Date, timeSource: Date): Date {
-  const d = new Date(base);
-  d.setHours(timeSource.getHours(), timeSource.getMinutes(), timeSource.getSeconds(), 0);
-  return d;
-}
-
 export function anchorDepartureTime(desired: Date, mode: TrafficAnchorMode, now: Date = new Date()): Date {
-  const desiredTime = desired.getHours() * 60 + desired.getMinutes();
-  const nowTime = now.getHours() * 60 + now.getMinutes();
+  const desiredTime = kstMinutesOfDay(desired);
+  const nowTime = kstMinutesOfDay(now);
 
   if (mode === 'today') {
     // 과거 시각이어도 그대로 오늘의 해당 시각으로 사용
-    return setTimeOfDay(now, desired);
+    return atKstMinutesOfDay(now, desiredTime);
   }
 
   if (mode === 'tomorrow') {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return setTimeOfDay(tomorrow, desired);
+    return atKstMinutesOfDay(now, desiredTime, 1);
   }
 
   // auto: 과거 시각이면 내일, 아니면 오늘
-  if (desiredTime <= nowTime) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return setTimeOfDay(tomorrow, desired);
-  }
-  return setTimeOfDay(now, desired);
+  return atKstMinutesOfDay(now, desiredTime, desiredTime <= nowTime ? 1 : 0);
 }
 
 export function makeDepartureBucket(date: Date, minutes: number = 5) {

@@ -4,7 +4,10 @@ import { streamText, stepCountIs } from 'ai';
 import { resolveModel, AGENT_DEFAULTS } from '@/libs/llm/provider';
 import { buildQuoteAgentTools } from '@/domains/quote/agent/tools';
 import { saveToolCallLog } from '@/domains/quote/services/toolRouter';
-import { guardCaseBoardResponse } from '@/domains/quote/services/quoteResponseGuard';
+import {
+  guardCaseBoardResponse,
+  guardSingleQuoteResponse,
+} from '@/domains/quote/services/quoteResponseGuard';
 import { retrieveFeedbackGuidance } from '@/domains/quote/services/ragRetriever';
 import { createServerClient } from '@/libs/supabase-client';
 
@@ -42,7 +45,7 @@ const SYSTEM_PROMPT = `당신은 "옹고잉" 사륜차량 물류 서비스의 �
 - 금액(기본료·유류할증·합계·연환산 등)은 calculate_quote/compare_scenarios가 돌려준 값만 그대로 사용하라. 절대 본문에서 직접 곱하거나 더하거나 추정하지 마라. 도구가 준 숫자와 다른 숫자를 쓰면 안 된다.
 - 요금제는 시간당/단건 두 가지가 있다. 도구가 둘 다 돌려준다(plans.hourly, plans.perJob). 한쪽만 "불가"라고 답하지 마라.
 - 기본 추천(대표 견적)은 "옹고잉 유리" = 시간당/단건 중 금액이 더 높은 요금제다(도구의 recommendedPlan 그대로 사용). 다만 화주 객관성을 위해 두 요금제 금액을 반드시 함께 제시하고, 어느 쪽을 기본 적용했는지 밝혀라.
-- 견적 근거를 투명하게 적어라: 소요시간(주행+체류), 총 거리, 유류할증(초과거리분). 유류할증을 빠뜨리지 마라(시간당 요금제 합계에 이미 포함되어 있다).
+- 견적 근거를 투명하게 적어라: 소요시간(주행+체류+예약 대기), 총 거리, 유류할증을 반드시 적어라. 유류할증은 plans.hourly.fuelSurchargeBreakdown의 기본 포함거리·초과거리·10km 구간 수·구간 단가·합계만 그대로 사용한다. 유류할증이 0원이어도 "기본거리 이내라 0원"이라고 명시하라.
 - calculate_quote가 costReference(예상 유류비·통행료)를 함께 돌려준다. 이것은 요금제 청구액과 별개인 "운영 참고치"다. 사용자가 "유류비/주유비/기름값이 얼마나 드냐", "톨비/통행료는?" 등 실비를 물으면, costReference의 estimatedFuel과 estimatedToll을 그 값 "그대로" 안내하라. 유가는 costReference.fuelPricePerLiter, 연비는 costReference.fuelEfficiencyKmPerL, 출처는 costReference.fuelPriceSourceLabel을 글자 그대로 인용하라.
 - 통행료는 Tmap 경로 실측만 쓴다(추정 금액은 절대 만들지 마라). costReference.tollSource가 'api'이면 estimatedToll을 그대로 안내하되, 값이 0이면 "무료도로 구간으로 통행료 없음"으로 안내하라. tollSource가 'unavailable'이면(estimatedToll=null) 금액을 지어내지 말고 "통행료는 실주행 하이패스 실비로 정산되며 이번 경로는 실측값을 산출하지 못했다"고 솔직히 안내하라. 통행료는 견적서 청구 항목이 아니라 실비 정산임을 분명히 하라(실제 구간·차종 할인에 따라 달라질 수 있음).
 - 사용자가 경로/견적 없이 "지금 유가 얼마야", "휘발유/경유 가격" 등 유가만 물으면 견적을 강요하지 말고 get_fuel_price를 호출해 답하라(과거처럼 임의 경로를 만들어 우회하지 마라). 유가·출처·기준일은 도구 결과(pricePerLiter/sourceLabel/tradeDate)만 인용한다.
@@ -57,13 +60,16 @@ const SYSTEM_PROMPT = `당신은 "옹고잉" 사륜차량 물류 서비스의 �
 - 사용자가 도착 마감(예: "오후 3시까지 마지막 배송", "12시 전에 끝나야 함")을 말하면 compare_departure_times의 deadline에 "HH:mm"으로 넣어라. 도구가 각 출발의 예상 도착시각(deliveryArrivalLabel)과 마감 충족 여부(meetsDeadline)를 돌려준다. 마감을 지키는 출발 중 최저가(recommendedId)를 권장하고, 표에 도착시각·마감 충족(O/X)을 함께 표기하라. deadlineInfeasible=true면 어떤 출발도 마감을 못 지키므로, 출발을 앞당기거나 체류시간 단축/지점 분할이 필요하다고 솔직히 안내하라(불가능한 마감을 가능한 것처럼 말하지 마라).
 - 일반 견적에서는 현재 견적이 어떤 출발 가정(예: 평일 오전 한산 시간대)인지 명시하라.
 
-[도착 목표 — 마감 여유(표준 정책)]
-- 배송(drop) 도착의 표준 목표는 '마감 15~20분 전'이다. 마감을 넘기면 위반, 마감보다 20분 이상 일찍 도착하면 고객 대기·컴플레인 요인이다. 이상적 도착 창은 [마감−20분 ~ 마감−15분].
-- 도구가 돌려준 마감 여유 분(slack)으로 판단하라: slack<0 위반, 0≤slack<15 아슬아슬, 15≤slack≤20 이상적, slack>20 너무 이름(대기·컴플레인 위험). 이상적 창을 벗어나면 출발시각을 앞당기거나 늦춰 창 안에 들도록 제안하라(시각·수치는 도구 값만 사용).
+[도착 목표 — 마감과 예약시각 구분]
+- "11:30까지/마감/이전 배송"은 deliveryTimeType="deadline"이다. 일찍 배송해도 되므로 현장 대기를 과금하지 않는다.
+- "11:30 예약/정시 배송/11:30부터 수령/조기배송 금지"는 deliveryTimeType="appointment"다. 이때만 예약시각 15분 전보다 이른 도착을 현장 대기로 계산한다.
+- 표현이 단순히 "예상 타임라인 11:30 배송"처럼 모호하면 기본은 deadline으로 두고, 예약·조기배송 금지를 임의로 가정하지 마라.
+- 마감의 운영상 권장 목표는 15~20분 전이지만 이는 출발 조정 제안 기준이다. deadline 입력에 현장 대기를 자동 생성하는 근거로 쓰지 마라.
+- 도구가 돌려준 마감 여유 분(slack)으로 판단하라: slack<0 위반, 0≤slack<15 아슬아슬, 15≤slack≤20 이상적, slack>20 너무 이름. 시각·수치는 도구 값만 사용한다.
 - 상차(pickup) 시각은 '마감'이 아니라 '물품 준비 시각'이다. 준비시각보다 일찍 도착하면 대기가 발생한다. 상차 준비시각은 deliveryTime(도착 마감)에 넣지 말고 departureTime/방문 순서로 다뤄, 그 시각 이후 상차되도록 출발을 잡아라.
 
 [타임라인/도착시각 — 절대 지어내지 마라]
-- 사용자 입력(표/메모/메일)에 지점별 도착 시각이 있으면(예: 하차지마다 "11:30", "12:50") 해당 stop의 deliveryTime에 "HH:mm"으로 반드시 옮겨 넣어라. 경로 계산이 이 시각을 지점별 제약으로 사전·사후 검증하고, 지킬 수 없으면 조정 제안과 함께 실패를 돌려준다 — 시각을 빼놓고 계산하면 시각표를 어기는 경로가 정상 견적처럼 나가는 사고가 된다. 상차지의 "물품 준비 시각"은 deliveryTime이 아니라 출발시각(departureTime)/방문 순서로 다뤄라.
+- 사용자 입력(표/메모/메일)에 지점별 도착 시각이 있으면(예: 하차지마다 "11:30", "12:50") 해당 stop의 deliveryTime에 "HH:mm"으로 반드시 옮겨 넣고, 의미에 따라 deliveryTimeType을 deadline/appointment로 구분하라. 상차지의 "물품 준비 시각"은 deliveryTime이 아니라 출발시각(departureTime)/방문 순서로 다뤄라.
 - 사용자가 "타임라인", "경유지별/지점별 도착시각", "몇 시에 어디 도착", "9시 출발하면 11시까지 가능해?" 등 시각표나 마감 가능성을 물으면 반드시 forecast_route_timeline 도구로 산출하라. "09:20 강동점, 09:35 잠실점"처럼 경유지별 도착시각을 본문에서 임의로 적는 것은 명백한 환각이며 금지한다(요금 금액과 똑같이, 시각도 도구가 준 값만 쓴다).
 - 사용자가 출발시각(예: "9시 출발")을 말하면 departureTime에 "HH:mm"으로 넣어라. 도착 마감(예: "11시까지")이 있으면 deadline에 넣어 마감 충족 여부(meetsDeadline)를 판정받아라. 절대 프리셋 시간대(10:00 등)로 9시 출발 질문에 답하지 마라 — 사용자가 말한 출발시각 그대로 계산하라.
 - [마감 기준 — 매우 중요] 마감은 기본적으로 "마지막 배송(drop) 완료"에 적용된다(deadlineTarget="delivery", 기본값). 서초 반납 복귀는 마감이 없는 "업무 종료(반납완료) 시각"이다 — 반납 복귀 시각이 마감을 넘어도 배송이 마감 전 끝났으면 충족이다. 도구가 deliveryArrival(배송 완료)과 returnArrival(반납 완료=업무 종료)을 분리해 돌려준다. 절대 반납 복귀 시각으로 "마감 불가"라고 단정하지 마라. 다만 사용자가 "반납까지 11시 안에"처럼 반납 완료를 마감 기준으로 말하면 deadlineTarget="return", 전 과정 최종 도착이 기준이면 "final"로 지정하라.
@@ -142,6 +148,11 @@ function buildAgentQuote(output: any): any {
   if (!plans) return null;
   return {
     plans,
+    recommendedPlan: output?.recommendedPlan ?? null,
+    oneTimePrice: output?.oneTimePrice ?? null,
+    annualPrice: output?.annualPrice ?? null,
+    formattedOneTime: output?.formattedOneTime ?? null,
+    formattedAnnual: output?.formattedAnnual ?? null,
     hourly: plans.hourly ?? null,
     perJob: plans.perJob ?? null,
     // 견적 카드(거리/시간/차종)와 실비 투명성 카드 렌더용. calculate_quote가 결정적으로 채운다.
@@ -526,7 +537,8 @@ export async function POST(request: NextRequest) {
         const succeeded = !streamError || Boolean(fullText);
         // 최종 답은 마지막 도구 이후 텍스트(tail)만 사용해 예고성 중간 멘트를 제거한다. 비면 전체 텍스트로 폴백.
         let finalMessage = tailText.trim() || fullText;
-        const guardedFinal = guardCaseBoardResponse(finalMessage, acc.caseBoard);
+        const singleQuoteGuarded = guardSingleQuoteResponse(finalMessage, acc.agentQuote);
+        const guardedFinal = guardCaseBoardResponse(singleQuoteGuarded, acc.caseBoard);
         if (guardedFinal !== finalMessage) {
           // 가드가 덧붙인 안내를 라이브 스트림에도 반영(최종 payload는 finalMessage 사용).
           send({ type: 'text', delta: guardedFinal.slice(finalMessage.length) });

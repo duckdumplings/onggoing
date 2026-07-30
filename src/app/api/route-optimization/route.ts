@@ -15,6 +15,12 @@ import {
   buildGeocodeQueryVariants,
   buildUserFacingAddressHints,
 } from '@/domains/dispatch/services/addressVariants';
+import { computeEarlyDeliveryWait } from '@/domains/dispatch/services/deliveryWait';
+import {
+  atKstTime,
+  formatKstHHmm,
+  kstMinutesOfDay,
+} from '@/domains/dispatch/utils/kstDateTime';
 
 // 좌표 유효성 검사 함수 추가
 function isValidCoordinate(lat: number, lng: number): boolean {
@@ -342,9 +348,8 @@ async function buildTimeWindowAwareRoute(
   for (let i = 0; i < waypoints.length; i++) {
     const dueStr = (deliveryTimes[i] || '').trim();
     if (dueStr) {
-      const [h, m] = dueStr.split(':').map(Number);
-      const d = new Date(now);
-      d.setHours(h, m, 0, 0);
+      const d = atKstTime(now, dueStr);
+      if (!d) continue;
       windows.set(waypoints[i].address, { due: d });
       console.log(`[시간제약] ${waypoints[i].address}: ${d.toISOString()}`);
     } else {
@@ -459,11 +464,6 @@ function buildDiagnostics(params: {
       description: s.description || '',
     })),
   };
-}
-
-/** Date를 KST(Asia/Seoul) 기준 "HH:mm"로 포맷(서버 TZ 무관). */
-function formatKstHHmm(d: Date): string {
-  return d.toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -876,11 +876,13 @@ export async function POST(request: NextRequest) {
       roadOption = 'time-first',
       returnToOrigin = true,
       deliveryTimes = [],
+      // destinations 인덱스 정합. true인 지점만 예약/정시 배송으로 보고 조기배송 대기를 적용한다.
+      // 미전달/false는 단순 마감(deadline)이라 일찍 배송해도 대기하지 않는다.
+      earlyDeliveryForbiddenFlags = [],
       isNextDayFlags = [],
       dwellMinutes = [],
       originDwellMinutes = 0,
-      // 조기배송 금지 여유(분): 마감 대비 이만큼 이르면 현장 대기 후 배송(대기=구속시간 과금).
-      // 기본 15분(옹고잉 정책). 0 이하면 대기 모델링 비활성(과거 동작).
+      // 예약 배송에서 허용하는 조기 도착 여유(분). 예약시각-여유 전 도착분만 현장 대기로 과금.
       earlyToleranceMinutes = 15,
       openStart = false,
       fastOrder = false,
@@ -898,6 +900,7 @@ export async function POST(request: NextRequest) {
     console.log('destinations:', destinations);
     console.log('vehicleType:', vehicleType);
     console.log('deliveryTimes:', deliveryTimes);
+    console.log('earlyDeliveryForbiddenFlags:', earlyDeliveryForbiddenFlags);
     console.log('isNextDayFlags:', isNextDayFlags);
     console.log('departureAt:', departureAt);
     console.log('useRealtimeTraffic:', useRealtimeTraffic);
@@ -1170,14 +1173,14 @@ export async function POST(request: NextRequest) {
       console.log('출발시간 정보:', {
         departureAt,
         departureAtType: typeof departureAt,
-        parsedTime: departureAt ? new Date(departureAt).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '없음'
+        parsedTime: departureAt ? formatKstHHmm(new Date(departureAt)) : '없음'
       });
 
       // 1단계: 시간제약이 있는 경우에만 검증 수행
       if (timeConstraints.length > 0) {
         console.log('[시간제약 검증] 시작 - 시간제약이 있음');
 
-        const startTime = departureAt ? new Date(departureAt).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '11:56';
+        const startTime = departureAt ? formatKstHHmm(new Date(departureAt)) : '11:56';
         console.log('검증에 사용할 출발시간:', startTime);
 
         // 추가 검증: 출발시간이 설정되어 있는지 확인
@@ -1394,7 +1397,7 @@ export async function POST(request: NextRequest) {
     const segmentFeatures: any[] = [];
     const waypoints: RouteWaypoint[] = [];
     const routeTimeline: RouteTimelineEntry[] = [];
-    // 조기배송 금지 여유(분). 마감−이 값보다 이르면 현장 대기. 0 이하면 대기 모델링 비활성.
+    // 예약/정시 배송으로 명시된 지점에만 적용할 조기 도착 허용 여유(분).
     const earlyToleranceMin = Number.isFinite(Number(earlyToleranceMinutes))
       ? Math.max(0, Number(earlyToleranceMinutes))
       : 15;
@@ -1439,21 +1442,12 @@ export async function POST(request: NextRequest) {
       return Number.isFinite(Number(value)) ? Number(value) : 0;
     };
 
-    // 조기배송 금지: 도착이 (마감−여유)보다 이르면 그 시각까지 현장 대기 후 배송.
-    // 반환 waitSec은 구속시간(과금)에 누적되고, serviceStart는 실제 배송 시작 시각이다.
-    // 익일(isNextDay) 배송은 마감이 다음 날이라 밤샘 '대기'가 아니므로 대기 모델링 제외.
-    const computeDeliveryWait = (arrival: Date, target: Date | null, isNextDay?: boolean): { waitSec: number; serviceStart: Date } => {
-      if (target && earlyToleranceMin > 0 && !isNextDay) {
-        const earliestMs = target.getTime() - earlyToleranceMin * 60 * 1000;
-        if (arrival.getTime() < earliestMs) {
-          return { waitSec: Math.round((earliestMs - arrival.getTime()) / 1000), serviceStart: new Date(earliestMs) };
-        }
-      }
-      return { waitSec: 0, serviceStart: arrival };
-    };
-
     // 주소 → 시간제약 매핑 (최종 순서에서도 정확한 매칭 보장)
-    const constraintByAddress = new Map<string, { deliveryTime: string; isNextDay: boolean }>();
+    const constraintByAddress = new Map<string, {
+      deliveryTime: string;
+      isNextDay: boolean;
+      earlyDeliveryForbidden: boolean;
+    }>();
     const originalIndexByAddress = new Map<string, number>();
     for (let idx = 0; idx < destinationCoords.length; idx++) {
       const raw = (deliveryTimes[idx] as any) as string | undefined;
@@ -1461,7 +1455,11 @@ export async function POST(request: NextRequest) {
       const addr = destinationCoords[idx].address;
       originalIndexByAddress.set(addr, idx);
       if (dt) {
-        constraintByAddress.set(addr, { deliveryTime: dt, isNextDay: !!isNextDayFlags[idx] });
+        constraintByAddress.set(addr, {
+          deliveryTime: dt,
+          isNextDay: !!isNextDayFlags[idx],
+          earlyDeliveryForbidden: !!earlyDeliveryForbiddenFlags[idx],
+        });
       }
     }
 
@@ -1500,27 +1498,23 @@ export async function POST(request: NextRequest) {
         const isNextDay = cForDest.isNextDay;
 
         if (deliveryTime) {
-          const [hours, minutes] = deliveryTime.split(':').map(Number);
-          const deliveryDateTime = new Date(currentTime);
+          const deliveryDateTime = atKstTime(currentTime, deliveryTime, isNextDay ? 1 : 0);
+          if (!deliveryDateTime) {
+            validationErrors.push(`경유지 ${i + 1}: 배송 시각 형식이 올바르지 않습니다 (${deliveryTime}).`);
+          } else {
+            targetDeliveryTime = deliveryDateTime;
 
-          if (isNextDay) {
-            // 다음날 배송인 경우
-            deliveryDateTime.setDate(deliveryDateTime.getDate() + 1);
+            // 배송완료시간까지 도착해야 하므로, 반복 계산으로 정확한 출발시간 계산
+            segmentDepartureTime = await calculateAccurateDepartureTime(
+              current,
+              dest,
+              deliveryDateTime,
+              tmapKey,
+              vehicleTypeCode,
+              usedTraffic,
+              vehicleType
+            );
           }
-
-          deliveryDateTime.setHours(hours, minutes, 0, 0);
-          targetDeliveryTime = deliveryDateTime;
-
-          // 배송완료시간까지 도착해야 하므로, 반복 계산으로 정확한 출발시간 계산
-          segmentDepartureTime = await calculateAccurateDepartureTime(
-            current,
-            dest,
-            deliveryDateTime,
-            tmapKey,
-            vehicleTypeCode,
-            usedTraffic,
-            vehicleType
-          );
         }
       }
 
@@ -1592,8 +1586,7 @@ export async function POST(request: NextRequest) {
           if (actualArrival.getTime() > dueEndMs) {
             const arrivalCeilMin = Math.ceil(actualArrival.getTime() / 60000);
             const ceilDate = new Date(arrivalCeilMin * 60000);
-            const hh = String(ceilDate.getHours()).padStart(2, '0');
-            const mm = String(ceilDate.getMinutes()).padStart(2, '0');
+            const [hh, mm] = formatKstHHmm(ceilDate).split(':');
             const originIdx = originalIndexByAddress.get(dest.address);
             const idxForUser = typeof originIdx === 'number' ? originIdx + 1 : (i + 1);
             const cdt = (cForDest && cForDest.deliveryTime) || `${hh}:${mm}`;
@@ -1606,7 +1599,13 @@ export async function POST(request: NextRequest) {
         const dwellTime = destinationDwell(i); // 경유지 체류시간
         const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
         // 조기배송 금지: 마감−여유보다 이르면 현장 대기 후 배송(대기는 구속시간에 과금).
-        const { waitSec, serviceStart } = computeDeliveryWait(arrivalTime, targetDeliveryTime, cForDest?.isNextDay);
+        const { waitSec, serviceStart } = computeEarlyDeliveryWait({
+          arrival: arrivalTime,
+          target: targetDeliveryTime,
+          earlyDeliveryForbidden: Boolean(cForDest?.earlyDeliveryForbidden),
+          earlyToleranceMinutes: earlyToleranceMin,
+          isNextDay: cForDest?.isNextDay,
+        });
         const waitMin = Math.round(waitSec / 60);
         totalWaitTime += waitSec;
         currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
@@ -1681,7 +1680,13 @@ export async function POST(request: NextRequest) {
           // 시간 업데이트(대기+체류 포함). 검증시계도 동일 — 하류 마감 도착에 대기·상/하차가 실제로 누적됨.
           const dwellTime = destinationDwell(i);
           const arrivalTime = new Date(currentTime.getTime() + (segmentTime * 1000));
-          const { waitSec, serviceStart } = computeDeliveryWait(arrivalTime, targetDeliveryTime, cForDest?.isNextDay);
+          const { waitSec, serviceStart } = computeEarlyDeliveryWait({
+            arrival: arrivalTime,
+            target: targetDeliveryTime,
+            earlyDeliveryForbidden: Boolean(cForDest?.earlyDeliveryForbidden),
+            earlyToleranceMinutes: earlyToleranceMin,
+            isNextDay: cForDest?.isNextDay,
+          });
           const waitMin = Math.round(waitSec / 60);
           totalWaitTime += waitSec;
           currentTime = new Date(serviceStart.getTime() + (dwellTime * 60 * 1000));
@@ -2469,7 +2474,7 @@ async function canInsertPoint(
 
   // 현재 시간에서 목표 시간까지의 여유 시간 계산 (간단한 추정)
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = kstMinutesOfDay(now);
   const availableTime = targetMinutes - currentMinutes;
 
   // 여유 시간이 충분한지 확인 (최소 30분 여유)
@@ -2646,7 +2651,7 @@ function calculateEstimatedTravelTime(
   const distanceKm = distance / 1000;
 
   // 시간대별 평균 속도 (km/h)
-  const hour = targetTime.getHours();
+  const hour = Math.floor(kstMinutesOfDay(targetTime) / 60);
   let averageSpeed: number;
 
   if (hour >= 7 && hour <= 9) {
@@ -2820,10 +2825,12 @@ async function buildRouteWithAnchors(
   for (let i = 0; i < waypoints.length; i++) {
     const dt = (deliveryTimes[i] || '').trim();
     if (dt) {
-      const [h, m] = dt.split(':').map(Number);
-      const due = new Date(baseNow);
-      if (isNextDayFlags[i]) due.setDate(due.getDate() + 1);
-      due.setHours(h, m, 0, 0);
+      const due = atKstTime(baseNow, dt, isNextDayFlags[i] ? 1 : 0);
+      if (!due) {
+        validationWarnings.push(`배송 시각 형식 오류: ${waypoints[i].address} (${dt})`);
+        unconstrained.push({ idx: i, wp: waypoints[i] });
+        continue;
+      }
       constrained.push({ idx: i, wp: waypoints[i], due });
     } else {
       unconstrained.push({ idx: i, wp: waypoints[i] });
@@ -2993,10 +3000,11 @@ async function precheckDirectFeasibility(
       trafficAnchor
     );
 
-    const [h, m] = dt.split(':').map(Number);
-    const due = new Date(base);
-    if (isNextDayFlags[i]) due.setDate(due.getDate() + 1);
-    due.setHours(h, m, 0, 0);
+    const due = atKstTime(base, dt, isNextDayFlags[i] ? 1 : 0);
+    if (!due) {
+      errors.push(`경유지 ${i + 1}: 배송 시각 형식이 올바르지 않습니다 (${dt}).`);
+      continue;
+    }
 
     const arrive = new Date(depart.getTime() + toWp.timeSec * 1000);
     // 동일 분 내(<= HH:MM:59)는 허용
@@ -3005,8 +3013,7 @@ async function precheckDirectFeasibility(
     if (arrive.getTime() > dueEndMs) {
       const arrivalCeilMin = Math.ceil(arrive.getTime() / 60000);
       const ceilDate = new Date(arrivalCeilMin * 60000);
-      const ah = String(ceilDate.getHours()).padStart(2, '0');
-      const am = String(ceilDate.getMinutes()).padStart(2, '0');
+      const [ah, am] = formatKstHHmm(ceilDate).split(':');
       errors.push(`경유지 ${i + 1}: 직행 기준 ${dt} 도착은 불가능합니다. 최소 ${ah}:${am} 도착.`);
       maxLatenessMin = Math.max(maxLatenessMin, (arrive.getTime() - dueMinMs) / 60000);
     }

@@ -123,7 +123,8 @@ export function pickHourlyRateFromPayload(payload: RateTablePayload, billMinutes
   for (const tier of payload.tiers) {
     if (billMinutes <= tier.maxMinutes) return tier.ratePerHour;
   }
-  return payload.tiers[payload.tiers.length - 1].ratePerHour;
+  const maxMinutes = payload.tiers[payload.tiers.length - 1]?.maxMinutes ?? 0;
+  throw new RangeError(`시간당 운임표는 ${maxMinutes}분까지만 자동 견적을 지원합니다.`);
 }
 
 /**
