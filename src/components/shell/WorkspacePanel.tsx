@@ -40,11 +40,12 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
       <div className="flex flex-none items-center gap-1 bg-card/95 px-2.5 pt-2 backdrop-blur-sm">
         {/* 4개 탭을 항상 노출한다. 데이터가 없는 탭은 잠금 상태(비활성+힌트)로 보여
             "이런 능력이 있다"를 미리 알린다(발견성). 잠금 탭은 클릭해도 전환되지 않는다. */}
-        <div role="tablist" aria-label="워크스페이스 탭" className="flex items-center gap-1">
+        <div role="tablist" aria-label="워크스페이스 탭" className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-1">
           <TabButton
             label="대화"
             icon={<MessageSquare className="h-3.5 w-3.5" />}
             active={activeTab === 'chat'}
+            compact={!isDesktop}
             onClick={() => setWorkspaceTab('chat')}
           />
           <TabButton
@@ -52,6 +53,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             icon={<Calculator className="h-3.5 w-3.5" />}
             active={activeTab === 'quote'}
             locked={!hasQuote}
+            compact={!isDesktop}
             lockHint="AI 견적챗에서 견적을 받으면 열려요"
             onClick={() => setWorkspaceTab('quote')}
           />
@@ -60,14 +62,17 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             icon={<MapPin className="h-3.5 w-3.5" />}
             active={activeTab === 'route'}
             locked={!hasRoute}
+            compact={!isDesktop}
             lockHint="경로를 계산하면 열려요"
             onClick={() => setWorkspaceTab('route')}
           />
           <TabButton
             label="배차 결과"
+            compactLabel="배차"
             icon={<Truck className="h-3.5 w-3.5" />}
             active={activeTab === 'result'}
             locked={!hasResult}
+            compact={!isDesktop}
             lockHint="다중 배송원 배차를 실행하면 열려요"
             onClick={() => setWorkspaceTab('result')}
           />
@@ -155,13 +160,17 @@ function TabButton({
   onClick,
   locked = false,
   lockHint,
+  compact = false,
+  compactLabel,
 }: {
   label: string;
+  compactLabel?: string;
   icon: React.ReactNode;
   active: boolean;
   onClick: () => void;
   locked?: boolean;
   lockHint?: string;
+  compact?: boolean;
 }) {
   return (
     <button
@@ -172,7 +181,9 @@ function TabButton({
       // 잠금 탭은 onClick을 비워 전환을 막되 disabled 속성은 쓰지 않아 hover 힌트(title)가 뜨게 한다.
       onClick={locked ? undefined : onClick}
       title={locked ? lockHint : undefined}
-      className={`focus-ring-inset relative -mb-px inline-flex items-center gap-1.5 rounded-t-lg px-3.5 py-2 text-sm font-semibold transition ${
+      className={`focus-ring-inset relative -mb-px inline-flex items-center whitespace-nowrap rounded-t-lg font-semibold transition ${
+        compact ? 'gap-1 px-2 py-2 text-xs' : 'gap-1.5 px-3.5 py-2 text-sm'
+      } ${
         locked
           ? 'cursor-not-allowed text-muted-foreground/40'
           : active
@@ -181,8 +192,8 @@ function TabButton({
       }`}
     >
       {icon}
-      {label}
-      {locked && <Lock className="h-3 w-3 opacity-70" />}
+      {compact ? compactLabel ?? label : label}
+      {locked && !compact && <Lock className="h-3 w-3 opacity-70" />}
       {active && !locked && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
     </button>
   );

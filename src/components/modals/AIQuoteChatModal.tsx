@@ -25,10 +25,13 @@ import type {
   ChatStructuredPayload,
 } from '@/domains/chat/types';
 import type { QuoteIssuer } from '@/domains/quote/services/chatFileGenerator';
+import type { RoutePreviewOptions } from '@/domains/dispatch/types/routePreview';
 import { EMPTY_ISSUER, loadIssuer, saveIssuer, toGenerationIssuer } from '@/domains/quote/services/issuerSettings';
 import { useSpeechInput } from '@/domains/chat/hooks/useSpeechInput';
 import { useOnlineStatus } from '@/domains/chat/hooks/useOnlineStatus';
 import { useChatSessions } from '@/domains/chat/hooks/useChatSessions';
+import SavedQuotePreviewModal from '@/domains/quote/components/SavedQuotePreviewModal';
+import { useSavedQuotes } from '@/domains/quote/hooks/useSavedQuotes';
 
 /** 최종 페이로드에서 구조화 카드용 데이터를 추린다(없으면 undefined). */
 function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPayload | undefined {
@@ -214,6 +217,12 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   // 발행처(공급자) 설정 — localStorage 보관, 견적서 생성에 주입.
   const [issuer, setIssuer] = useState<QuoteIssuer>(EMPTY_ISSUER);
   const [issuerOpen, setIssuerOpen] = useState(false);
+  const savedQuotes = useSavedQuotes();
+  const refreshSavedQuotes = savedQuotes.refresh;
+
+  useEffect(() => {
+    if (isOpen) void refreshSavedQuotes();
+  }, [isOpen, refreshSavedQuotes]);
 
   // 견적 요약을 공유 훅에 publish → WorkspacePanel의 [견적] 탭/대화 peek 바가 사용.
   useEffect(() => {
@@ -1124,7 +1133,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     []
   );
   const stableOnPreviewRoute = useCallback(
-    (rr: any) => void bubbleHandlersRef.current.previewRouteOnMap(rr),
+    (rr: unknown, options?: RoutePreviewOptions) =>
+      void bubbleHandlersRef.current.previewRouteOnMap(rr, options),
     []
   );
   const stableOnOpenQuotePanel = useCallback(() => {
@@ -1138,6 +1148,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   );
 
   if (!isOpen) return null;
+  const hasUserMessage = messages.some((message) => message.role === 'user');
 
   return (
     <div
@@ -1163,7 +1174,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             <div className="flex items-center gap-3">
               <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
                 <Sparkles className="h-5 w-5" />
-                <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card ${online ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />
               </div>
               <div>
                 <h2 className="text-[15px] font-bold leading-tight text-foreground">AI 견적 어시스턴트</h2>
@@ -1295,8 +1305,8 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             onOpenQuotePanel={stableOnOpenQuotePanel}
           />
 
-          {/* Input Area (Floating Style) */}
-          <div className="flex-shrink-0 px-4 md:px-8 pb-6 pt-2 bg-gradient-to-t from-white via-white to-transparent">
+          {/* Input Area */}
+          <div className="flex-shrink-0 border-t border-border bg-card px-4 pb-4 pt-3 md:px-8 md:pb-5">
             {compact && latestResult?.quote && (
               <button
                 type="button"
@@ -1323,7 +1333,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 </span>
               </button>
             )}
-            {!loading && latestResult && messages.some((m) => m.role === 'user') && (
+            {!loading && latestResult && hasUserMessage && (
               <div className="mb-2 flex justify-end">
                 <button
                   type="button"
@@ -1331,7 +1341,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                   className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
                 >
                   <RefreshCw className="w-3 h-3" />
-                  다시 생성
+                  같은 조건 재계산
                 </button>
               </div>
             )}
@@ -1354,33 +1364,25 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 ))}
               </div>
             )}
-            {/* Quick Templates (콜드스타트: 한 번 탭으로 바로 시작) */}
-            {!messages.some((m) => m.role === 'user') && !loading && (
-              <p className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">이렇게 시작해보세요 · 탭하면 바로 견적</p>
+            {!hasUserMessage && !loading && (
+              <div className="mb-3">
+                <p className="mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground">
+                  자주 쓰는 요청으로 시작
+                </p>
+                <div className="flex gap-2 overflow-x-auto hide-scrollbar mask-linear-fade">
+                  {quickTemplates.map((template, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => void handleSend(template)}
+                      className="focus-ring-inset inline-flex min-h-9 flex-shrink-0 items-center whitespace-nowrap rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                    >
+                      <Sparkles className="mr-1.5 h-3 w-3 text-primary/60" />
+                      {template.length > 24 ? template.slice(0, 24) + '...' : template}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-            <div className="flex gap-2 overflow-x-auto pb-3 hide-scrollbar mask-linear-fade">
-              {quickTemplates.map((template, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    const coldStart = !messages.some((m) => m.role === 'user');
-                    if (coldStart && !loading) {
-                      void handleSend(template);
-                      return;
-                    }
-                    setInput(template);
-                    if (textareaRef.current) {
-                      textareaRef.current.focus();
-                      requestAnimationFrame(autoResize);
-                    }
-                  }}
-                  className="flex-shrink-0 inline-flex items-center px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-primary hover:shadow-sm transition-all whitespace-nowrap"
-                >
-                  <Sparkles className="w-3 h-3 mr-1.5 text-primary/60" />
-                  {template.length > 24 ? template.slice(0, 24) + '...' : template}
-                </button>
-              ))}
-            </div>
 
             <div className="relative group">
               <div className="relative flex items-end bg-card rounded-2xl shadow-lg shadow-black/[0.04] border border-border overflow-hidden transition-shadow focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10">
@@ -1434,7 +1436,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                       void handleUploadFiles(dt.files);
                     }
                   }}
-                  placeholder={loading ? '답변을 생성하고 있어요…' : compact ? '메시지를 입력하세요…' : '무엇을 도와드릴까요? (예: 내일 강남에서 마포로 퀵 보낼래)'}
+                  placeholder={loading ? '견적을 계산하고 있어요…' : compact ? '배송 조건을 입력하세요…' : '배송지·차량·마감 시각을 자연어로 입력하세요'}
                   disabled={loading}
                   className="w-full max-h-[200px] min-h-[52px] py-3.5 pl-4 pr-14 bg-transparent text-[15px] text-foreground placeholder:text-muted-foreground placeholder:truncate resize-none focus:outline-none scrollbar-thin disabled:opacity-60"
                   rows={1}
@@ -1461,18 +1463,26 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               </div>
             </div>
             <div className="mt-2 flex items-center justify-between gap-2 px-1">
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${loading ? 'bg-amber-500 animate-pulse' : online ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
-                />
-                <span>{loading ? '계산 중' : online ? '연결됨' : '오프라인'}</span>
-                <span className="text-border">·</span>
-                <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border text-[10px] font-medium text-muted-foreground">Shift+Enter</kbd>
-                <span>줄바꿈</span>
-              </p>
-              <span className={`text-[10px] tabular-nums ${input.length >= MAX_CHARS ? 'text-rose-500 font-semibold' : 'text-muted-foreground'}`}>
-                {input.length.toLocaleString()}/{MAX_CHARS.toLocaleString()}
-              </span>
+              {loading || !online ? (
+                <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${loading ? 'bg-warning animate-pulse' : 'bg-error-500'}`}
+                  />
+                  <span>{loading ? '경로·운임 계산 중' : '오프라인 · 연결 후 다시 시도해 주세요'}</span>
+                </p>
+              ) : (
+                <p className="hidden items-center gap-1.5 text-[10px] text-muted-foreground sm:flex">
+                  <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                    Shift+Enter
+                  </kbd>
+                  <span>줄바꿈</span>
+                </p>
+              )}
+              {input.length >= MAX_CHARS * 0.8 && (
+                <span className={`text-[10px] tabular-nums ${input.length >= MAX_CHARS ? 'font-semibold text-error-600' : 'text-muted-foreground'}`}>
+                  {input.length.toLocaleString()}/{MAX_CHARS.toLocaleString()}
+                </span>
+              )}
             </div>
             {!!attachments.length && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -1491,11 +1501,13 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
                 ))}
               </div>
             )}
-            <div className="text-center mt-2">
-              <p className="text-[10px] text-muted-foreground">
-                AI는 실수를 할 수 있습니다. 중요한 정보는 확인해 주세요.
-              </p>
-            </div>
+            {!hasUserMessage && (
+              <div className="mt-2 text-center">
+                <p className="text-[10px] text-muted-foreground">
+                  AI가 해석한 주소와 시각은 견적 결과에서 다시 확인할 수 있어요.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1541,11 +1553,28 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           previewError={previewError}
           onPreviewOnMap={(useSanitizedFallback) => void handlePreviewOnMap(useSanitizedFallback)}
           onOpenQuoteDetail={() => setIsQuoteDetailOpen(true)}
+          savedQuotes={savedQuotes.summaries}
+          isSavedQuoteListLoading={savedQuotes.isListLoading}
+          isSavedQuoteDetailLoading={savedQuotes.isDetailLoading}
+          isSavingQuote={savedQuotes.isSaving}
+          savedQuoteMessage={savedQuotes.message}
+          onRefreshSavedQuotes={() => void refreshSavedQuotes()}
+          onSaveCaseBoard={() => {
+            if (latestResult?.caseBoard) void savedQuotes.save(latestResult.caseBoard);
+          }}
+          onOpenSavedQuote={(id) => void savedQuotes.open(id)}
         />
         </div>
       </div>
       {isQuoteDetailOpen && latestResult?.quote && (
         <QuoteDetailModal quote={latestResult.quote} onClose={() => setIsQuoteDetailOpen(false)} />
+      )}
+      {savedQuotes.selected && (
+        <SavedQuotePreviewModal
+          quote={savedQuotes.selected}
+          onClose={savedQuotes.close}
+          onPreviewRoute={stableOnPreviewRoute}
+        />
       )}
     </div>
   );

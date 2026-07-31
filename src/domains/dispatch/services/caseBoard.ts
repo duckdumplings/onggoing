@@ -110,6 +110,18 @@ export interface CaseBoardInput {
 
 export type DeadlineRiskGrade = 'safe' | 'caution' | 'danger' | 'recheck' | 'infeasible' | 'none';
 
+export interface RateTableEvidence {
+  source: 'database' | 'static-fallback';
+  effectiveFrom: string;
+  sourceDoc: string;
+}
+
+export interface CasePricingEvidence {
+  hourly?: RateTableEvidence;
+  fuelSurcharge?: RateTableEvidence;
+  perJob?: RateTableEvidence;
+}
+
 /** 마감 여유(분) → 운영 리스크 등급. 단순 O/X 대신 현장 변수 여지를 등급으로 노출. */
 function deadlineRiskGrade(slackMinutes: number | null | undefined, meetsDeadline: boolean | null | undefined): DeadlineRiskGrade {
   if (meetsDeadline === false) return 'infeasible';
@@ -185,6 +197,8 @@ export interface CaseBoardCaseResult {
     chargedBins: number;
     total: number;
   } | null;
+  /** 저장 견적에서 당시 시행 운임표와 fallback 여부를 재현하기 위한 근거. */
+  pricingEvidence?: CasePricingEvidence;
   annualPrice?: number;
   monthlyTotal?: number;
   monthlyVisits?: number;
@@ -428,6 +442,26 @@ async function computeCase(
     const ratePerHour = Number.isFinite(Number(hourly?.ratePerHour)) ? Number(hourly.ratePerHour) : null;
     const fuelSurcharge = Number.isFinite(Number(hourly?.fuelSurcharge)) ? Number(hourly.fuelSurcharge) : null;
     const fuelSurchargeBreakdown = hourly?.fuelSurchargeBreakdown ?? null;
+    const toRateTableEvidence = (value: unknown): RateTableEvidence | undefined => {
+      if (!value || typeof value !== 'object') return undefined;
+      const record = value as Record<string, unknown>;
+      const source = record.source;
+      const effectiveFrom = record.effectiveFrom;
+      const sourceDoc = record.sourceDoc;
+      if (
+        (source !== 'database' && source !== 'static-fallback') ||
+        typeof effectiveFrom !== 'string' ||
+        typeof sourceDoc !== 'string'
+      ) {
+        return undefined;
+      }
+      return { source, effectiveFrom, sourceDoc };
+    };
+    const pricingEvidence: CasePricingEvidence = {
+      hourly: toRateTableEvidence(hourly?.rateTable),
+      fuelSurcharge: toRateTableEvidence(hourly?.fuelSurchargeRateTable),
+      perJob: toRateTableEvidence(perJobRaw?.rateTable),
+    };
     // 공식 대표 운임은 항상 시간당. 과거 planPreference=perJob은 참고값 노출 요청으로만 해석한다.
     const pref = c.planPreference ?? 'hourly';
     const includePerJobReference = c.includePerJobReference || pref === 'perJob';
@@ -552,6 +586,7 @@ async function computeCase(
       ratePerHour,
       fuelSurcharge,
       fuelSurchargeBreakdown,
+      pricingEvidence,
       annualPrice,
       monthlyTotal,
       monthlyVisits,

@@ -13,6 +13,7 @@ import type {
 import ResultSection from './quote-sidebar/ResultSection';
 import IssueSection from './quote-sidebar/IssueSection';
 import ManageSection from './quote-sidebar/ManageSection';
+import type { SavedQuoteSummary } from '@/domains/quote/types/savedQuote';
 
 interface QuoteInfoSidebarProps {
   compact: boolean;
@@ -62,6 +63,14 @@ interface QuoteInfoSidebarProps {
   previewError: string | null;
   onPreviewOnMap: (useSanitizedFallback?: boolean) => void;
   onOpenQuoteDetail: () => void;
+  savedQuotes: SavedQuoteSummary[];
+  isSavedQuoteListLoading: boolean;
+  isSavedQuoteDetailLoading: boolean;
+  isSavingQuote: boolean;
+  savedQuoteMessage: string | null;
+  onRefreshSavedQuotes: () => void;
+  onSaveCaseBoard: () => void;
+  onOpenSavedQuote: (id: string) => void;
 }
 
 type SidebarTab = 'result' | 'issue' | 'manage';
@@ -74,7 +83,7 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
   const { compact, latestResult, loading } = props;
   const [tab, setTab] = React.useState<SidebarTab>('result');
 
-  const hasResult = Boolean(latestResult?.quote || latestResult?.scenarioComparison);
+  const hasResult = Boolean(latestResult?.quote || latestResult?.scenarioComparison || latestResult?.caseBoard);
 
   // 새 견적/시나리오가 도착하면 결과 탭으로 되돌려 핵심을 먼저 보여준다.
   const prevHasResult = React.useRef(false);
@@ -91,7 +100,7 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
   const tabs: { id: SidebarTab; label: string; dot?: boolean; count?: number }[] = [
     { id: 'result', label: '견적', dot: hasResult },
     { id: 'issue', label: '발행', count: props.generatedFiles.length },
-    { id: 'manage', label: '관리', count: props.sessions.length },
+    { id: 'manage', label: '관리', count: props.sessions.length + props.savedQuotes.length },
   ];
 
   // 탭 좌우 화살표 이동(roving tabindex).
@@ -190,6 +199,9 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
               previewError={props.previewError}
               onPreviewOnMap={props.onPreviewOnMap}
               onOpenQuoteDetail={props.onOpenQuoteDetail}
+              onSaveCaseBoard={props.onSaveCaseBoard}
+              isSavingQuote={props.isSavingQuote}
+              savedQuoteMessage={props.savedQuoteMessage}
             />
           )}
           {tab === 'issue' && (
@@ -226,6 +238,12 @@ export default function QuoteInfoSidebar(props: QuoteInfoSidebarProps) {
               onSelectSession={props.onSelectSession}
               onDeleteSession={props.onDeleteSession}
               attachments={props.attachments}
+              savedQuotes={props.savedQuotes}
+              isSavedQuoteListLoading={props.isSavedQuoteListLoading}
+              isSavedQuoteDetailLoading={props.isSavedQuoteDetailLoading}
+              savedQuoteMessage={props.savedQuoteMessage}
+              onRefreshSavedQuotes={props.onRefreshSavedQuotes}
+              onOpenSavedQuote={props.onOpenSavedQuote}
             />
           )}
         </div>

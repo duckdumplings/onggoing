@@ -48,7 +48,7 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 | 파일 | LOC | 분리 우선순위 | 분리 후 목표 위치 |
 |---|---|---|---|
 | `src/app/api/route-optimization/route.ts` | 2988 | 매우 높음 | `domains/dispatch/services/` |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1552 | 높음 | `modals/ai-quote/` 스텝별 분리 |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1581 | 높음 | `modals/ai-quote/` 스텝별 분리 |
 | `src/app/tmap-embed/route.ts` | 1504 | 높음 | Tmap embed HTML 템플릿 분리 |
 | `src/domains/quote/agent/tools.ts` | 1339 | 높음 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 높음 | 입력 폼/결과 카드/지도 컨트롤 3분할 |
@@ -67,6 +67,8 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 | 2026-07-30 | 경로 타임라인 기준시각 분리 후 `route-optimization/route.ts` LOC를 2912로 갱신 |
 | 2026-07-30 | 복합 시각 제약을 서비스로 분리하고 다중 라인 강제 라우팅 반영 후 route 2988 / agent-chat 688 LOC로 갱신 |
 | 2026-07-30 | 마감 역산 안내 추가 후 agent-chat 689 / agent tools 1339 LOC로 갱신, tools 분리 대상을 등록 |
+| 2026-07-31 | 견적 입력·재계산 UX 정돈 후 `AIQuoteChatModal.tsx` LOC를 1556으로 갱신 |
+| 2026-07-31 | 저장 견적 wiring만 컨테이너에 추가하고 상태·API·상세 UI는 quote 도메인으로 분리, `AIQuoteChatModal.tsx` LOC를 1581로 갱신 |
 
 ## 3. API Route 분리 패턴
 

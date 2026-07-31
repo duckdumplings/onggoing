@@ -19,6 +19,7 @@ import DepartureMatrixCard from '@/domains/dispatch/components/DepartureMatrixCa
 import AuditTimelineCard from '@/domains/dispatch/components/AuditTimelineCard';
 import CaseBoardCard from '@/domains/dispatch/components/CaseBoardCard';
 import QuoteResultCard from '@/domains/dispatch/components/QuoteResultCard';
+import type { RoutePreviewHandler } from '@/domains/dispatch/types/routePreview';
 import ChatMarkdown from '@/domains/chat/components/ChatMarkdown';
 import { shouldRenderEvidence, getDomainFromUrl, WELCOME_MESSAGE } from '@/domains/chat/utils';
 import type { ChatMessage, AgentStep, ChatStructuredPayload } from '@/domains/chat/types';
@@ -43,7 +44,7 @@ interface ChatMessageListProps {
     override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   isGeneratingFile: boolean;
-  onPreviewRoute: (routeRequest: any) => void;
+  onPreviewRoute: RoutePreviewHandler;
   /** 인라인 견적 카드의 "현황·발행 열기" — compact에서 견적 드로어를 연다. */
   onOpenQuotePanel?: () => void;
 }
@@ -69,7 +70,7 @@ interface MessageBubbleProps {
     override?: { structured?: ChatStructuredPayload; documentView?: 'customer-summary' | 'calculation-basis' | 'internal-risk' }
   ) => void;
   isGeneratingFile: boolean;
-  onPreviewRoute: (routeRequest: any) => void;
+  onPreviewRoute: RoutePreviewHandler;
   onOpenQuotePanel?: () => void;
 }
 
@@ -93,7 +94,7 @@ const MessageBubble = React.memo(function MessageBubble({
 }: MessageBubbleProps) {
   return (
     <div className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className={`min-w-0 flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
+      <div className={`min-w-0 flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} ${msg.structured?.caseBoard ? 'w-full max-w-full' : msg.structured ? 'max-w-[95%] md:max-w-[88%]' : 'max-w-[85%] md:max-w-[75%]'}`}>
 
         {/* Avatar */}
         <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${msg.role === 'user'

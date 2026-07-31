@@ -66,6 +66,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `services/chatFileGenerator.ts` | Chat 첨부 파일 생성 |
 | `services/toolRouter.ts` | LLM tool calling 라우팅 |
 | `services/webKnowledgeRetriever.ts` | 웹 지식 검색 |
+| `services/savedQuote*.ts` / `hooks/useSavedQuotes.ts` / `components/SavedQuotePreviewModal.tsx` | 대화와 분리된 팀 공용 견적책 스냅샷 저장·조회 |
 | `agent/` | 견적 에이전트(tool-calling): `tools.ts`(1339줄, 분리 우선), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
 | `types/` | `quoteDocument.ts`, `quoteExtraction.ts`, `riskReport.ts` |
 | `evals/chatEvalCases.ts` | (구) 규칙 추출 평가 케이스 |
@@ -89,6 +90,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `quote/generate-risk-report/route.ts` | 리스크 리포트 생성 | — | 중간 |
 | `quote/compare-quotes/route.ts` | 견적 비교 | — | 낮음 |
 | `quote/chat-sessions/route.ts` | AI Chat 세션 CRUD | — | 중간 |
+| `quote/saved-quotes/route.ts` | 인증된 팀 공용 견적책 스냅샷 저장·조회 | 91 | 낮음 |
 | `quote/chat-feedback/route.ts` | AI Chat 피드백 수집 | — | 낮음 |
 | `quote/reviews/route.ts` | 견적 검토 이력 | — | 낮음 |
 | `quote/evals/route.ts` | AI Chat 평가 실행 | — | 낮음 |
@@ -106,7 +108,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | 파일 | LOC | 우선 분리 대상 |
 |---|---|---|
 | `src/app/api/route-optimization/route.ts` | 2988 | 비즈니스 로직 → `domains/dispatch/services/` |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1552 | 스텝/메시지 컴포넌트 분리 |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1581 | 스텝/메시지 컴포넌트 분리 |
 | `src/app/tmap-embed/route.ts` | 1504 | HTML 템플릿 분리 |
 | `src/domains/quote/agent/tools.ts` | 1339 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
@@ -125,7 +127,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## DB 마이그레이션 (`supabase/migrations/`)
 
-25개 마이그레이션. 주요 테이블:
+27개 마이그레이션. 주요 테이블:
 
 - `quote_documents` — 견적 의뢰 원본 문서
 - `quote_extractions` — 추출된 견적 정보
@@ -133,6 +135,8 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 - `quote_risk_reports` — 견적 리스크 리포트
 - `quote_chat_sessions` / `quote_chat_messages` — AI Chat 세션
 - `quote_chat_failure_cases` — AI Chat 실패 케이스 (디버깅용)
+- `saved_quotes` — 대화와 분리된 팀 공용 견적책 스냅샷
+- `rate_tables` — 시행일별 시간당·유류할증·단건 참고 운임표
 - `optimization_runs` — 경로 최적화 실행 이력
 
 > RLS는 MVP 단계에서 의도적으로 일부 비활성화 (`20250127000008_disable_rls_mvp.sql`).
@@ -234,3 +238,5 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-07-30 | 경로 타임라인 기준시각 정합화 | 고정 출발과 배송 마감을 분리하고 route LOC를 2912로 갱신 |
 | 2026-07-30 | 복합 작업·시각 의미·다중 라인 견적책 구현 | route/agent LOC 갱신, 견적책 UI·실도로 개략도·PDF·강제 도구 라우팅 추가 |
 | 2026-07-30 | 배송 마감 역산 제안 | 상차 미입력 시 권장 상차·출발·타임라인 자동 산출, agent tools 거대 파일 등록 |
+| 2026-07-31 | 다중 라인 견적책 UX 고도화 | 예외 우선 목록·선택 상세·지도/타임라인 연동, AIQuoteChatModal LOC 갱신 |
+| 2026-07-31 | 공용 견적 기록·운임표 DB 정합화 | saved_quotes API/UI, 단건 운임 시드, rate_tables 1차 RLS 강화, 마이그레이션 이력 정합화 |

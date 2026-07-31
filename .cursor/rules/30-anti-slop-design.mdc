@@ -155,7 +155,7 @@ allowlist:
 ## [현재 상태 스냅샷] — 시점-종속, 정기 갱신
 
 > 본 섹션은 프로젝트 상태에 따라 변한다. 위의 §1~§8 원칙은 유지하면서 이 부분만 갱신.
-> **Last updated**: 2026-05-29
+> **Last updated**: 2026-07-31
 
 ### A. 토큰 시스템 상태
 
@@ -169,7 +169,7 @@ allowlist:
 ### B. 거대 부채 (디자인 측면)
 
 - `src/components/AddressAutocomplete.tsx` (501줄): 인라인 스타일 다수 사용 의심 — 토큰 치환 우선 대상
-- `src/components/modals/AIQuoteChatModal.tsx` (1863줄): 메시지 버블/입력 영역의 스타일 일관성 점검 필요
+- `src/components/modals/AIQuoteChatModal.tsx` (1556줄): 메시지 버블/입력 영역의 스타일 일관성 점검 필요
 - README의 이모지 (🚀🎯📍 등): §4 위반. README 갱신 시 일괄 제거.
 
 ### C. 갱신 이력
@@ -178,3 +178,4 @@ allowlist:
 |---|---|---|
 | 2026-05-29 | 초기 도입 | ongManagement 룰에서 본 프로젝트 도메인으로 적응 |
 | 2026-05-29 | Phase 2 토큰 도입 | OKLCH 시맨틱 토큰 + 다크모드 + GlassCard tier |
+| 2026-07-31 | 견적챗 입력 영역 정돈 | AIQuoteChatModal LOC 스냅샷 갱신 |

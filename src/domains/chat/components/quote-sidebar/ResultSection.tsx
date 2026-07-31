@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { MapPin, Truck, Clock, Calculator, Loader2, FileText, Check, ChevronDown } from 'lucide-react';
+import { MapPin, Truck, Clock, Calculator, Loader2, FileText, Check, ChevronDown, PencilLine, Archive } from 'lucide-react';
 import ScenarioComparisonCard from '@/domains/dispatch/components/ScenarioComparisonCard';
 import ConfidenceBadge from '@/domains/dispatch/components/ConfidenceBadge';
 import type { AIQuoteResponse, GeneratedFile, ChatStructuredPayload } from '@/domains/chat/types';
@@ -24,6 +24,9 @@ interface ResultSectionProps {
   previewError: string | null;
   onPreviewOnMap: (useSanitizedFallback?: boolean) => void;
   onOpenQuoteDetail: () => void;
+  onSaveCaseBoard: () => void;
+  isSavingQuote: boolean;
+  savedQuoteMessage: string | null;
 }
 
 /** 견적 탭 본문: 결과 카드(최상단) → 시나리오 → 빠른 액션 → 신뢰도 → 운송 정보 → 진행 상태. */
@@ -41,10 +44,29 @@ export default function ResultSection({
   previewError,
   onPreviewOnMap,
   onOpenQuoteDetail,
+  onSaveCaseBoard,
+  isSavingQuote,
+  savedQuoteMessage,
 }: ResultSectionProps) {
   const destinations = latestResult?.extracted?.destinations;
   const [progressOpen, setProgressOpen] = React.useState(false);
   const allDone = Boolean(latestResult?.extracted && latestResult?.routeSummary && latestResult?.quote);
+  const fillCorrectionPrompt = () => {
+    const extracted = latestResult?.extracted;
+    if (!extracted) return;
+    const lines = [
+      '견적 조건을 수정할게. 아래 내용 중 바뀐 항목만 반영해서 다시 계산해줘.',
+      `출발지: ${extracted.origin?.address || '미입력'}`,
+      `경유·도착지: ${
+        extracted.destinations?.map((destination: { address?: string }) => destination.address || '주소 미입력').join(' → ') ||
+        '미입력'
+      }`,
+      `차량: ${extracted.vehicleType || '미입력'}`,
+      `출발 시각: ${extracted.departureTime || '미입력(배송 마감 기준 역산)'}`,
+      '수정할 내용: ',
+    ];
+    onFillInput(lines.join('\n'));
+  };
 
   if (loading && !latestResult?.quote && !latestResult?.scenarioComparison) {
     return (
@@ -134,6 +156,15 @@ export default function ResultSection({
             <>
               <button
                 type="button"
+                onClick={onSaveCaseBoard}
+                disabled={isSavingQuote}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {isSavingQuote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+                견적 기록에 저장
+              </button>
+              <button
+                type="button"
                 onClick={() => onGenerateFile('pdf', { documentView: 'calculation-basis' })}
                 disabled={isGeneratingFile}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-card border border-border text-xs font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-50"
@@ -153,6 +184,11 @@ export default function ResultSection({
             </>
           )}
         </div>
+      )}
+      {latestResult?.caseBoard && savedQuoteMessage && (
+        <p className="text-[11px] text-muted-foreground" role="status">
+          {savedQuoteMessage}
+        </p>
       )}
 
       {!loading && !!latestResult?.scenarioRouteErrors?.length && (
@@ -194,7 +230,24 @@ export default function ResultSection({
 
       {latestResult && (
         <div className="space-y-3">
-          <div className="text-xs font-bold text-muted-foreground">운송 정보</div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold text-muted-foreground">계산에 사용한 견적 조건</div>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                주소·차량·시각 해석이 다르면 바로 수정할 수 있어요.
+              </p>
+            </div>
+            {latestResult.extracted && (
+              <button
+                type="button"
+                onClick={fillCorrectionPrompt}
+                className="focus-ring-inset inline-flex min-h-9 flex-none items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition hover:border-primary/40 hover:text-primary"
+              >
+                <PencilLine className="h-3.5 w-3.5" />
+                조건 수정
+              </button>
+            )}
+          </div>
           <div className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-4">
             <div className="flex items-start gap-3">
               <MapPin className="w-4 h-4 text-primary mt-0.5" />

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import type { CaseSchematicPoint } from '@/domains/dispatch/services/caseBoard';
 
 interface CaseRouteSchematicProps {
@@ -16,6 +16,13 @@ const ROLE_DOT_CLASS: Record<string, string> = {
   waypoint: 'text-muted-foreground',
 };
 
+const ROLE_LABEL: Record<string, string> = {
+  pickup: '상차',
+  drop: '배송',
+  return: '반납',
+  waypoint: '경유',
+};
+
 /**
  * 견적책 경로 개략도. Tmap 실도로 좌표가 있으면 도로 모양을 그리고,
  * 없을 때만 직선 근사임을 명시한 점선으로 폴백한다.
@@ -25,6 +32,7 @@ export default function CaseRouteSchematic({
   polyline,
   className = 'h-[84px]',
 }: CaseRouteSchematicProps) {
+  const arrowId = useId().replace(/:/g, '');
   const geometry = useMemo(() => {
     const nodes = (points ?? []).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
     const road = (polyline ?? []).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
@@ -65,7 +73,11 @@ export default function CaseRouteSchematic({
       width,
       height,
       roadPath,
-      nodes: nodes.map((point) => ({ ...project(point), role: point.role })),
+      nodes: nodes.map((point, index) => ({
+        ...project(point),
+        role: point.role,
+        sequence: index + 1,
+      })),
     };
   }, [points, polyline]);
 
@@ -89,9 +101,26 @@ export default function CaseRouteSchematic({
       viewBox={`0 0 ${geometry.width} ${geometry.height}`}
       className={`w-full rounded-lg bg-muted ${className}`}
       role="img"
-      aria-label={geometry.roadPath ? 'Tmap 실도로 경로 개략도' : '직선 근사 경로 개략도'}
+      aria-label={
+        geometry.roadPath
+          ? '운행 순서를 번호로 표시한 Tmap 실도로 경로 개략도'
+          : '운행 순서를 번호로 표시한 직선 근사 경로 개략도'
+      }
       preserveAspectRatio="xMidYMid meet"
     >
+      <defs>
+        <marker
+          id={arrowId}
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="5"
+          markerHeight="5"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" className="text-primary/60" />
+        </marker>
+      </defs>
       {geometry.roadPath ? (
         <path
           d={geometry.roadPath}
@@ -101,6 +130,7 @@ export default function CaseRouteSchematic({
           className="text-primary/60"
           strokeLinejoin="round"
           strokeLinecap="round"
+          markerEnd={`url(#${arrowId})`}
         />
       ) : approximatePath ? (
         <path
@@ -111,22 +141,23 @@ export default function CaseRouteSchematic({
           strokeDasharray="5 4"
           className="text-primary/30"
           strokeLinejoin="round"
+          markerEnd={`url(#${arrowId})`}
         />
       ) : null}
       {geometry.nodes.map((node, index) => (
         <g key={index} className={ROLE_DOT_CLASS[node.role] ?? 'text-muted-foreground'}>
-          <circle cx={node.x} cy={node.y} r={index === 0 ? 4.6 : 3.7} fill="currentColor" />
-          {index === 0 && (
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={7}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.2}
-              className="opacity-50"
-            />
-          )}
+          <title>{`${node.sequence}번 ${ROLE_LABEL[node.role] ?? '경유'}`}</title>
+          <circle cx={node.x} cy={node.y} r={8.2} fill="currentColor" className="opacity-95" />
+          <circle cx={node.x} cy={node.y} r={5.6} className="fill-card" />
+          <text
+            x={node.x}
+            y={node.y + 0.4}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            className="fill-foreground text-[7px] font-bold tabular-nums"
+          >
+            {node.sequence}
+          </text>
         </g>
       ))}
     </svg>

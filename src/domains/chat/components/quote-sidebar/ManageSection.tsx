@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Trash2, ChevronDown } from 'lucide-react';
+import { Archive, ChevronDown, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import type { ChatSession, ChatAttachment } from '@/domains/chat/types';
+import type { SavedQuoteSummary } from '@/domains/quote/types/savedQuote';
 
 interface ManageSectionProps {
   sessions: ChatSession[];
@@ -13,6 +14,12 @@ interface ManageSectionProps {
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   attachments: ChatAttachment[];
+  savedQuotes: SavedQuoteSummary[];
+  isSavedQuoteListLoading: boolean;
+  isSavedQuoteDetailLoading: boolean;
+  savedQuoteMessage: string | null;
+  onRefreshSavedQuotes: () => void;
+  onOpenSavedQuote: (id: string) => void;
 }
 
 function Accordion({
@@ -59,9 +66,79 @@ export default function ManageSection({
   onSelectSession,
   onDeleteSession,
   attachments,
+  savedQuotes,
+  isSavedQuoteListLoading,
+  isSavedQuoteDetailLoading,
+  savedQuoteMessage,
+  onRefreshSavedQuotes,
+  onOpenSavedQuote,
 }: ManageSectionProps) {
   return (
     <div className="space-y-6">
+      <Accordion
+        title="견적 기록"
+        count={savedQuotes.length}
+        action={
+          <button
+            type="button"
+            onClick={onRefreshSavedQuotes}
+            disabled={isSavedQuoteListLoading}
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3 w-3 ${isSavedQuoteListLoading ? 'animate-spin' : ''}`} />
+            새로고침
+          </button>
+        }
+      >
+        <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border bg-card p-2 shadow-sm">
+          {savedQuotes.map((quote) => (
+            <button
+              key={quote.id}
+              type="button"
+              onClick={() => onOpenSavedQuote(quote.id)}
+              disabled={isSavedQuoteDetailLoading}
+              className="focus-ring w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted disabled:opacity-60"
+            >
+              <div className="flex items-start gap-2">
+                <Archive className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold text-foreground">{quote.title}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                    <span className="font-semibold tabular-nums text-foreground">
+                      ₩{Math.round(quote.totalAmount).toLocaleString('ko-KR')}
+                    </span>
+                    <span>{quote.caseCount}개 라인</span>
+                    <span>
+                      {new Date(quote.createdAt).toLocaleDateString('ko-KR', {
+                        month: '2-digit',
+                        day: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                </div>
+                {isSavedQuoteDetailLoading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+              </div>
+            </button>
+          ))}
+          {!savedQuotes.length && !isSavedQuoteListLoading && (
+            <div className="px-2 py-3 text-[11px] leading-relaxed text-muted-foreground">
+              저장된 견적이 없어요. 계산이 끝난 견적책에서 ‘견적 기록에 저장’을 누르면 여기에 쌓입니다.
+            </div>
+          )}
+          {isSavedQuoteListLoading && !savedQuotes.length && (
+            <div className="flex items-center gap-2 px-2 py-3 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              견적 기록을 불러오는 중...
+            </div>
+          )}
+        </div>
+        {savedQuoteMessage && (
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground" role="status">
+            {savedQuoteMessage}
+          </p>
+        )}
+      </Accordion>
+
       <Accordion
         title="대화방"
         count={sessions.length}
