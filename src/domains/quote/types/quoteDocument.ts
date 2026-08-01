@@ -5,6 +5,7 @@ export type DocumentFileType = 'pdf' | 'excel' | 'word' | 'image' | 'csv';
 export interface QuoteDocument {
   id: string;
   file_url: string;
+  storage_path?: string | null;
   file_name: string;
   file_type: DocumentFileType;
   file_size: number;
@@ -16,6 +17,7 @@ export interface QuoteDocument {
 
 export interface QuoteDocumentInsert {
   file_url: string;
+  storage_path?: string | null;
   file_name: string;
   file_type: DocumentFileType;
   file_size: number;
@@ -79,6 +81,5 @@ export const ALLOWED_MIME_TYPES = [
 ];
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-
 
 

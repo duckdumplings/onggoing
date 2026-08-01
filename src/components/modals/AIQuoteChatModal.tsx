@@ -32,6 +32,13 @@ import { useOnlineStatus } from '@/domains/chat/hooks/useOnlineStatus';
 import { useChatSessions } from '@/domains/chat/hooks/useChatSessions';
 import SavedQuotePreviewModal from '@/domains/quote/components/SavedQuotePreviewModal';
 import { useSavedQuotes } from '@/domains/quote/hooks/useSavedQuotes';
+import TeamAccessControl from '@/domains/auth/components/TeamAccessControl';
+import QuotePreflightReview from '@/domains/quote/components/QuotePreflightReview';
+import { useQuotePreflight } from '@/domains/quote/hooks/useQuotePreflight';
+import {
+  buildConfirmedQuoteMessage,
+} from '@/domains/quote/types/quotePreflight';
+import { shouldConfirmQuoteInput } from '@/domains/quote/services/multiLineIntent';
 
 /** 최종 페이로드에서 구조화 카드용 데이터를 추린다(없으면 undefined). */
 function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPayload | undefined {
@@ -59,13 +66,6 @@ function buildStructuredFromPayload(payload: AIQuoteResponse): ChatStructuredPay
 
 /** 입력창 최대 글자수 — 과도한 페이로드 방지용 소프트 가드. */
 const MAX_CHARS = 8000;
-
-/**
- * 견적챗은 로그인 없이 쓴다(사용자 요청: "로그인/세션 관리 없는게 좋음").
- * 로그인·로그아웃·인증 폼 UI를 이 플래그로 숨긴다. 익명 흐름·피드백 수집은 그대로 동작하고,
- * 첨부/영속 등 로그인 의존 기능을 되살려야 하면 이 값을 true로만 바꾸면 된다(코드·훅은 보존).
- */
-const SHOW_ACCOUNT_UI = false;
 
 /** 로그인 없이도 재귀개선용으로 피드백을 묶을 수 있는 익명 식별자. localStorage에 재사용 보관. */
 const ANON_ID_KEY = 'nyl_anon_id';
@@ -218,6 +218,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
   const [issuer, setIssuer] = useState<QuoteIssuer>(EMPTY_ISSUER);
   const [issuerOpen, setIssuerOpen] = useState(false);
   const savedQuotes = useSavedQuotes();
+  const quotePreflight = useQuotePreflight();
   const refreshSavedQuotes = savedQuotes.refresh;
 
   useEffect(() => {
@@ -372,7 +373,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     if (loading) return;
     const text = (sourceUserText || '').trim();
     if (!text) return;
-    void handleSend(text, { skipUserEcho: true });
+    void handleSend(text, { skipUserEcho: true, skipPreflight: true });
   };
 
   const quickTemplates = useMemo(() => {
@@ -416,7 +417,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       setShowAuthForm(false);
       setAuthPassword('');
       if (isOpen) {
-        await bootstrapServerSession();
+        await Promise.all([
+          bootstrapServerSession(),
+          refreshSavedQuotes(),
+        ]);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '로그인이 처리되지 않았어요. 잠시 후 다시 시도해 주세요.';
@@ -438,6 +442,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       setCurrentSessionId(`local-${Date.now()}`);
       setAttachments([]);
       setGeneratedFiles([]);
+      savedQuotes.reset();
       setShowAuthForm(false);
       pushAssistantMessage('로그아웃되었습니다. 현재는 로컬 임시 대화 모드입니다.', 'system');
     } catch (error) {
@@ -585,6 +590,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         const created = await createNewSession();
         if (created) {
           setLatestResult(null);
+          quotePreflight.clear();
           setPreviewError(null);
           setInput('');
           setAttachments([]);
@@ -673,13 +679,32 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
   const handleSend = async (
     overrideMessage?: string,
-    opts?: { skipUserEcho?: boolean; mapRouteContext?: unknown }
+    opts?: {
+      skipUserEcho?: boolean;
+      skipPreflight?: boolean;
+      displayMessage?: string;
+      mapRouteContext?: unknown;
+    }
   ) => {
     const message = (typeof overrideMessage === 'string' ? overrideMessage : input).trim();
+    const displayMessage = (opts?.displayMessage || message).trim();
     if (!message || loading) return;
 
+    if (
+      !opts?.skipPreflight &&
+      opts?.mapRouteContext == null &&
+      shouldConfirmQuoteInput(displayMessage)
+    ) {
+      if (!opts?.skipUserEcho) {
+        setInput('');
+        if (textareaRef.current) textareaRef.current.style.height = '56px';
+      }
+      await quotePreflight.prepare(displayMessage);
+      return;
+    }
+
     if (!opts?.skipUserEcho) {
-      setMessages((prev) => [...prev, { id: createMessageId(), role: 'user', content: message, timestamp: new Date() }]);
+      setMessages((prev) => [...prev, { id: createMessageId(), role: 'user', content: displayMessage, timestamp: new Date() }]);
       setInput('');
       if (textareaRef.current) {
         textareaRef.current.style.height = '56px'; // 초기 높이로 리셋
@@ -694,7 +719,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         sessionId = created?.id || null;
       }
       if (sessionId) {
-        await persistMessage(sessionId, 'user', message);
+        await persistMessage(sessionId, 'user', displayMessage);
       }
 
       // Send recent history (excluding the very latest user message which is sent as 'message')
@@ -752,7 +777,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         const json = (await res.json().catch(() => null)) as AIQuoteResponse | null;
         if (json) setLatestResult(json);
         const errMsg = json?.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
-        pushAssistantMessage(errMsg, 'normal', { sourceUserText: message, retryable: true });
+        pushAssistantMessage(errMsg, 'normal', { sourceUserText: displayMessage, retryable: true });
         return;
       }
 
@@ -800,7 +825,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
 
       if (!finalPayload) {
         if (!liveText) {
-          pushAssistantMessage('응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message, retryable: true });
+          pushAssistantMessage('응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: displayMessage, retryable: true });
         }
         return;
       }
@@ -812,10 +837,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         const errText = payload.error?.message || '견적 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
         if (liveCreated) {
           setMessages((prev) =>
-            prev.map((m) => (m.id === liveId ? { ...m, content: liveText || errText, sourceUserText: message, retryable: true } : m))
+            prev.map((m) => (m.id === liveId ? { ...m, content: liveText || errText, sourceUserText: displayMessage, retryable: true } : m))
           );
         } else {
-          pushAssistantMessage(liveText || errText, 'normal', { sourceUserText: message, retryable: true });
+          pushAssistantMessage(liveText || errText, 'normal', { sourceUserText: displayMessage, retryable: true });
         }
         return;
       }
@@ -830,12 +855,12 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
         setMessages((prev) =>
           prev.map((m) =>
             m.id === liveId
-              ? { ...m, content: text || '(응답 없음)', kind: hasQuote ? 'result' : 'normal', evidence: payload.evidence, sourceUserText: message, structured }
+              ? { ...m, content: text || '(응답 없음)', kind: hasQuote ? 'result' : 'normal', evidence: payload.evidence, sourceUserText: displayMessage, structured }
               : m
           )
         );
       } else if (text) {
-        pushAssistantMessage(text, hasQuote ? 'result' : 'normal', { evidence: payload.evidence, sourceUserText: message, structured });
+        pushAssistantMessage(text, hasQuote ? 'result' : 'normal', { evidence: payload.evidence, sourceUserText: displayMessage, structured });
       } else if (payload.followUpQuestions?.length) {
         pushAssistantMessage(payload.followUpQuestions.map((q) => `• ${q.question}`).join('\n'), 'system');
       } else {
@@ -847,7 +872,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
           quote: payload.quote || null,
           routeSummary: payload.routeSummary || null,
           evidence: payload.evidence || null,
-          sourceUserText: message,
+          sourceUserText: displayMessage,
           structured: structured ?? null,
         });
       }
@@ -864,7 +889,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
       if ((error as any)?.name === 'AbortError') {
         pushAssistantMessage('요청을 중단했어요.', 'system');
       } else {
-        pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: message, retryable: true });
+        pushAssistantMessage('서버와 연결이 끊어졌어요. 잠시 후 다시 시도해 주세요.', 'normal', { sourceUserText: displayMessage, retryable: true });
       }
     } finally {
       abortRef.current = null;
@@ -900,7 +925,10 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     pendingQuoteTextRef.current = null;
     const routeContext = pendingRouteContextRef.current;
     pendingRouteContextRef.current = null;
-    handleSend(text, { mapRouteContext: routeContext ?? undefined });
+    handleSend(text, {
+      mapRouteContext: routeContext ?? undefined,
+      skipPreflight: true,
+    });
     // handleSend는 최신 클로저로 호출하며, 트리거는 초기화 완료/로딩/신규 요청에만 반응한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialized, loading, chatPromptRequest?.nonce]);
@@ -910,7 +938,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
     if (loading) return;
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     if (!lastUser?.content) return;
-    void handleSend(lastUser.content, { skipUserEcho: true });
+    void handleSend(lastUser.content, { skipUserEcho: true, skipPreflight: true });
   };
 
   const submitFeedback = async (msg: ChatMessage, type: 'positive' | 'negative') => {
@@ -1182,31 +1210,20 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             </div>
 
             <div className="flex items-center gap-2">
-              {SHOW_ACCOUNT_UI && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAuthForm((prev) => !prev);
-                    setAuthError(null);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${authUserEmail
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                    }`}
-                >
-                  {authUserEmail ? '로그인됨' : '로그인'}
-                </button>
-              )}
-              {SHOW_ACCOUNT_UI && authUserEmail && (
-                <button
-                  type="button"
-                  onClick={() => void handleSignOut()}
-                  disabled={isAuthLoading}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-60"
-                >
-                  로그아웃
-                </button>
-              )}
+              <TeamAccessControl
+                email={authEmail}
+                password={authPassword}
+                userEmail={authUserEmail}
+                loading={isAuthLoading}
+                error={authError}
+                open={showAuthForm}
+                onEmailChange={setAuthEmail}
+                onPasswordChange={setAuthPassword}
+                onOpenChange={setShowAuthForm}
+                onClearError={() => setAuthError(null)}
+                onSignIn={() => void handleSignIn()}
+                onSignOut={() => void handleSignOut()}
+              />
               <button
                 onClick={handleReset}
                 className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-colors hidden md:block"
@@ -1224,53 +1241,6 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               </button>
             </div>
           </div>
-
-          {SHOW_ACCOUNT_UI && (showAuthForm || authError) && (
-            <div className="px-4 md:px-8 py-3 border-b border-border bg-slate-50/80">
-              {authUserEmail ? (
-                <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
-                    로그인 계정: {authUserEmail}
-                  </span>
-                  <span className="text-muted-foreground">채팅 저장, 파일 업로드/생성, 피드백 기능이 활성화됩니다.</span>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex flex-col gap-2 md:flex-row">
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="이메일"
-                      className="w-full md:w-[240px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    />
-                    <input
-                      type="password"
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void handleSignIn();
-                        }
-                      }}
-                      placeholder="비밀번호"
-                      className="w-full md:w-[220px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/15"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleSignIn()}
-                      disabled={isAuthLoading}
-                      className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {isAuthLoading ? '로그인 중...' : '로그인'}
-                    </button>
-                  </div>
-                  {authError && <div className="text-xs text-rose-600">{authError}</div>}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Messages Scroll Area */}
           <ChatMessageList
@@ -1305,7 +1275,42 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
             onOpenQuotePanel={stableOnOpenQuotePanel}
           />
 
+          {quotePreflight.sourceText && (
+            <QuotePreflightReview
+              sourceText={quotePreflight.sourceText}
+              draft={quotePreflight.draft}
+              loading={quotePreflight.loading}
+              error={quotePreflight.error}
+              onChange={quotePreflight.setDraft}
+              onRetry={() => {
+                if (quotePreflight.sourceText) {
+                  void quotePreflight.prepare(quotePreflight.sourceText);
+                }
+              }}
+              onCancel={() => {
+                setInput(quotePreflight.sourceText || '');
+                quotePreflight.clear();
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+              onConfirm={() => {
+                if (!quotePreflight.sourceText || !quotePreflight.draft) return;
+                const sourceText = quotePreflight.sourceText;
+                const confirmedMessage = buildConfirmedQuoteMessage(
+                  sourceText,
+                  quotePreflight.draft,
+                );
+                quotePreflight.clear();
+                void handleSend(confirmedMessage, {
+                  skipUserEcho: false,
+                  skipPreflight: true,
+                  displayMessage: sourceText,
+                });
+              }}
+            />
+          )}
+
           {/* Input Area */}
+          {!quotePreflight.sourceText && (
           <div className="flex-shrink-0 border-t border-border bg-card px-4 pb-4 pt-3 md:px-8 md:pb-5">
             {compact && latestResult?.quote && (
               <button
@@ -1509,6 +1514,7 @@ export default function AIQuoteChatModal({ isOpen, onClose, docked = false, comp
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* 견적 현황 — compact는 '견적' 탭일 때 전체 폭, 그 외 숨김. 비compact는 상시 사이드바. */}

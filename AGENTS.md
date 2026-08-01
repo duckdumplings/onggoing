@@ -37,8 +37,8 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## 도메인 폴더 (`src/domains/`)
 
-> **현 상태 (2026-05)**: `dispatch/auth/tracking/admin`은 `index.ts`만 있고 비어 있다.
-> `quote/`만 실제 구현. 신규 도메인 코드는 `src/domains/<domain>/` 에 채워 넣는다
+> **현 상태 (2026-07)**: `tracking/admin`은 `index.ts`만 있고 비어 있다.
+> `quote/`는 구현, `dispatch/auth`는 부분 구현. 신규 도메인 코드는 `src/domains/<domain>/` 에 채워 넣는다
 > (가이드라인의 Domain-Driven Organization 원칙).
 
 | 도메인 | 위치 | 상태 | 비고 |
@@ -46,7 +46,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `quote` | `src/domains/quote/` | 구현됨 | `pricing.ts`, `services/`, `knowledge/`, `types/`, `evals/` |
 | `dispatch` | `src/domains/dispatch/` | 부분 구현 | 시나리오 비교·정기 빈도·복합 작업(pickup/drop/return)·시각 의미 모델과 다중 라인 견적책 UI 구현(`types/routePlan.ts`, `services/stop*.ts`, `services/caseBoard.ts`, `components/QuoteBook*.tsx`). 경로 최적화 본체는 여전히 `route-optimization/route.ts` 인라인 |
 | `tracking` | `src/domains/tracking/` | 미구현 | 실시간 위치 추적 (Phase 3) |
-| `auth` | `src/domains/auth/` | 미구현 | 현 인증 로직은 `src/libs/auth.tsx` |
+| `auth` | `src/domains/auth/` | 부분 구현 | 팀 로그인 진입 UI 구현(`components/TeamAccessControl.tsx`). 인증 컨텍스트는 여전히 `src/libs/auth.tsx` |
 | `admin` | `src/domains/admin/` | 미구현 | 관리자 대시보드 (Phase 2~3) |
 
 ### `src/domains/quote/` 세부
@@ -67,6 +67,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `services/toolRouter.ts` | LLM tool calling 라우팅 |
 | `services/webKnowledgeRetriever.ts` | 웹 지식 검색 |
 | `services/savedQuote*.ts` / `hooks/useSavedQuotes.ts` / `components/SavedQuotePreviewModal.tsx` | 대화와 분리된 팀 공용 견적책 스냅샷 저장·조회 |
+| `services/quotePreflight*.ts` / `hooks/useQuotePreflight.ts` / `components/QuotePreflightReview.tsx` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인 |
 | `agent/` | 견적 에이전트(tool-calling): `tools.ts`(1339줄, 분리 우선), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
 | `types/` | `quoteDocument.ts`, `quoteExtraction.ts`, `riskReport.ts` |
 | `evals/chatEvalCases.ts` | (구) 규칙 추출 평가 케이스 |
@@ -82,6 +83,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `dispatch/scenario-groups/route.ts` | 시나리오 비교 결과 저장/조회 | — | 낮음 |
 | `dispatch/customers/route.ts` | 고객사(화주) 마스터 조회/생성 | — | 낮음 |
 | `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 다중 라인 견적책 강제 라우팅) 메인 핸들러 | 689 | 높음 |
+| `quote/preflight/route.ts` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인 | 46 | 낮음 |
 | `quote/extract-quote-info/route.ts` | 견적 정보 추출 | — | 중간 |
 | `quote/parse-document/route.ts` | 견적 의뢰 문서 파싱 | — | 중간 |
 | `quote/document-upload/route.ts` | 견적 문서 업로드 | — | 중간 |
@@ -108,7 +110,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | 파일 | LOC | 우선 분리 대상 |
 |---|---|---|
 | `src/app/api/route-optimization/route.ts` | 2988 | 비즈니스 로직 → `domains/dispatch/services/` |
-| `src/components/modals/AIQuoteChatModal.tsx` | 1581 | 스텝/메시지 컴포넌트 분리 |
+| `src/components/modals/AIQuoteChatModal.tsx` | 1587 | 스텝/메시지 컴포넌트 분리 |
 | `src/app/tmap-embed/route.ts` | 1504 | HTML 템플릿 분리 |
 | `src/domains/quote/agent/tools.ts` | 1339 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
@@ -127,7 +129,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## DB 마이그레이션 (`supabase/migrations/`)
 
-27개 마이그레이션. 주요 테이블:
+28개 마이그레이션. 주요 테이블:
 
 - `quote_documents` — 견적 의뢰 원본 문서
 - `quote_extractions` — 추출된 견적 정보
@@ -139,6 +141,9 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 - `rate_tables` — 시행일별 시간당·유류할증·단건 참고 운임표
 - `optimization_runs` — 경로 최적화 실행 이력
 
+> `quote-documents` Storage 버킷은 비공개다. DB에는 `storage_path`를 보존하고,
+> 다운로드 URL은 서버에서 1시간 만료 서명 URL로 발급한다.
+
 > RLS는 MVP 단계에서 의도적으로 일부 비활성화 (`20250127000008_disable_rls_mvp.sql`).
 > Production 전환 시 RLS 재활성화 필수 (PRD §7 비기능 요구사항).
 
@@ -149,6 +154,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_APP_URL`
 - LLM 키 (`agent-chat` 에이전트 사용): `ANTHROPIC_API_KEY`(기본) 또는 OpenAI 키(폴백) — `.env.local` 확인. 모델은 `QUOTE_AGENT_MODEL`로 지정, provider 추상화는 `src/libs/llm/provider.ts`
+- 계산 전 입력 확인은 화살표·주소형 메모를 결정론적으로 우선 파싱하고, 복잡한 자유문만 LLM 보조를 사용한다. 보조 모델은 `QUOTE_PREFLIGHT_MODEL`로 독립 교체 가능
 
 ## 라이브러리/유틸 위치
 
@@ -240,3 +246,4 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-07-30 | 배송 마감 역산 제안 | 상차 미입력 시 권장 상차·출발·타임라인 자동 산출, agent tools 거대 파일 등록 |
 | 2026-07-31 | 다중 라인 견적책 UX 고도화 | 예외 우선 목록·선택 상세·지도/타임라인 연동, AIQuoteChatModal LOC 갱신 |
 | 2026-07-31 | 공용 견적 기록·운임표 DB 정합화 | saved_quotes API/UI, 단건 운임 시드, rate_tables 1차 RLS 강화, 마이그레이션 이력 정합화 |
+| 2026-07-31 | 계산 전 확인·보호 파일·운임 근거 | preflight API/확인 UI, 팀 로그인 진입, 비공개 Storage 서명 URL, 운임표 근거 패널 추가 |

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Calculator } from 'lucide-react';
+import RateTableEvidencePanel from '@/domains/quote/components/RateTableEvidencePanel';
 
 interface QuoteDetailModalProps {
   quote: any;
@@ -122,6 +123,56 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
             </div>
           )}
 
+          <div className="space-y-3">
+            <h4 className="font-bold text-foreground">대표 견적 계산 근거</h4>
+            <dl className="grid gap-2 rounded-xl border border-border bg-muted/30 p-3 text-[11px] sm:grid-cols-2">
+              <CalculationEvidenceRow
+                label="과금 시간"
+                value={`${q.hourly?.billMinutes ?? q.basis?.totalBillMinutes ?? '-'}분`}
+              />
+              <CalculationEvidenceRow
+                label="시간당 단가"
+                value={
+                  q.hourly?.ratePerHour != null
+                    ? `${Number(q.hourly.ratePerHour).toLocaleString('ko-KR')}원/h`
+                    : '미확인'
+                }
+              />
+              <CalculationEvidenceRow
+                label="기본 운임"
+                value={
+                  q.hourly?.base != null
+                    ? formatWonStr(Number(q.hourly.base))
+                    : '미확인'
+                }
+              />
+              <CalculationEvidenceRow
+                label="유류할증"
+                value={
+                  q.hourly?.fuelSurcharge != null
+                    ? formatWonStr(Number(q.hourly.fuelSurcharge))
+                    : '미확인'
+                }
+              />
+              {q.hourly?.fuelSurchargeBreakdown && (
+                <CalculationEvidenceRow
+                  label="유류할증 산식"
+                  value={`포함 ${Number(q.hourly.fuelSurchargeBreakdown.includedDistanceKm || 0).toFixed(1)}km · 초과 ${Number(q.hourly.fuelSurchargeBreakdown.excessDistanceKm || 0).toFixed(1)}km · ${Number(q.hourly.fuelSurchargeBreakdown.chargedBins || 0)}구간`}
+                  wide
+                />
+              )}
+            </dl>
+            <RateTableEvidencePanel
+              items={[
+                { label: '시간당 운임', evidence: q.hourly?.rateTable },
+                { label: '유류할증 기준', evidence: q.hourly?.fuelSurchargeRateTable },
+                ...(showPerJobReference
+                  ? [{ label: '단건 참고 운임', evidence: q.perJob?.rateTable }]
+                  : []),
+              ]}
+            />
+          </div>
+
           <div className="text-[11px] text-muted-foreground leading-relaxed bg-muted p-3 rounded-lg border border-border">
             * 시간당 요금제: {q.basis?.totalBillMinutes}분 과금 기준 (시간단가 적용 + 유류할증)<br />
             * 대표 견적과 계약 합계는 시간당 운임표만 사용합니다.
@@ -133,6 +184,23 @@ export default function QuoteDetailModal({ quote: q, onClose }: QuoteDetailModal
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CalculationEvidenceRow({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string;
+  value: string;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-3 ${wide ? 'sm:col-span-2' : ''}`}>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-medium tabular-nums text-foreground">{value}</dd>
     </div>
   );
 }

@@ -1,22 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
+import {
+  QUOTE_STORAGE_BUCKET,
+  resolveQuoteStoragePath,
+} from '@/domains/quote/services/privateQuoteStorage';
 
 type Params = { params: Promise<{ id: string }> };
-
-const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
-
-function extractStoragePathFromPublicUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    const marker = `/storage/v1/object/public/${STORAGE_BUCKET}/`;
-    const index = parsed.pathname.indexOf(marker);
-    if (index < 0) return null;
-    return parsed.pathname.slice(index + marker.length);
-  } catch {
-    return null;
-  }
-}
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
@@ -63,7 +53,7 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
 
     const { data: attachments } = await supabase
       .from('quote_chat_attachments')
-      .select('file_url')
+      .select('storage_path, file_url')
       .eq('session_id', id);
 
     const storagePaths = new Set<string>();
@@ -71,13 +61,12 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       if (row?.storage_path) storagePaths.add(String(row.storage_path));
     }
     for (const row of attachments || []) {
-      if (!row?.file_url) continue;
-      const parsedPath = extractStoragePathFromPublicUrl(String(row.file_url));
+      const parsedPath = resolveQuoteStoragePath(row);
       if (parsedPath) storagePaths.add(parsedPath);
     }
 
     if (storagePaths.size > 0) {
-      await supabase.storage.from(STORAGE_BUCKET).remove(Array.from(storagePaths));
+      await supabase.storage.from(QUOTE_STORAGE_BUCKET).remove(Array.from(storagePaths));
     }
 
     const { error } = await supabase.from('quote_chat_sessions').delete().eq('id', id);
@@ -108,4 +97,3 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
     );
   }
 }
-

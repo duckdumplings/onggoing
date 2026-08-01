@@ -73,6 +73,11 @@ export function useSavedQuotes() {
   }, []);
 
   const close = useCallback(() => setSelected(null), []);
+  const reset = useCallback(() => {
+    setSummaries([]);
+    setSelected(null);
+    setMessage(null);
+  }, []);
 
   return {
     summaries,
@@ -85,5 +90,6 @@ export function useSavedQuotes() {
     save,
     open,
     close,
+    reset,
   };
 }

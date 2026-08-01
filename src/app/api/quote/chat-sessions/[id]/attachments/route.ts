@@ -3,10 +3,13 @@ import { createServerClient } from '@/libs/supabase-client';
 import { detectFileType, ALLOWED_MIME_TYPES, MAX_FILE_SIZE } from '@/domains/quote/types/quoteDocument';
 import { parseDocument } from '@/domains/quote/services/documentParser';
 import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
+import {
+  createQuoteSignedUrl,
+  QUOTE_STORAGE_BUCKET,
+  withQuoteSignedUrls,
+} from '@/domains/quote/services/privateQuoteStorage';
 
 type Params = { params: Promise<{ id: string }> };
-
-const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
 
 async function ensureOwnedSession(sessionId: string, userId: string) {
   const supabase = createServerClient();
@@ -51,13 +54,14 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from('quote_chat_attachments')
-      .select('id, session_id, document_id, file_url, file_name, file_type, file_size, mime_type, parse_status, parse_error, created_at')
+      .select('id, session_id, document_id, storage_path, file_url, file_name, file_type, file_size, mime_type, parse_status, parse_error, created_at')
       .eq('session_id', id)
       .order('created_at', { ascending: true });
     if (error) {
       return NextResponse.json({ success: false, error: { code: 'QUERY_FAILED', message: error.message } }, { status: 500 });
     }
-    return NextResponse.json({ success: true, data: data || [] });
+    const signed = await withQuoteSignedUrls(supabase, data || []);
+    return NextResponse.json({ success: true, data: signed });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : '첨부 조회 실패' } },
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
+      .from(QUOTE_STORAGE_BUCKET)
       .upload(storagePath, buffer, {
         contentType: file.type || 'application/octet-stream',
         upsert: false,
@@ -135,14 +139,12 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-    const fileUrl = urlData.publicUrl;
-
     const { data: docRow, error: docError } = await supabase
       .from('quote_documents')
       .insert([
         {
-          file_url: fileUrl,
+          file_url: storagePath,
+          storage_path: storagePath,
           file_name: file.name,
           file_type: fileType,
           file_size: file.size,
@@ -150,11 +152,11 @@ export async function POST(request: NextRequest, { params }: Params) {
           uploaded_by: null,
         },
       ])
-      .select('id, file_url, file_name, file_type, file_size, mime_type')
+      .select('id, storage_path, file_url, file_name, file_type, file_size, mime_type')
       .single();
 
     if (docError) {
-      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+      await supabase.storage.from(QUOTE_STORAGE_BUCKET).remove([storagePath]);
       return NextResponse.json(
         { success: false, error: { code: 'DOCUMENT_INSERT_FAILED', message: docError.message } },
         { status: 500 }
@@ -167,7 +169,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         {
           session_id: id,
           document_id: docRow.id,
-          file_url: fileUrl,
+          file_url: storagePath,
+          storage_path: storagePath,
           file_name: file.name,
           file_type: fileType,
           file_size: file.size,
@@ -175,10 +178,14 @@ export async function POST(request: NextRequest, { params }: Params) {
           parse_status: 'pending',
         },
       ])
-      .select('id, session_id, document_id, file_url, file_name, file_type, file_size, mime_type, parse_status, parse_error, created_at')
+      .select('id, session_id, document_id, storage_path, file_url, file_name, file_type, file_size, mime_type, parse_status, parse_error, created_at')
       .single();
 
     if (attachmentError) {
+      await Promise.all([
+        supabase.storage.from(QUOTE_STORAGE_BUCKET).remove([storagePath]),
+        supabase.from('quote_documents').delete().eq('id', docRow.id),
+      ]);
       return NextResponse.json(
         { success: false, error: { code: 'ATTACHMENT_INSERT_FAILED', message: attachmentError.message } },
         { status: 500 }
@@ -216,6 +223,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       success: true,
       data: {
         ...attachment,
+        file_url: await createQuoteSignedUrl(supabase, storagePath),
         parse_status: parseStatus,
         parse_error: parseError,
       },
@@ -227,4 +235,3 @@ export async function POST(request: NextRequest, { params }: Params) {
     );
   }
 }
-

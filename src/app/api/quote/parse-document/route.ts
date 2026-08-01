@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { parseDocument } from '@/domains/quote/services/documentParser';
 import { DocumentFileType } from '@/domains/quote/types/quoteDocument';
-
-const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
+import {
+  QUOTE_STORAGE_BUCKET,
+  resolveQuoteStoragePath,
+} from '@/domains/quote/services/privateQuoteStorage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,29 +47,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Supabase Storage에서 파일 다운로드
-    // file_url에서 경로 추출 (URL에서 버킷명 이후 부분)
-    const urlObj = new URL(document.file_url);
-    const pathParts = urlObj.pathname.split('/');
-    const bucketIndex = pathParts.findIndex(part => part === STORAGE_BUCKET);
-    
-    if (bucketIndex === -1 || bucketIndex === pathParts.length - 1) {
+    // 신규 storage_path와 과거 공개 URL을 모두 객체 키로 정규화한다.
+    const filePath = resolveQuoteStoragePath(document);
+    if (!filePath) {
       return NextResponse.json(
         {
           success: false,
           error: {
-            code: 'INVALID_FILE_URL',
-            message: '파일 URL이 유효하지 않습니다',
+            code: 'INVALID_STORAGE_PATH',
+            message: '저장 파일 경로가 유효하지 않습니다',
           },
         },
         { status: 400 }
       );
     }
 
-    const filePath = pathParts.slice(bucketIndex + 1).join('/');
-
     const { data: fileData, error: downloadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
+      .from(QUOTE_STORAGE_BUCKET)
       .download(filePath);
 
     if (downloadError || !fileData) {
@@ -117,6 +113,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 
 

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { detectFileType, ALLOWED_MIME_TYPES, MAX_FILE_SIZE, DocumentFileType } from '@/domains/quote/types/quoteDocument';
-
-const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
+import {
+  createQuoteSignedUrl,
+  QUOTE_STORAGE_BUCKET,
+} from '@/domains/quote/services/privateQuoteStorage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,8 +81,8 @@ export async function POST(request: NextRequest) {
     const fileBytes = new Uint8Array(fileBuffer);
 
     // Supabase Storage에 파일 업로드
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
+    const { error: uploadError } = await supabase.storage
+      .from(QUOTE_STORAGE_BUCKET)
       .upload(filePath, fileBytes, {
         contentType: file.type || 'application/octet-stream',
         upsert: false,
@@ -100,13 +102,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Public URL 생성
-    const { data: urlData } = supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(filePath);
-
-    const fileUrl = urlData.publicUrl;
-
     // 사용자 ID 추출 (선택사항, 향후 인증 추가 시 사용)
     // const userId = request.headers.get('x-user-id'); // 예시
 
@@ -115,7 +110,10 @@ export async function POST(request: NextRequest) {
       .from('quote_documents')
       .insert([
         {
-          file_url: fileUrl,
+          // file_url은 과거 NOT NULL 호환용이다. 영구 식별자는 storage_path이며
+          // 클라이언트에는 아래에서 발급한 만료형 서명 URL만 반환한다.
+          file_url: filePath,
+          storage_path: filePath,
           file_name: file.name,
           file_type: fileType,
           file_size: file.size,
@@ -129,7 +127,7 @@ export async function POST(request: NextRequest) {
     if (dbError) {
       console.error('데이터베이스 저장 실패:', JSON.stringify(dbError, null, 2));
       console.error('입력 데이터:', {
-        file_url: fileUrl,
+        file_url: filePath,
         file_name: file.name,
         file_type: fileType,
         file_size: file.size,
@@ -138,7 +136,7 @@ export async function POST(request: NextRequest) {
       
       // 업로드된 파일 삭제 시도 (롤백)
       await supabase.storage
-        .from(STORAGE_BUCKET)
+        .from(QUOTE_STORAGE_BUCKET)
         .remove([filePath]);
 
       return NextResponse.json(
@@ -153,11 +151,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const signedUrl = await createQuoteSignedUrl(supabase, filePath);
+
     return NextResponse.json({
       success: true,
       data: {
         id: dbData.id,
-        file_url: dbData.file_url,
+        file_url: signedUrl,
         file_name: dbData.file_name,
         file_type: dbData.file_type as DocumentFileType,
         file_size: dbData.file_size,
@@ -177,4 +177,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -23,6 +23,7 @@ import {
   formatStopSchedule,
 } from '@/domains/dispatch/services/stopSemantics';
 import type { RoutePreviewHandler } from '@/domains/dispatch/types/routePreview';
+import RateTableEvidencePanel from '@/domains/quote/components/RateTableEvidencePanel';
 
 interface QuoteBookCaseDetailProps {
   result: CaseBoardCaseResult;
@@ -362,6 +363,20 @@ export default function QuoteBookCaseDetail({
             </div>
           )}
         </dl>
+        <div className="border-t border-border bg-muted/30 px-4 py-3">
+          <div className="mb-2 text-[10px] font-semibold text-muted-foreground">
+            적용 운임표
+          </div>
+          <RateTableEvidencePanel
+            items={[
+              { label: '시간당 운임', evidence: result.pricingEvidence?.hourly },
+              { label: '유류할증 기준', evidence: result.pricingEvidence?.fuelSurcharge },
+              ...(result.includePerJobReference
+                ? [{ label: '단건 참고 운임', evidence: result.pricingEvidence?.perJob }]
+                : []),
+            ]}
+          />
+        </div>
       </details>
     </article>
   );

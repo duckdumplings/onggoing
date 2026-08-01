@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { generateFile, GeneratedFileType, GenerationInput } from '@/domains/quote/services/chatFileGenerator';
 import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
+import {
+  createQuoteSignedUrl,
+  QUOTE_STORAGE_BUCKET,
+  withQuoteSignedUrls,
+} from '@/domains/quote/services/privateQuoteStorage';
 
 type Params = { params: Promise<{ id: string }> };
-
-const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'quote-documents';
 
 async function ensureOwnedSession(sessionId: string, userId: string) {
   const supabase = createServerClient();
@@ -67,13 +70,14 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const supabase = createServerClient();
     const { data, error } = await supabase
       .from('quote_generated_files')
-      .select('id, session_id, message_id, file_type, file_name, file_url, mime_type, file_size, metadata, created_at')
+      .select('id, session_id, message_id, file_type, file_name, storage_path, file_url, mime_type, file_size, metadata, created_at')
       .eq('session_id', id)
       .order('created_at', { ascending: false });
     if (error) {
       return NextResponse.json({ success: false, error: { code: 'QUERY_FAILED', message: error.message } }, { status: 500 });
     }
-    return NextResponse.json({ success: true, data: data || [] });
+    const signed = await withQuoteSignedUrls(supabase, data || []);
+    return NextResponse.json({ success: true, data: signed });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : '생성 파일 조회 실패' } },
@@ -117,7 +121,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const supabase = createServerClient();
     const path = `chat-generated/${id}/${Date.now()}-${safeStorageSegment(generated.fileName, fileType)}`;
     const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
+      .from(QUOTE_STORAGE_BUCKET)
       .upload(path, generated.buffer, {
         contentType: MIME_BY_TYPE[fileType] || generated.mimeType,
         upsert: false,
@@ -129,9 +133,6 @@ export async function POST(request: NextRequest, { params }: Params) {
       );
     }
 
-    const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-    const fileUrl = urlData.publicUrl;
-
     const { data, error } = await supabase
       .from('quote_generated_files')
       .insert([
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           file_type: fileType,
           file_name: generated.fileName,
           storage_path: path,
-          file_url: fileUrl,
+          file_url: path,
           mime_type: generated.mimeType,
           file_size: generated.buffer.length,
           metadata: {
@@ -153,17 +154,24 @@ export async function POST(request: NextRequest, { params }: Params) {
           },
         },
       ])
-      .select('id, session_id, message_id, file_type, file_name, file_url, mime_type, file_size, metadata, created_at')
+      .select('id, session_id, message_id, file_type, file_name, storage_path, file_url, mime_type, file_size, metadata, created_at')
       .single();
 
     if (error) {
+      await supabase.storage.from(QUOTE_STORAGE_BUCKET).remove([path]);
       return NextResponse.json(
         { success: false, error: { code: 'INSERT_FAILED', message: error.message } },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...data,
+        file_url: await createQuoteSignedUrl(supabase, path),
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : '파일 생성 실패' } },
@@ -171,4 +179,3 @@ export async function POST(request: NextRequest, { params }: Params) {
     );
   }
 }
-
