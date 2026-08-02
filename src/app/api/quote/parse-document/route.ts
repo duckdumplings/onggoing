@@ -6,9 +6,13 @@ import {
   QUOTE_STORAGE_BUCKET,
   resolveQuoteStoragePath,
 } from '@/domains/quote/services/privateQuoteStorage';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const body = await request.json();
     const { documentId } = body;
 
@@ -113,5 +117,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 

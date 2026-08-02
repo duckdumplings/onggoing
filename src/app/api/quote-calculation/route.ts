@@ -4,6 +4,7 @@ import { suggestCheaperNextTier } from '@/domains/quote/pricing'
 import {
   calculateFuelSurchargeFromPayload,
   calculatePerJobReferenceFromPayloads,
+  calculateRecurringHourlyTotals,
   pickHourlyRateFromPayload,
   resolveFuelSurchargeTable,
   resolveHourlyRateTable,
@@ -116,15 +117,11 @@ export async function POST(req: NextRequest) {
       },
       plans: {
         hourly: (() => {
-          const selectedTier = hourlyRateTable.payload.tiers.find(
-            (tier) => billMinutes <= tier.maxMinutes,
-          )
-          const dailyFromTable = useRateOverride
-            ? Math.round(ratePerHour * (billMinutes / 60))
-            : Number(selectedTier?.dailyFare ?? Math.round(ratePerHour * (billMinutes / 60)))
-          const monthly20dFromTable = useRateOverride
-            ? dailyFromTable * 20
-            : Number(selectedTier?.monthly20dFare ?? dailyFromTable * 20)
+          const recurringTotals = calculateRecurringHourlyTotals({
+            baseFare: hourlyBase,
+            fuelSurcharge: hourlyFuelSurcharge,
+            visits: 20,
+          })
           // 협의 단가 적용 시 운임표 기반 절감 조언은 의미가 없으므로 생략.
           const tierAdvice = useRateOverride ? null : suggestCheaperNextTier(vehicleKey, billMinutes)
           return {
@@ -143,14 +140,14 @@ export async function POST(req: NextRequest) {
                 note: '유류할증 포함 1회 견적',
               },
               perDay: {
-                value: dailyFromTable,
-                formatted: `₩${dailyFromTable.toLocaleString('ko-KR')}`,
-                note: '운임표 일일 운임 (시간당 × 시간, 유류할증 제외)',
+                value: recurringTotals.perVisit,
+                formatted: `₩${recurringTotals.perVisit.toLocaleString('ko-KR')}`,
+                note: '1회 시간당 운임 (유류할증 포함)',
               },
               perMonth20d: {
-                value: monthly20dFromTable,
-                formatted: `₩${monthly20dFromTable.toLocaleString('ko-KR')}`,
-                note: '운임표 20일 기준 (일일 × 20, 유류할증 제외)',
+                value: recurringTotals.recurringTotal,
+                formatted: `₩${recurringTotals.recurringTotal.toLocaleString('ko-KR')}`,
+                note: '20회 기준 (1회 시간당 운임 × 20, 유류할증 포함)',
               },
             },
             advisor: tierAdvice,

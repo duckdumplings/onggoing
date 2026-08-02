@@ -35,9 +35,9 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
       : workspaceTab;
 
   const panel = (
-    <div className="flex h-full w-full flex-col bg-card">
+    <div className="flex h-full w-full flex-col bg-surface-lowest">
       {/* 헤더는 항상 렌더해 닫기(X)를 상시 노출한다(탭이 없을 때 닫기 불가 갭 방지). */}
-      <div className="flex flex-none items-center gap-1 bg-card/95 px-2.5 pt-2 backdrop-blur-sm">
+      <div className="flex flex-none items-center gap-1 border-b border-outline-variant bg-surface-low px-2.5 pt-2">
         {/* 4개 탭을 항상 노출한다. 데이터가 없는 탭은 잠금 상태(비활성+힌트)로 보여
             "이런 능력이 있다"를 미리 알린다(발견성). 잠금 탭은 클릭해도 전환되지 않는다. */}
         <div role="tablist" aria-label="워크스페이스 탭" className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-1">
@@ -137,7 +137,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
             exit={{ opacity: 0, scale: 0.97, x: 24, y: 20 }}
             transition={{ duration: 0.34, ease: [0.2, 0, 0, 1] }}
             style={{ transformOrigin: 'bottom right' }}
-            className={`absolute right-0 top-0 z-50 h-full w-full overflow-hidden border-l border-border bg-card shadow-2xl transition-[width] duration-300 ${
+            className={`surface-overlay absolute bottom-3 right-3 top-3 z-50 h-auto w-full overflow-hidden rounded-2xl transition-[width] duration-slow ease-emphasized ${
               expanded ? 'sm:w-[680px] lg:w-[820px] xl:w-[960px]' : 'sm:w-[440px] lg:w-[500px] xl:w-[560px]'
             }`}
           >
@@ -150,7 +150,7 @@ export default function WorkspacePanel({ isDesktop }: WorkspacePanelProps) {
 
   // 모바일: 전체 화면 오버레이
   if (!workspaceOpen) return null;
-  return <div className="fixed inset-0 z-[4000] bg-card">{panel}</div>;
+  return <div className="fixed inset-0 z-[4000] bg-surface-lowest">{panel}</div>;
 }
 
 function TabButton({
@@ -181,14 +181,14 @@ function TabButton({
       // 잠금 탭은 onClick을 비워 전환을 막되 disabled 속성은 쓰지 않아 hover 힌트(title)가 뜨게 한다.
       onClick={locked ? undefined : onClick}
       title={locked ? lockHint : undefined}
-      className={`focus-ring-inset relative -mb-px inline-flex items-center whitespace-nowrap rounded-t-lg font-semibold transition ${
+      className={`focus-ring-inset relative -mb-px inline-flex items-center whitespace-nowrap rounded-t-lg font-semibold transition duration-base ${
         compact ? 'gap-1 px-2 py-2 text-xs' : 'gap-1.5 px-3.5 py-2 text-sm'
       } ${
         locked
           ? 'cursor-not-allowed text-muted-foreground/40'
           : active
-            ? 'text-primary'
-            : 'text-muted-foreground hover:text-foreground'
+            ? 'bg-surface-lowest text-primary'
+            : 'text-surface-variant hover:bg-surface-container hover:text-foreground'
       }`}
     >
       {icon}

@@ -3,9 +3,13 @@ import { createServerClient } from '@/libs/supabase-client';
 import { validateRoute } from '@/domains/quote/services/routeValidator';
 import { ExtractedQuoteInfo } from '@/domains/quote/types/quoteExtraction';
 import { atKstTime, kstMinutesOfDay } from '@/domains/dispatch/utils/kstDateTime';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const body = await request.json();
     const { extractionId, extractedData } = body;
 

@@ -40,7 +40,7 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 
 ## 2. 거대 파일 명단 (스냅샷 — Living)
 
-> **Last updated**: 2026-07-30.
+> **Last updated**: 2026-08-02.
 > 본 표는 *자동 갱신 대상*이다. 갱신 절차는 본 파일 상단 [Living Document Protocol] 참조.
 
 다음 파일에 라인 추가 시 §1 적용:
@@ -53,7 +53,7 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 | `src/domains/quote/agent/tools.ts` | 1339 | 높음 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 높음 | 입력 폼/결과 카드/지도 컨트롤 3분할 |
 | `src/components/map/TmapMainMap.tsx` | 1297 | 중간 | 지도 초기화/마커/폴리라인 hook 분리 |
-| `src/app/api/quote/agent-chat/route.ts` | 689 | 높음 | 프롬프트/스트림 수집/응답 조립을 `domains/quote/agent/`로 분리 |
+| `src/app/api/quote/agent-chat/route.ts` | 613 | 높음 | 스트림 수집/응답 조립을 `domains/quote/agent/`로 분리 |
 
 **유지보수**:
 - 분리 작업으로 800줄(컴포넌트) / 400줄(API route) 이하가 되면 이 표에서 제거하고 §갱신 이력에 기록
@@ -70,6 +70,7 @@ AI가 신규 작업 시 거대 파일에 더 쌓는 행위를 강제로 차단�
 | 2026-07-31 | 견적 입력·재계산 UX 정돈 후 `AIQuoteChatModal.tsx` LOC를 1556으로 갱신 |
 | 2026-07-31 | 저장 견적 wiring만 컨테이너에 추가하고 상태·API·상세 UI는 quote 도메인으로 분리, `AIQuoteChatModal.tsx` LOC를 1581로 갱신 |
 | 2026-07-31 | 계산 전 확인 상태 wiring 추가, 편집 UI·인증 UI는 도메인 컴포넌트로 분리, `AIQuoteChatModal.tsx` LOC를 1587로 갱신 |
+| 2026-08-02 | 시스템 프롬프트를 `agent/systemPrompt.ts`로 분리하고 요청 보호를 추가해 `agent-chat/route.ts`를 613 LOC로 갱신 |
 
 ## 3. API Route 분리 패턴
 

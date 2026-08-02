@@ -5,9 +5,13 @@ import {
   createQuoteSignedUrl,
   QUOTE_STORAGE_BUCKET,
 } from '@/domains/quote/services/privateQuoteStorage';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
           file_type: fileType,
           file_size: file.size,
           mime_type: file.type || null,
-          uploaded_by: null, // 향후 인증 추가 시 userId 사용
+          uploaded_by: userId,
         },
       ])
       .select()

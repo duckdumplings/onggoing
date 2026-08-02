@@ -3,135 +3,165 @@
 @tailwind utilities;
 
 /**
- * Design Tokens — OKLCH-based semantic system
- *
- * 우선순위: 시맨틱 토큰 (success/warning/error/info/primary 등) > 기본 팔레트 > hex literal(금지)
- * 라이트 전용: 지도 기반 제품으로 다크모드는 미운영(지도 위 가독성·일관성 우선).
- * 갱신 시: .cursor/rules/30-anti-slop-design.mdc §7 절차 준수.
+ * OngRouting Design System v2
+ * Material 3 Expressive의 역할 기반 색상·형태·모션을 B2B 물류 콘솔 밀도로 조정한다.
+ * 컴포넌트는 색상값이 아니라 역할 토큰만 사용한다.
  */
-
 :root {
-  /* === Surfaces === */
-  --background: #ffffff;
-  --foreground: #0f172a; /* slate-900 */
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  /* Core surfaces */
+  --background: oklch(0.975 0.008 252);
+  --foreground: oklch(0.225 0.035 255);
+  --surface: oklch(0.995 0.003 252);
+  --surface-dim: oklch(0.91 0.014 252);
+  --surface-bright: oklch(0.995 0.003 252);
+  --surface-container-lowest: oklch(1 0 0);
+  --surface-container-low: oklch(0.965 0.009 252);
+  --surface-container: oklch(0.945 0.012 252);
+  --surface-container-high: oklch(0.922 0.016 252);
+  --surface-container-highest: oklch(0.89 0.021 252);
+  --on-surface: var(--foreground);
+  --on-surface-variant: oklch(0.455 0.035 252);
 
-  /* === Brand (Indigo 600) === */
-  --primary: #4f46e5;
-  --primary-foreground: #ffffff;
+  /* Component compatibility */
+  --card: var(--surface);
+  --card-foreground: var(--on-surface);
+  --popover: var(--surface-container-lowest);
+  --popover-foreground: var(--on-surface);
 
-  /* === Neutrals === */
-  --secondary: #f1f5f9; /* slate-100 */
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b; /* slate-500 */
-  --accent: #f1f5f9;
-  --accent-foreground: #0f172a;
+  /* Brand roles: route cobalt */
+  --primary: oklch(0.47 0.19 258);
+  --primary-hover: oklch(0.42 0.18 258);
+  --primary-foreground: oklch(0.99 0.004 255);
+  --primary-container: oklch(0.91 0.055 255);
+  --on-primary-container: oklch(0.285 0.11 258);
 
-  /* === Semantic === */
-  --success: #059669; /* emerald-600 */
-  --success-foreground: #ffffff;
-  --success-muted: #ecfdf5; /* emerald-50 */
-  --warning: #d97706; /* amber-600 */
-  --warning-foreground: #ffffff;
-  --warning-muted: #fffbeb; /* amber-50 */
-  --error: #e11d48; /* rose-600 */
-  --error-foreground: #ffffff;
-  --error-muted: #fff1f2; /* rose-50 */
-  --info: #2563eb; /* blue-600 */
-  --info-foreground: #ffffff;
-  --info-muted: #eff6ff; /* blue-50 */
-  --destructive: #e11d48;
-  --destructive-foreground: #ffffff;
+  /* Supporting roles: operational blue-green */
+  --secondary: oklch(0.43 0.075 225);
+  --secondary-foreground: oklch(0.99 0.004 225);
+  --secondary-container: oklch(0.91 0.045 225);
+  --on-secondary-container: oklch(0.27 0.065 225);
 
-  /* === Borders & Inputs === */
-  --border: #e2e8f0; /* slate-200 */
-  --input: #e2e8f0;
-  --input-background: rgba(255, 255, 255, 0.5);
+  /* Tertiary: deadline amber */
+  --tertiary: oklch(0.48 0.12 67);
+  --tertiary-foreground: oklch(0.99 0.005 80);
+  --tertiary-container: oklch(0.93 0.075 82);
+  --on-tertiary-container: oklch(0.31 0.075 58);
 
-  /* === Focus Ring === */
-  --ring: rgba(79, 70, 229, 0.5);
+  /* Neutral aliases */
+  --muted: var(--surface-container);
+  --muted-foreground: var(--on-surface-variant);
+  --accent: var(--primary-container);
+  --accent-foreground: var(--on-primary-container);
 
-  /* === Charts / Map === */
-  --chart-1: #4f46e5; /* indigo-600 */
-  --chart-2: oklch(0.72 0.19 163); /* emerald */
-  --chart-3: oklch(0.77 0.17 70); /* amber */
-  --chart-4: #312e81; /* indigo-900 */
-  --chart-5: #a5b4fc; /* indigo-300 */
-  --route-line: #4f46e5;
-  --route-line-alt: #818cf8;
-  --route-pin-origin: #059669;
-  --route-pin-waypoint: #4f46e5;
-  --route-pin-destination: #e11d48;
+  /* Semantic roles */
+  --success: oklch(0.43 0.12 155);
+  --success-foreground: oklch(0.99 0.005 155);
+  --success-muted: oklch(0.94 0.05 155);
+  --warning: oklch(0.46 0.11 73);
+  --warning-foreground: oklch(0.99 0.005 73);
+  --warning-muted: oklch(0.95 0.06 86);
+  --error: oklch(0.49 0.19 25);
+  --error-foreground: oklch(0.99 0.005 25);
+  --error-muted: oklch(0.95 0.045 24);
+  --info: oklch(0.47 0.15 242);
+  --info-foreground: oklch(0.99 0.004 242);
+  --info-muted: oklch(0.94 0.04 242);
+  --destructive: var(--error);
+  --destructive-foreground: var(--error-foreground);
 
-  /* === Sidebar === */
-  --sidebar: rgba(255, 255, 255, 0.7);
-  --sidebar-foreground: #0f172a;
-  --sidebar-border: rgba(226, 232, 240, 0.6);
+  /* Lines and states */
+  --outline: oklch(0.66 0.025 252);
+  --outline-variant: oklch(0.84 0.018 252);
+  --border: var(--outline-variant);
+  --input: var(--outline-variant);
+  --input-background: var(--surface-container-lowest);
+  --ring: color-mix(in oklab, var(--primary) 62%, white);
+  --scrim: rgb(12 20 36 / 0.46);
 
-  /* === Radius === */
-  --radius: 0.75rem;
+  /* Data visualization */
+  --chart-1: var(--primary);
+  --chart-2: oklch(0.57 0.13 170);
+  --chart-3: oklch(0.65 0.15 75);
+  --chart-4: oklch(0.39 0.14 285);
+  --chart-5: oklch(0.67 0.14 320);
+  --route-line: var(--primary);
+  --route-line-alt: oklch(0.65 0.15 247);
+  --route-pin-origin: var(--success);
+  --route-pin-waypoint: var(--primary);
+  --route-pin-destination: var(--error);
 
-  /*
-   * === Motion (정체성 5축: 활기 + 톤 절제) ===
-   * 단일 출처. North Star §0 "timing curve 절제 (200~250ms ease-out)".
-   * fast: 토글/탭/체크 등 즉각 피드백 · base: 일반 hover/색상 전환 · slow: 시트/모달 등장
-   */
-  --motion-fast: 120ms;
-  --motion-base: 200ms;
-  --motion-slow: 320ms;
-  /* standard: 감속(진입) 곡선 — 진중하고 자연스러운 정지. 오버슈트 금지(절제). */
+  /* App chrome */
+  --sidebar: color-mix(in oklab, var(--surface) 96%, transparent);
+  --sidebar-foreground: var(--on-surface);
+  --sidebar-border: var(--outline-variant);
+
+  /* Shape scale */
+  --radius: 1rem;
+  --shape-extra-small: 0.5rem;
+  --shape-small: 0.75rem;
+  --shape-medium: 1rem;
+  --shape-large: 1.375rem;
+  --shape-extra-large: 1.75rem;
+  --shape-full: 999px;
+
+  /* Elevation */
+  --elevation-1: 0 1px 2px rgb(18 28 48 / 0.08), 0 1px 4px rgb(18 28 48 / 0.04);
+  --elevation-2: 0 8px 24px rgb(18 28 48 / 0.11), 0 2px 8px rgb(18 28 48 / 0.06);
+  --elevation-3: 0 18px 50px rgb(18 28 48 / 0.16), 0 4px 14px rgb(18 28 48 / 0.08);
+
+  /* Motion */
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-slow: 380ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
-  /* === Typography === */
+  /* Type */
   --font-size: 16px;
-  --font-weight-normal: 400;
-  --font-weight-medium: 500;
+  --font-weight-normal: 430;
+  --font-weight-medium: 610;
 
-  /* === Legacy RGB (deprecate after migration) === */
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 255, 255, 255;
-  --background-end-rgb: 255, 255, 255;
+  /* Legacy canvas values */
+  --foreground-rgb: 27, 38, 59;
+  --background-start-rgb: 246, 248, 252;
+  --background-end-rgb: 246, 248, 252;
 }
 
 @layer base {
   * {
     border-color: var(--border);
   }
+
   html {
     font-size: var(--font-size);
     scroll-behavior: smooth;
   }
+
   body {
-    color: var(--foreground);
+    color: var(--on-surface);
     background-color: var(--background);
-    font-family: var(--font-pretendard), var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-pretendard), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-feature-settings: 'ss05' 1, 'tnum' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  /*
-   * 폼 컨트롤 토큰 기본값.
-   * Tailwind preflight는 text input의 UA 흰 배경을 완전히 리셋하지 않으므로,
-   * 토큰 배경/텍스트를 base 기본값으로 깔아 입력 표면을 일관화한다.
-   * (개별 컴포넌트가 bg-* 유틸리티를 지정하면 utilities 레이어가 우선한다)
-   */
+
   input,
   textarea,
   select {
     background-color: var(--input-background);
-    color: var(--foreground);
+    color: var(--on-surface);
   }
+
   input::placeholder,
   textarea::placeholder {
-    color: var(--muted-foreground);
+    color: var(--on-surface-variant);
   }
+
   ::selection {
-    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
-    color: var(--foreground);
+    background-color: var(--primary-container);
+    color: var(--on-primary-container);
   }
 }
 
@@ -140,152 +170,158 @@
     text-wrap: balance;
   }
 
-  /* Number formatting — 정밀 표시 (정체성 5축: 표현 정밀) */
   .tabular {
     font-variant-numeric: tabular-nums slashed-zero;
   }
 
-  /* Page title — 향후 Pretendard/Noto Serif KR 도입 시 확장 */
   .page-title {
-    font-size: 1.875rem;
-    font-weight: 700;
-    line-height: 1.15;
-    letter-spacing: -0.02em;
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    font-weight: 790;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
   }
 
-  /*
-   * 공용 focus 링 — 키보드 네비게이션에서만 노출(focus-visible).
-   * 정체성 5축 "활기": 단일 ring 토큰으로 모든 인터랙티브 요소 포커스 일관화.
-   * 마우스 클릭 시 링 미노출(focus-visible) → 진중한 톤 유지.
-   */
+  .type-label {
+    font-size: 0.6875rem;
+    font-weight: 720;
+    letter-spacing: 0.035em;
+  }
+
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
-  /* 인셋 컨텍스트(탭/필 등 작은 인라인 컨트롤)용 — offset 없음 */
+
   .focus-ring-inset {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
   }
 
-  /* Surface variants — token-based */
-  .surface-base {
-    background-color: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-  .surface-premium {
-    background-color: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.08), 0 4px 6px -2px rgb(0 0 0 / 0.04);
-  }
+  .shape-small { border-radius: var(--shape-small); }
+  .shape-medium { border-radius: var(--shape-medium); }
+  .shape-large { border-radius: var(--shape-large); }
+  .shape-extra-large { border-radius: var(--shape-extra-large); }
+  .shape-full { border-radius: var(--shape-full); }
 }
 
 @layer components {
-  /* === Glass tiers === */
-  /* tier: launcher — 가장 가벼움. 사이드바/런처 표면 */
-  .glass-launcher {
-    background-color: color-mix(in oklab, var(--card) 70%, transparent);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
-    border-radius: var(--radius);
+  .surface-low {
+    background-color: var(--surface-container-low);
+    border: 1px solid color-mix(in oklab, var(--outline-variant) 72%, transparent);
   }
-  /* tier: card — 일반 카드. 기본 surface */
-  .glass-card {
-    background-color: color-mix(in oklab, var(--card) 85%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+
+  .surface-base {
+    background-color: var(--surface);
+    border: 1px solid var(--outline-variant);
   }
-  /* tier: canvas — 모달/오버레이. 가장 강조 */
-  .glass-canvas {
-    background-color: color-mix(in oklab, var(--card) 92%, transparent);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.18);
+
+  .surface-raised {
+    background-color: var(--surface-container-lowest);
+    border: 1px solid color-mix(in oklab, var(--outline-variant) 82%, transparent);
+    box-shadow: var(--elevation-1);
   }
+
+  .surface-floating {
+    background-color: color-mix(in oklab, var(--surface-container-lowest) 96%, transparent);
+    border: 1px solid color-mix(in oklab, var(--outline-variant) 80%, transparent);
+    box-shadow: var(--elevation-2);
+  }
+
+  .surface-overlay {
+    background-color: var(--surface-container-lowest);
+    border: 1px solid color-mix(in oklab, var(--outline-variant) 75%, transparent);
+    box-shadow: var(--elevation-3);
+  }
+
+  .state-layer {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .state-layer::after {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: currentColor;
+    content: '';
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+
+  .state-layer:hover::after { opacity: 0.06; }
+  .state-layer:active::after { opacity: 0.1; }
+
+  /* Backward-compatible aliases. New code uses surface-* names. */
+  .glass-launcher { @apply surface-floating; }
+  .glass-card { @apply surface-raised; }
+  .glass-canvas { @apply surface-overlay; }
+  .glass-panel { @apply surface-raised; }
   .glass-overlay {
-    background-color: rgb(0 0 0 / 0.4);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background-color: var(--scrim);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
   }
 
-  /* === Legacy aliases (도입 이전 코드 호환) === */
-  .glass-panel {
-    @apply glass-card;
-  }
+  .surface-premium { @apply surface-overlay; }
 
-  /* === Custom Scrollbar === */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent) transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
-    border-radius: 3px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    scrollbar-color: color-mix(in oklab, var(--on-surface-variant) 42%, transparent) transparent;
   }
 
-  /* === Map Container Styles === */
-  .map-container {
-    height: 100vh !important;
-    min-height: 100vh !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    position: relative !important;
-    overflow: hidden !important;
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--on-surface-variant) 38%, transparent);
+    border-radius: var(--shape-full);
   }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--on-surface-variant) 58%, transparent);
+  }
+
+  .map-container,
   .map-container iframe {
     height: 100vh !important;
     min-height: 100vh !important;
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
-    border: none !important;
+  }
+
+  .map-container {
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  .map-container iframe {
     display: block !important;
+    border: none !important;
   }
 }
 
-/* Tooltip 등장 — 절제된 페이드 (prefers-reduced-motion에서 자동 비활성) */
 @keyframes tooltip-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.animate-tooltip-in {
-  animation: tooltip-in 0.15s ease-out;
+  from { opacity: 0; transform: translateY(2px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Touch device: always show hover-reveal actions + tap feedback */
+.animate-tooltip-in {
+  animation: tooltip-in var(--motion-fast) var(--ease-emphasized);
+}
+
 @media (hover: none) {
   .group:hover .group-hover\:opacity-100,
   .group .group-hover\:opacity-100 {
     opacity: 1 !important;
   }
+
   button,
   [role='button'] {
     -webkit-tap-highlight-color: transparent;
   }
+
   button:active,
   [role='button']:active {
-    opacity: 0.85;
-    transition: opacity 0.1s;
+    opacity: 0.88;
+    transition: opacity var(--motion-fast) var(--ease-standard);
   }
 }
 

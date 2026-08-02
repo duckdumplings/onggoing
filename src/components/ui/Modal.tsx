@@ -132,7 +132,7 @@ const Modal: React.FC<ModalProps> = ({
     <button
       type="button"
       onClick={onClose}
-      className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="focus-ring-inset rounded-full p-2 text-surface-variant transition-colors hover:bg-surface-high hover:text-foreground"
       aria-label="모달 닫기"
     >
       <X className="w-5 h-5" />
@@ -156,10 +156,10 @@ const Modal: React.FC<ModalProps> = ({
         ref={modalRef}
         role="document"
         className={cn(
-          'bg-card text-card-foreground flex flex-col overflow-hidden',
+          'surface-overlay flex flex-col overflow-hidden text-card-foreground',
           variant === 'fullscreen'
             ? 'w-full h-full'
-            : cn('rounded-2xl shadow-2xl w-full mx-4 max-h-[90vh]', sizeClasses[size]),
+            : cn('shape-extra-large mx-4 max-h-[90vh] w-full', sizeClasses[size]),
           className,
         )}
       >
@@ -168,7 +168,7 @@ const Modal: React.FC<ModalProps> = ({
             {(title || header || showCloseButton) && (
               <div
                 className={cn(
-                  'flex items-center justify-between gap-4 p-6 border-b border-border',
+                  'flex items-center justify-between gap-4 border-b border-outline-variant p-5',
                   headerClassName,
                 )}
               >

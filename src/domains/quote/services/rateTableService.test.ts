@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateFuelSurchargeFromPayload,
   calculatePerJobReferenceFromPayloads,
+  calculateRecurringHourlyTotals,
   type FuelSurchargePayload,
   type PerJobRateTablePayload,
 } from './rateTableCalculations';
@@ -31,6 +32,20 @@ const starexPerJob: PerJobRateTablePayload = {
 };
 
 describe('DB rate-table payload calculations', () => {
+  it('20회 합계에 매회 유류할증을 포함한다', () => {
+    expect(
+      calculateRecurringHourlyTotals({
+        baseFare: 69_000,
+        fuelSurcharge: 2_000,
+        visits: 20,
+      }),
+    ).toEqual({
+      perVisit: 71_000,
+      recurringTotal: 1_420_000,
+      visits: 20,
+    });
+  });
+
   it('포함거리 초과분에만 10km 단위 유류할증을 적용한다', () => {
     expect(calculateFuelSurchargeFromPayload('ray', fuelPayload, 30.7, 120)).toMatchObject({
       includedDistanceKm: 20,

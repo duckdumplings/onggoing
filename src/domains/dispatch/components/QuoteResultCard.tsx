@@ -17,7 +17,6 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
   if (!quote) return null;
   const basis = quote.basis ?? {};
   const scheduleLabel = basis.scheduleType === 'regular' ? '정기' : '비정기';
-  const perDay = quote.hourly?.tiers?.perDay?.formatted;
   const perMonth = quote.hourly?.tiers?.perMonth20d?.formatted;
   const advisor = quote.hourly?.advisor?.message;
   const fuelSurcharge = Number(quote.hourly?.fuelSurcharge ?? 0);
@@ -43,10 +42,9 @@ export default function QuoteResultCard({ quote, onOpenPanel }: QuoteResultCardP
         <div className="rounded-lg border border-border bg-card p-2.5">
           <div className="text-[11px] text-muted-foreground">시간당 1회</div>
           <div className="text-base font-bold text-primary tabular-nums">{quote.hourly?.formatted ?? '-'}</div>
-          {(perDay || perMonth) && (
+          {perMonth && (
             <div className="mt-1 space-y-0.5 text-[10px] text-muted-foreground tabular-nums">
-              {perDay && <div>일일 {perDay}</div>}
-              {perMonth && <div>20일 {perMonth}</div>}
+              <div>20회 기준 {perMonth} · 유류할증 포함</div>
             </div>
           )}
         </div>

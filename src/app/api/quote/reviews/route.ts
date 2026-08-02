@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 // 검토 이력 목록 조회
 export async function GET(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
@@ -96,4 +100,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-

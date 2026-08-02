@@ -67,8 +67,8 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `services/toolRouter.ts` | LLM tool calling 라우팅 |
 | `services/webKnowledgeRetriever.ts` | 웹 지식 검색 |
 | `services/savedQuote*.ts` / `hooks/useSavedQuotes.ts` / `components/SavedQuotePreviewModal.tsx` | 대화와 분리된 팀 공용 견적책 스냅샷 저장·조회 |
-| `services/quotePreflight*.ts` / `hooks/useQuotePreflight.ts` / `components/QuotePreflightReview.tsx` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인 |
-| `agent/` | 견적 에이전트(tool-calling): `tools.ts`(1339줄, 분리 우선), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
+| `services/quotePreflight*.ts` / `hooks/useQuotePreflight.ts` / `components/QuotePreflightReview.tsx` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인, 반복 LLM 요청 캐시 |
+| `agent/` | 견적 에이전트(tool-calling): `systemPrompt.ts`, `tools.ts`(1339줄, 분리 우선), `workingMemory.ts`(zod RoutePlanDraft + validatePlan) |
 | `types/` | `quoteDocument.ts`, `quoteExtraction.ts`, `riskReport.ts` |
 | `evals/chatEvalCases.ts` | (구) 규칙 추출 평가 케이스 |
 | `evals/agentEvalCases.ts` / `evals/agentScorer.ts` | 에이전트 골든셋 + 채점기 (`npm run eval:agent`) |
@@ -82,8 +82,8 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `dispatch/scenario-quote/route.ts` | 다중 시나리오(3/5/10지점) 병렬 견적·비교 | 278 | 중간 |
 | `dispatch/scenario-groups/route.ts` | 시나리오 비교 결과 저장/조회 | — | 낮음 |
 | `dispatch/customers/route.ts` | 고객사(화주) 마스터 조회/생성 | — | 낮음 |
-| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 다중 라인 견적책 강제 라우팅) 메인 핸들러 | 689 | 높음 |
-| `quote/preflight/route.ts` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인 | 46 | 낮음 |
+| `quote/agent-chat/route.ts` | AI 견적 에이전트(tool-calling, 다중 라인 견적책 강제 라우팅) 메인 핸들러 | 613 | 높음 |
+| `quote/preflight/route.ts` | 다중 라인·모호 시각 요청의 계산 전 구조화 확인 | 67 | 낮음 |
 | `quote/extract-quote-info/route.ts` | 견적 정보 추출 | — | 중간 |
 | `quote/parse-document/route.ts` | 견적 의뢰 문서 파싱 | — | 중간 |
 | `quote/document-upload/route.ts` | 견적 문서 업로드 | — | 중간 |
@@ -96,7 +96,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `quote/chat-feedback/route.ts` | AI Chat 피드백 수집 | — | 낮음 |
 | `quote/reviews/route.ts` | 견적 검토 이력 | — | 낮음 |
 | `quote/evals/route.ts` | AI Chat 평가 실행 | — | 낮음 |
-| `quote-calculation/route.ts` | 시행일별 운임표 기반 결정론적 견적 계산 | 182 | 중간 |
+| `quote-calculation/route.ts` | 시행일별 운임표 기반 결정론적 견적 계산 | 183 | 중간 |
 | `poi-search/route.ts` | Tmap POI 검색 프록시 | — | 중간 |
 | `tmap-proxy/route.ts` | Tmap 일반 프록시 | — | 중간 |
 | `bulk-analyze/route.ts` | 일괄 분석 | — | 낮음 |
@@ -115,7 +115,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `src/domains/quote/agent/tools.ts` | 1339 | 경로·타임라인 도구를 `agent/routeTools.ts`로 1차 분리 |
 | `src/components/panels/RouteOptimizerPanel.tsx` | 1280 | 입력/결과/지도 컨트롤 3분할 |
 | `src/components/map/TmapMainMap.tsx` | 1297 | 지도 초기화/마커/폴리라인 hook 분리 |
-| `src/app/api/quote/agent-chat/route.ts` | 689 | 프롬프트/스트림 수집/응답 조립 분리 |
+| `src/app/api/quote/agent-chat/route.ts` | 613 | 스트림 수집/응답 조립 분리 |
 
 ## Supabase Edge Functions
 
@@ -129,7 +129,7 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 
 ## DB 마이그레이션 (`supabase/migrations/`)
 
-28개 마이그레이션. 주요 테이블:
+29개 마이그레이션. 주요 테이블:
 
 - `quote_documents` — 견적 의뢰 원본 문서
 - `quote_extractions` — 추출된 견적 정보
@@ -144,8 +144,9 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 > `quote-documents` Storage 버킷은 비공개다. DB에는 `storage_path`를 보존하고,
 > 다운로드 URL은 서버에서 1시간 만료 서명 URL로 발급한다.
 
-> RLS는 MVP 단계에서 의도적으로 일부 비활성화 (`20250127000008_disable_rls_mvp.sql`).
-> Production 전환 시 RLS 재활성화 필수 (PRD §7 비기능 요구사항).
+> 레거시 운영 테이블의 RLS는 MVP 단계에서 일부 비활성화되어 있다 (`20250127000008_disable_rls_mvp.sql`).
+> 견적 문서·추출·검증·리스크·저장 견적·운임표는 인증된 서버 API 경계로 우선 강화했다.
+> Production 전환 전 나머지 테이블의 RLS 전수 감사와 재활성화가 필요하다 (PRD §7 비기능 요구사항).
 
 ## 외부 API 환경 변수
 
@@ -227,8 +228,8 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | Phase | 기간 | 주요 산출물 | 룰 적응 |
 |---|---|---|---|
 | **Phase 1 (MVP)** | ~M+2 | 최적배차, 단일 기사 시간 최적화, 기초 견적 | 토큰 시스템 단계적 도입, 거대 파일 분리 우선 |
-| **Phase 2 (고도화)** | ~M+4 | 제약조건 모델러, PDF/Excel 견적서, 대시보드 | 시맨틱 토큰 완성, 다크모드, GlassCard tier 정착, 테스트 도입 |
-| **Phase 3 (확장)** | ~M+6 | 실시간 위치 추적, 다국어, PWA, AI 예측 강화 | i18n 카피 톤 확장, RLS 활성화, Edge Function 분리, 모니터링 |
+| **Phase 2 (고도화)** | ~M+4 | 제약조건 모델러, PDF/Excel 견적서, 대시보드 | Material 3 역할 토큰·적응형 pane 정착, 다크모드, 테스트 확대 |
+| **Phase 3 (확장)** | ~M+6 | 실시간 위치 추적, 다국어, PWA, AI 예측 강화 | i18n 카피 톤 확장, 레거시 RLS 전수 강화, Edge Function 분리, 모니터링 |
 
 **현재 위치**: Phase 1 후반 ~ Phase 2 시작 (디자인 시스템 정착 중, 견적 도메인 구현 완료, 배차/추적/관리자는 미구현)
 
@@ -247,3 +248,4 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-07-31 | 다중 라인 견적책 UX 고도화 | 예외 우선 목록·선택 상세·지도/타임라인 연동, AIQuoteChatModal LOC 갱신 |
 | 2026-07-31 | 공용 견적 기록·운임표 DB 정합화 | saved_quotes API/UI, 단건 운임 시드, rate_tables 1차 RLS 강화, 마이그레이션 이력 정합화 |
 | 2026-07-31 | 계산 전 확인·보호 파일·운임 근거 | preflight API/확인 UI, 팀 로그인 진입, 비공개 Storage 서명 URL, 운임표 근거 패널 추가 |
+| 2026-08-02 | Design System v2·견적 API 보호 | Material 3 역할 토큰/표면/적응형 pane, 문서 가드 개편, LLM rate limit·캐시·서버 모델 고정, 팀 공용 문서 RLS 강화 |

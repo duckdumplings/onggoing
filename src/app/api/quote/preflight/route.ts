@@ -1,14 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createQuotePreflight } from '@/domains/quote/services/quotePreflightService';
+import {
+  getClientRateLimitKey,
+  InMemoryRateLimiter,
+} from '@/libs/server/inMemoryRateLimit';
 
 const RequestSchema = z.object({
   message: z.string().trim().min(8).max(8000),
-  model: z.string().trim().min(1).optional(),
 });
+
+const limiter = new InMemoryRateLimiter({ windowMs: 60_000, limit: 60 });
 
 export async function POST(request: NextRequest) {
   try {
+    const rate = limiter.consume(getClientRateLimitKey(request.headers));
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'RATE_LIMITED',
+            message: '입력 확인 요청이 잠시 몰렸습니다. 잠시 후 다시 시도해 주세요.',
+          },
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rate.retryAfterSeconds) },
+        },
+      );
+    }
     const parsed = RequestSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -23,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const data = await createQuotePreflight(parsed.data.message, parsed.data.model);
+    const data = await createQuotePreflight(parsed.data.message);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('[quote/preflight] 입력 구조화 실패:', error);

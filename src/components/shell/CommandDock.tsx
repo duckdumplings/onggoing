@@ -58,7 +58,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
       lastRouteReqNonce.current = routeInputRequest.nonce;
       setRouteOpen(true);
     }
-  }, [routeInputRequest?.nonce]);
+  }, [routeInputRequest]);
 
   const summary = routeData?.summary as
     | { totalDistance?: number; totalTime?: number; roadComparisons?: Array<{ estimatedToll?: number | null; isSelected?: boolean }> }
@@ -103,7 +103,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ layout: { duration: 0.34, ease: [0.2, 0, 0, 1] }, duration: 0.32, ease: [0.2, 0, 0, 1] }}
-          className="rounded-3xl glass-canvas p-2 shadow-2xl"
+          className="surface-floating rounded-2xl p-2"
         >
           {/* 경로 입력 섹션 — 위로 펼쳐지며 독과 한 몸으로 성장 (챗 작업 중엔 숨김) */}
           <AnimatePresence initial={false}>
@@ -116,10 +116,10 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                 transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
                 className="overflow-hidden"
               >
-                <div className="mb-1.5 max-h-[56vh] overflow-y-auto custom-scrollbar rounded-2xl border border-border/60 bg-background/30 p-3">
+                <div className="surface-low custom-scrollbar mb-1.5 max-h-[56vh] overflow-y-auto rounded-xl p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-container text-primary-on-container">
                         <Map className="h-4 w-4" />
                       </span>
                       <span className="text-sm font-bold text-foreground">경로 최적화</span>
@@ -150,7 +150,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                 transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}
                 className="overflow-hidden"
               >
-                <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl bg-muted/70 px-3.5 py-2.5">
+                <div className="mb-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-surface-container px-3.5 py-2.5">
                   <Metric label="거리" value={km} unit="km" />
                   <span className="h-3.5 w-px bg-border" />
                   <Metric label="시간" value={String(min)} unit="분" />
@@ -167,7 +167,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                     <button
                       type="button"
                       onClick={() => openWorkspace('route')}
-                      className="focus-ring-inset inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                      className="focus-ring-inset inline-flex min-h-9 items-center gap-1 rounded-full border border-outline-variant bg-surface-lowest px-3 text-xs font-semibold text-surface-variant transition hover:border-outline hover:text-primary"
                     >
                       <PanelRight className="h-3.5 w-3.5" />
                       상세
@@ -175,7 +175,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                     <button
                       type="button"
                       onClick={quoteFromResult}
-                      className="focus-ring-inset inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.98]"
+                      className="focus-ring-inset inline-flex min-h-9 items-center gap-1.5 rounded-full bg-primary px-3.5 text-xs font-bold text-primary-foreground shadow-1 transition hover:bg-primary-hover active:scale-[0.98]"
                     >
                       <Calculator className="h-3.5 w-3.5" />
                       이 경로로 견적
@@ -193,7 +193,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
               <button
                 type="button"
                 onClick={() => openWorkspace('chat')}
-                className="focus-ring-inset flex min-w-0 flex-1 items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                className="focus-ring-inset flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-surface-variant transition hover:bg-surface-high hover:text-foreground"
               >
                 <Sparkles className="h-4 w-4 flex-none text-primary" />
                 <span className="truncate">AI 대화 계속하기</span>
@@ -203,10 +203,10 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                 <button
                   type="button"
                   onClick={() => setRouteOpen((v) => !v)}
-                  className={`focus-ring-inset inline-flex flex-none items-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold transition ${
+                  className={`focus-ring-inset inline-flex min-h-11 flex-none items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition ${
                     routeOpen
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-foreground hover:bg-secondary'
+                      : 'bg-secondary-container text-secondary-on-container hover:bg-surface-high'
                   }`}
                 >
                   <Route className="h-4 w-4" />
@@ -233,7 +233,7 @@ export default function CommandDock({ onOpenChat, chatOpen = false }: CommandDoc
                 <button
                   type="button"
                   onClick={submitPrompt}
-                  className="focus-ring-inset flex h-10 w-10 flex-none items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/20 transition hover:bg-primary/90 active:scale-95"
+                  className="focus-ring-inset flex h-11 w-11 flex-none items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2 transition hover:bg-primary-hover active:scale-95"
                   aria-label="견적챗으로 전송"
                 >
                   <ArrowUp className="h-5 w-5" />

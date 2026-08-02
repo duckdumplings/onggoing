@@ -106,7 +106,7 @@ export default function QuoteBookOverview({
 
   return (
     <section
-      className="overflow-hidden rounded-xl border border-border bg-card"
+      className="surface-base overflow-hidden rounded-2xl"
       aria-label="다중 라인 견적책"
     >
       <header className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -120,13 +120,13 @@ export default function QuoteBookOverview({
             한 화면에서 바뀝니다.
           </p>
         </div>
-        <div className="inline-flex items-center gap-1.5 self-start rounded-lg bg-muted px-2 py-1 text-[10px] font-semibold text-muted-foreground sm:self-auto">
+        <div className="inline-flex items-center gap-1.5 self-start rounded-full bg-secondary-container px-3 py-1.5 text-[10px] font-semibold text-secondary-on-container sm:self-auto">
           <ArrowDownNarrowWide className="h-3.5 w-3.5" />
           우선 확인순
         </div>
       </header>
 
-      <div className="grid grid-cols-2 border-b border-border">
+      <div className="grid grid-cols-2 border-b border-outline-variant bg-surface-lowest sm:grid-cols-4">
         <SummaryCell label="1회 합계" value={won(rollup.oneTimeTotal)} />
         <SummaryCell
           label={rollup.targetMonth ? `${rollup.targetMonth} 월 합계` : '월 합계'}
@@ -141,7 +141,7 @@ export default function QuoteBookOverview({
 
       <div className="grid min-h-[480px] 2xl:grid-cols-[260px_minmax(0,1fr)]">
         <nav
-          className="border-b border-border bg-muted/30 p-2.5 2xl:border-b-0 2xl:border-r"
+          className="border-b border-outline-variant bg-surface-low p-2.5 2xl:border-b-0 2xl:border-r"
           aria-label="견적 라인 선택"
         >
           <div className="mb-2 grid grid-cols-3 gap-1" role="group" aria-label="라인 상태 필터">
@@ -178,10 +178,10 @@ export default function QuoteBookOverview({
                     type="button"
                     onClick={() => onSelect(result.id)}
                     aria-pressed={active}
-                    className={`focus-ring-inset min-h-[68px] min-w-[210px] rounded-lg border px-2.5 py-2 text-left transition 2xl:w-full 2xl:min-w-0 ${
+                    className={`focus-ring-inset min-h-[72px] min-w-[210px] rounded-lg border px-2.5 py-2 text-left transition-colors 2xl:w-full 2xl:min-w-0 ${
                       active
-                        ? 'border-primary/40 bg-card shadow-sm'
-                        : 'border-transparent hover:border-border hover:bg-card/70'
+                        ? 'border-primary/30 bg-primary-container text-primary-on-container shadow-1'
+                        : 'border-transparent hover:border-outline-variant hover:bg-surface-raised'
                     }`}
                   >
                     <span className="flex items-start gap-2">
@@ -189,7 +189,7 @@ export default function QuoteBookOverview({
                         className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md text-[10px] font-bold tabular-nums ${
                           active
                             ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground'
+                            : 'bg-surface-high text-muted-foreground'
                         }`}
                       >
                         {order}
@@ -222,7 +222,7 @@ export default function QuoteBookOverview({
               })}
             </div>
           ) : (
-            <div className="flex min-h-[160px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/60 px-3 text-center">
+            <div className="flex min-h-[160px] flex-col items-center justify-center rounded-lg border border-dashed border-outline bg-surface-lowest px-3 text-center">
               <CheckCircle2 className="h-5 w-5 text-success-600" />
               <p className="mt-2 text-xs font-semibold text-foreground">
                 해당 상태의 라인이 없어요
@@ -238,7 +238,7 @@ export default function QuoteBookOverview({
           )}
         </nav>
 
-        <div className="min-w-0 p-3">
+        <div className="min-w-0 bg-surface-lowest p-3">
           <QuoteBookCaseDetail
             result={selectedCase}
             onPreviewRoute={onPreviewRoute}
@@ -267,10 +267,10 @@ function FilterButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`focus-ring-inset flex min-h-11 items-center justify-center gap-1 rounded-md px-1.5 text-[10px] font-semibold transition ${
+      className={`focus-ring-inset flex min-h-11 items-center justify-center gap-1 rounded-full px-1.5 text-[10px] font-semibold transition-colors ${
         active
-          ? 'bg-card text-foreground shadow-sm'
-          : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'
+          ? 'bg-secondary-container text-secondary-on-container shadow-1'
+          : 'text-muted-foreground hover:bg-surface-raised hover:text-foreground'
       }`}
     >
       <span>{label}</span>

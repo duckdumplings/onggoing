@@ -30,21 +30,21 @@ export default function Home() {
       lastPromptNonce.current = chatPromptRequest.nonce;
       openWorkspace('chat');
     }
-  }, [chatPromptRequest?.nonce, openWorkspace]);
+  }, [chatPromptRequest, openWorkspace]);
 
   // 데스크톱(lg+)에서는 우측 슬라이드오버, 그 외에는 전체 모달.
   const docked = isDesktop && workspaceOpen;
 
   return (
-    <div className="relative h-screen overflow-hidden bg-muted font-sans">
+    <div className="relative h-screen overflow-hidden bg-surface-container font-sans">
       {/* 풀블리드 지도 캔버스 */}
       <main className="absolute inset-0">
         <TmapMainMap />
       </main>
 
       {/* 지도 가장자리 스크림 — 떠 있는 UI의 가독성과 깊이를 위해 (지도 조작은 가리지 않음) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-28 bg-gradient-to-b from-background/55 via-background/15 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-40 bg-gradient-to-t from-background/55 via-background/15 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-28 bg-gradient-to-b from-background/80 via-background/20 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-40 bg-gradient-to-t from-background/80 via-background/20 to-transparent" />
 
       {/* 떠 있는 탑바 (브랜드 + AI 견적챗) */}
       <TopBar onOpenChat={openChat} chatOpen={docked} />

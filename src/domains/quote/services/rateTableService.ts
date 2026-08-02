@@ -14,6 +14,7 @@ import { formatKstDate } from '@/domains/dispatch/utils/kstDateTime';
 import {
   calculateFuelSurchargeFromPayload,
   calculatePerJobReferenceFromPayloads,
+  calculateRecurringHourlyTotals,
   pickHourlyRateFromPayload,
   type FuelSurchargePayload,
   type HourlyRateTablePayload,
@@ -23,6 +24,7 @@ import {
 export {
   calculateFuelSurchargeFromPayload,
   calculatePerJobReferenceFromPayloads,
+  calculateRecurringHourlyTotals,
   pickHourlyRateFromPayload,
 };
 export type {

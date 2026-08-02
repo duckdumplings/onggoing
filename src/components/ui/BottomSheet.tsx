@@ -82,7 +82,7 @@ export default function BottomSheet({
         role="dialog"
         aria-label={ariaLabel}
         className={cn(
-          'fixed inset-x-0 bottom-0 z-50 md:hidden flex flex-col rounded-t-2xl border-t border-border bg-card shadow-2xl',
+          'surface-overlay fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-xl md:hidden',
           className,
         )}
         style={{ height: sheetHeight || undefined, y }}
@@ -101,7 +101,7 @@ export default function BottomSheet({
           aria-label={snap === 'full' ? '제어판 접기' : '제어판 펼치기'}
           aria-expanded={snap === 'full'}
         >
-          <span className="h-1.5 w-10 rounded-full bg-border" />
+          <span className="h-1.5 w-10 rounded-full bg-outline" />
         </button>
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {children}

@@ -27,10 +27,10 @@ type Rule = {
 };
 
 /**
- * 진짜 이모지 픽토그램만 매칭 (Extended_Pictographic 유니코드 속성).
- * 화살표(→), 말줄임표(…), 꺽쇠(「」) 등 일반 텍스트 기호는 자동 제외.
+ * 기본 렌더링이 그림인 이모지만 매칭한다.
+ * 업무 문장에 쓰는 양방향 화살표(↔) 같은 텍스트 기호는 허용한다.
  */
-const EMOJI_RE = /\p{Extended_Pictographic}/u;
+const EMOJI_RE = /\p{Emoji_Presentation}/u;
 
 const RULES: Rule[] = [
   {

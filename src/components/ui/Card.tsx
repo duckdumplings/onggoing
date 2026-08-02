@@ -18,15 +18,15 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     ...props
   }, ref) => {
     const baseClasses = `
-      bg-card text-card-foreground border rounded-lg shadow-sm
-      transition-all duration-base ease-standard
+      surface-raised shape-large text-card-foreground
+      transition-[box-shadow,transform,border-color,background-color] duration-base ease-standard
     `;
 
     const variantClasses = {
       basic: '',
       interactive: `
-        hover:shadow-md cursor-pointer
-        hover:border-muted-foreground/40
+        cursor-pointer hover:-translate-y-0.5
+        hover:border-outline/55 hover:shadow-2 active:translate-y-0
       `,
       status: ''
     };
@@ -45,7 +45,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           baseClasses,
           variantClasses[variant],
           status && statusClasses[status],
-          onClick && 'focus-ring',
+          onClick && 'focus-ring focus-visible:ring-offset-2',
           className
         )}
         onClick={onClick}
@@ -67,4 +67,4 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
 
 Card.displayName = 'Card';
 
-export default Card; 
+export default Card;

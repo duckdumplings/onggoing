@@ -42,9 +42,8 @@ export default function QuoteHeroCard({
             <div className="text-xl font-black tracking-tight text-primary tabular-nums">{quote.hourly?.formatted}</div>
             {quote.hourly?.tiers && (
               <div className="mt-1.5 space-y-0.5 text-[10px] text-muted-foreground leading-tight tabular-nums">
-                <div>일일 <span className="font-semibold text-foreground">{quote.hourly.tiers.perDay?.formatted}</span></div>
-                <div>20일 <span className="font-semibold text-foreground">{quote.hourly.tiers.perMonth20d?.formatted}</span></div>
-                <div className="text-muted-foreground/70 text-[9px]">유류할증 제외 · 운임표 기준</div>
+                <div>20회 기준 <span className="font-semibold text-foreground">{quote.hourly.tiers.perMonth20d?.formatted}</span></div>
+                <div className="text-muted-foreground/70 text-[9px]">유류할증 포함 · 시간당 운임표 기준</div>
               </div>
             )}
           </div>

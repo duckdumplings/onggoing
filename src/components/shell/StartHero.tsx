@@ -83,7 +83,7 @@ export default function StartHero() {
         initial={{ y: 16, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.34, ease: [0.2, 0, 0, 1] }}
-        className="glass-canvas pointer-events-auto relative w-full max-w-2xl rounded-3xl p-5 shadow-2xl md:p-6"
+        className="surface-overlay pointer-events-auto relative w-full max-w-2xl rounded-2xl p-5 md:p-6"
         aria-label="시작하기"
       >
         <button
@@ -96,13 +96,13 @@ export default function StartHero() {
         </button>
 
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-container text-primary-on-container">
             <Compass className="h-4 w-4" />
           </span>
           <span className="text-[11px] font-bold uppercase tracking-wider text-primary">옹라우팅</span>
         </div>
 
-        <h1 className="mt-3 text-xl font-black leading-tight tracking-tight text-foreground md:text-2xl">
+        <h1 className="mt-3 text-xl font-[790] leading-tight tracking-[-0.035em] text-foreground md:text-3xl">
           복잡한 배송, 주소만 넣으면<br className="hidden sm:block" /> 경로·소요시간·견적까지 한 번에.
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -114,7 +114,7 @@ export default function StartHero() {
             const Icon = c.icon;
             const inner = (
               <>
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-container text-primary-on-container transition-transform duration-base ease-emphasized group-hover:scale-105">
                   <Icon className="h-5 w-5" />
                 </span>
                 <div className="mt-2.5 text-sm font-bold text-foreground">{c.title}</div>
@@ -126,7 +126,7 @@ export default function StartHero() {
               </>
             );
             const className =
-              'focus-ring-inset group flex h-full flex-col rounded-2xl border border-border bg-card/70 p-3.5 text-left transition hover:border-primary/40 hover:bg-card hover:shadow-md active:scale-[0.99]';
+              'surface-low focus-ring-inset group flex h-full flex-col rounded-xl p-3.5 text-left transition-[background-color,border-color,box-shadow,transform] duration-base ease-standard hover:border-outline hover:bg-surface-lowest hover:shadow-1 active:scale-[0.99]';
             return c.href ? (
               <Link key={c.key} href={c.href} className={className}>
                 {inner}

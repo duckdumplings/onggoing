@@ -3,9 +3,13 @@ import { createServerClient } from '@/libs/supabase-client';
 import { generateRiskReport } from '@/domains/quote/services/riskReportGenerator';
 import { ExtractedQuoteInfo } from '@/domains/quote/types/quoteExtraction';
 import { RouteValidationResult } from '@/domains/quote/services/routeValidator';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const body = await request.json();
     const { validationId, extractedData, validationResults } = body;
 
@@ -120,6 +124,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/utils/cn';
 
 /**
- * GlassCard — tier 시스템 글래스모피즘 카드
+ * GlassCard — 기존 API 호환용 surface wrapper
  *
  * tier:
  * - launcher: 가장 가벼움. 사이드바/런처/배경 표면
@@ -10,8 +10,7 @@ import { cn } from '@/utils/cn';
  * - canvas:   가장 강조. 모달/오버레이 컨텐츠 wrapper
  *
  * 룰: .cursor/rules/30-anti-slop-design.mdc §2
- * 반투명 표면을 만들 때 Tailwind 불투명도 + blur 조합을 인라인으로 직접 쓰지 말 것.
- * 본 컴포넌트 또는 globals.css의 .glass-* 유틸리티만 사용.
+ * Design System v2에서는 글래스가 아니라 역할 기반 불투명 surface로 매핑된다.
  */
 export type GlassTier = 'launcher' | 'card' | 'canvas';
 
@@ -22,9 +21,9 @@ export interface GlassCardProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const tierClasses: Record<GlassTier, string> = {
-  launcher: 'glass-launcher',
-  card: 'glass-card',
-  canvas: 'glass-canvas',
+  launcher: 'surface-floating',
+  card: 'surface-raised',
+  canvas: 'surface-overlay',
 };
 
 const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(

@@ -6,6 +6,10 @@ import { resolveModel } from '@/libs/llm/provider';
 import { validatePlan } from '@/domains/quote/agent/workingMemory';
 import type { QuotePreflightDraft } from '@/domains/quote/types/quotePreflight';
 import { createDeterministicQuotePreflight } from '@/domains/quote/services/quotePreflightFallback';
+import {
+  buildQuotePreflightCacheKey,
+  getCachedQuotePreflight,
+} from '@/domains/quote/services/quotePreflightCache';
 
 // 에이전트의 전체 RouteStopSchema는 provider의 JSON schema 한도를 넘을 수 있다.
 // 계산 전 확인에는 필요한 필드만 전부 required + nullable로 제한한다.
@@ -71,62 +75,63 @@ export async function createQuotePreflight(
   const deterministic = createDeterministicQuotePreflight(message);
   if (deterministic) return deterministic;
 
-  const resolved = resolveModel(
-    modelSlug ||
-      process.env.QUOTE_PREFLIGHT_MODEL ||
-      process.env.QUOTE_AGENT_MODEL,
-  );
-  const { object } = await generateObject({
-    model: resolved.model,
-    schema: LlmPreflightSchema,
-    system: SYSTEM_PROMPT,
-    prompt: `다음 요청을 구조화하라.\n\n<request>\n${message}\n</request>`,
-    temperature: 0,
-    maxOutputTokens: 5000,
-    abortSignal: AbortSignal.timeout(30_000),
-    providerOptions: {
-      openai: {
-        // optional 필드가 많은 물류 스키마를 OpenAI strict schema가 거부하지 않게 한다.
-        strictJsonSchema: false,
+  const resolvedSlug =
+    modelSlug || process.env.QUOTE_PREFLIGHT_MODEL || process.env.QUOTE_AGENT_MODEL;
+  const cacheKey = buildQuotePreflightCacheKey(resolvedSlug || 'default', message);
+  return getCachedQuotePreflight(cacheKey, async () => {
+    const resolved = resolveModel(resolvedSlug);
+    const { object } = await generateObject({
+      model: resolved.model,
+      schema: LlmPreflightSchema,
+      system: SYSTEM_PROMPT,
+      prompt: `다음 요청을 구조화하라.\n\n<request>\n${message}\n</request>`,
+      temperature: 0,
+      maxOutputTokens: 5000,
+      abortSignal: AbortSignal.timeout(30_000),
+      providerOptions: {
+        openai: {
+          // optional 필드가 많은 물류 스키마를 OpenAI strict schema가 거부하지 않게 한다.
+          strictJsonSchema: false,
+        },
       },
-    },
-  });
+    });
 
-  const cases = object.cases.map(({ frequency, stops, ...item }) => ({
-    ...item,
-    ...(frequency
-      ? {
-          frequency: {
-            per: frequency.per,
-            count: frequency.count,
-            ...(frequency.contractMonths == null
-              ? {}
-              : { contractMonths: frequency.contractMonths }),
-          },
-        }
-      : {}),
-    stops: stops.map((stop) => ({
-      address: stop.address,
-      role: stop.role,
-      ...(stop.quantity == null ? {} : { quantity: stop.quantity }),
-      ...(stop.operations.length
-        ? { operations: stop.operations.map((type) => ({ type })) }
+    const cases = object.cases.map(({ frequency, stops, ...item }) => ({
+      ...item,
+      ...(frequency
+        ? {
+            frequency: {
+              per: frequency.per,
+              count: frequency.count,
+              ...(frequency.contractMonths == null
+                ? {}
+                : { contractMonths: frequency.contractMonths }),
+            },
+          }
         : {}),
-      ...(stop.schedule ? { schedule: stop.schedule } : {}),
-    })),
-  }));
-  const validationIssues = cases.flatMap((item, caseIndex) =>
-    validatePlan(item.stops, item.frequency ?? undefined).issues.map((issue) => ({
-      caseIndex,
-      severity: issue.severity,
-      message: issue.message,
-    })),
-  );
+      stops: stops.map((stop) => ({
+        address: stop.address,
+        role: stop.role,
+        ...(stop.quantity == null ? {} : { quantity: stop.quantity }),
+        ...(stop.operations.length
+          ? { operations: stop.operations.map((type) => ({ type })) }
+          : {}),
+        ...(stop.schedule ? { schedule: stop.schedule } : {}),
+      })),
+    }));
+    const validationIssues = cases.flatMap((item, caseIndex) =>
+      validatePlan(item.stops, item.frequency ?? undefined).issues.map((issue) => ({
+        caseIndex,
+        severity: issue.severity,
+        message: issue.message,
+      })),
+    );
 
-  return {
-    cases,
-    confidence: object.confidence,
-    reviewReasons: object.reviewReasons,
-    validationIssues,
-  };
+    return {
+      cases,
+      confidence: object.confidence,
+      reviewReasons: object.reviewReasons,
+      validationIssues,
+    };
+  });
 }

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/libs/supabase-client';
 import { extractQuoteInfo } from '@/domains/quote/services/quoteInfoExtractor';
+import { resolveUserIdFromRequest, unauthorizedResponse } from '@/app/api/quote/_auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await resolveUserIdFromRequest(request);
+    if (!userId) return unauthorizedResponse();
+
     const body = await request.json();
     const { documentId, text, preferLLM = true } = body;
 
@@ -108,6 +112,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 
 

@@ -395,7 +395,7 @@ export default function TmapMap({
       {/* 지도 범례 */}
       {ready && legend && (
         <div className="pointer-events-none absolute bottom-3 left-3 z-[1200] max-w-[min(15rem,calc(100%-1.5rem))]">
-          <div className="pointer-events-auto rounded-xl border border-border bg-card/95 px-3 py-2.5 text-xs shadow-lg backdrop-blur">
+          <div className="surface-floating pointer-events-auto rounded-xl px-3 py-2.5 text-xs">
             <div className="flex items-center justify-between gap-2">
               <span className="font-bold text-foreground">범례</span>
               <button
@@ -414,7 +414,7 @@ export default function TmapMap({
                     <div className="space-y-1">
                       {singlePinItems.map((it) => (
                         <div key={it.label} className="flex items-center gap-2">
-                          <span className="inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-[#3B82F6] text-[8px] font-bold text-white ring-1 ring-white/70">{it.glyph}</span>
+                          <span className="inline-flex h-4 w-4 flex-none items-center justify-center rounded-full bg-route-pin-waypoint text-[8px] font-bold text-white ring-1 ring-white/70">{it.glyph}</span>
                           <span className="text-muted-foreground">{it.label}</span>
                         </div>
                       ))}
@@ -499,5 +499,4 @@ declare global {
     Tmapv2: any;
   }
 }
-
 

@@ -1,108 +1,70 @@
 import React from 'react';
+import { LoaderCircle } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'tonal' | 'outline' | 'danger' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
 }
 
+const variantClasses: Record<NonNullable<ButtonProps['variant']>, string> = {
+  primary:
+    'bg-primary text-primary-foreground shadow-1 hover:bg-primary-hover hover:shadow-2',
+  secondary:
+    'bg-secondary text-secondary-foreground shadow-1 hover:bg-secondary/90 hover:shadow-2',
+  tonal:
+    'bg-primary-container text-primary-on-container hover:bg-primary-container/80',
+  outline:
+    'border border-outline bg-surface-lowest text-primary hover:bg-primary-container/45',
+  danger:
+    'bg-error text-error-foreground shadow-1 hover:bg-error/90 hover:shadow-2',
+  ghost: 'bg-transparent text-foreground hover:bg-surface-high',
+};
+
+const sizeClasses: Record<NonNullable<ButtonProps['size']>, string> = {
+  sm: 'min-h-9 px-3.5 text-xs',
+  md: 'min-h-11 px-5 text-sm',
+  lg: 'min-h-12 px-6 text-base',
+};
+
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({
-    className,
-    variant = 'primary',
-    size = 'md',
-    isLoading = false,
-    leftIcon,
-    rightIcon,
-    children,
-    disabled,
-    ...props
-  }, ref) => {
-    const baseClasses = `
-      inline-flex items-center justify-center
-      font-medium rounded-lg
-      transition-all duration-base ease-standard
-      focus-ring
-      disabled:opacity-50 disabled:cursor-not-allowed
-    `;
-
-    const variantClasses = {
-      primary: `
-        bg-primary hover:bg-primary-700 
-        text-primary-foreground 
-        shadow-sm hover:shadow-md
-      `,
-      secondary: `
-        bg-secondary hover:bg-accent 
-        text-secondary-foreground 
-        border border-border
-      `,
-      danger: `
-        bg-error-500 hover:bg-error-600 
-        text-white 
-        shadow-sm hover:shadow-md
-      `,
-      ghost: `
-        bg-transparent hover:bg-muted 
-        text-foreground 
-      `
-    };
-
-    const sizeClasses = {
-      sm: 'px-3 py-1.5 text-sm',
-      md: 'px-4 py-2 text-base',
-      lg: 'px-6 py-3 text-lg'
-    };
-
-    return (
-      <button
-        ref={ref}
-        className={cn(
-          baseClasses,
-          variantClasses[variant],
-          sizeClasses[size],
-          className
-        )}
-        disabled={disabled || isLoading}
-        {...props}
-      >
-        {isLoading && (
-          <svg
-            className="animate-spin -ml-1 mr-2 h-4 w-4"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-        )}
-        {!isLoading && leftIcon && (
-          <span className="mr-2">{leftIcon}</span>
-        )}
-        {children}
-        {!isLoading && rightIcon && (
-          <span className="ml-2">{rightIcon}</span>
-        )}
-      </button>
-    );
-  }
+  (
+    {
+      className,
+      variant = 'primary',
+      size = 'md',
+      isLoading = false,
+      leftIcon,
+      rightIcon,
+      children,
+      disabled,
+      ...props
+    },
+    ref,
+  ) => (
+    <button
+      ref={ref}
+      className={cn(
+        'focus-ring inline-flex items-center justify-center gap-2 rounded-full font-semibold tracking-[-0.01em] transition-[background-color,color,box-shadow,transform,border-color] duration-base ease-standard active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50',
+        variantClasses[variant],
+        sizeClasses[size],
+        className,
+      )}
+      disabled={disabled || isLoading}
+      aria-busy={isLoading || undefined}
+      {...props}
+    >
+      {isLoading && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
+      {!isLoading && leftIcon}
+      {children}
+      {!isLoading && rightIcon}
+    </button>
+  ),
 );
 
 Button.displayName = 'Button';
 
-export default Button; 
+export default Button;

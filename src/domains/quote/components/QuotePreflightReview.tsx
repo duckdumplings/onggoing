@@ -111,25 +111,33 @@ export default function QuotePreflightReview({
   }, [draft]);
 
   return (
-    <section className="flex-shrink-0 border-t border-border bg-muted/30" aria-label="계산 전 입력 확인">
+    <section className="surface-low flex-shrink-0 border-x-0 border-b-0" aria-label="계산 전 입력 확인">
       <div className="mx-auto max-h-[58vh] max-w-5xl overflow-y-auto px-4 py-4 md:px-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-bold text-foreground">계산 전 입력 확인</h3>
+              <span className="rounded-full bg-tertiary-container px-2 py-1 text-[10px] font-semibold text-tertiary-on-container">
+                1 / 2 · 입력 확인
+              </span>
+              <h3 className="text-sm font-bold text-foreground">AI가 이해한 배송 조건</h3>
               {draft && <ConfidenceBadge value={draft.confidence} />}
             </div>
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
               라인·작업·시각 의미가 맞는지 확인하세요. 확정 후에만 경로와 운임을 계산합니다.
             </p>
           </div>
-          <div className="max-w-full truncate rounded-md border border-border bg-card px-2.5 py-1.5 text-[10px] text-muted-foreground sm:max-w-[42%]" title={sourceText}>
+          <div className="max-w-full truncate rounded-full border border-outline-variant bg-surface-lowest px-3 py-2 text-[10px] text-muted-foreground sm:max-w-[42%]" title={sourceText}>
             원문 · {sourceText}
           </div>
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-2" aria-label="견적 계산 단계">
+          <div className="h-1.5 rounded-full bg-tertiary" />
+          <div className="h-1.5 rounded-full bg-outline-variant" />
+        </div>
+
         {loading && (
-          <div className="mt-4 flex min-h-36 flex-col items-center justify-center rounded-xl border border-border bg-card text-center">
+          <div className="surface-raised mt-4 flex min-h-36 flex-col items-center justify-center rounded-xl text-center">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <p className="mt-2 text-xs font-semibold text-foreground">주소와 시각 의미를 분리하고 있습니다</p>
             <p className="mt-1 text-[10px] text-muted-foreground">거리와 금액은 아직 계산하지 않습니다.</p>
@@ -148,7 +156,7 @@ export default function QuotePreflightReview({
             <button
               type="button"
               onClick={onRetry}
-              className="focus-ring-inset mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition hover:border-primary/40 hover:text-primary"
+              className="focus-ring-inset mt-3 inline-flex min-h-10 items-center gap-1.5 rounded-full border border-outline bg-surface-lowest px-4 text-xs font-semibold text-foreground transition-colors hover:bg-secondary-container"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               다시 해석
@@ -176,7 +184,7 @@ export default function QuotePreflightReview({
             )}
 
             {draft.cases.map((item, caseIndex) => (
-              <article key={`${item.label}-${caseIndex}`} className="overflow-hidden rounded-xl border border-border bg-card">
+              <article key={`${item.label}-${caseIndex}`} className="surface-raised overflow-hidden rounded-xl">
                 <div className="grid gap-2 border-b border-border p-3 md:grid-cols-[minmax(180px,1fr)_130px_130px]">
                   <label>
                     <span className="mb-1 block text-[10px] font-semibold text-muted-foreground">라인명</span>
@@ -185,7 +193,7 @@ export default function QuotePreflightReview({
                       onChange={(event) =>
                         onChange(updateCase(draft, caseIndex, { label: event.target.value }))
                       }
-                      className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground outline-none"
+                      className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2.5 text-xs font-semibold text-foreground outline-none"
                     />
                   </label>
                   <label>
@@ -197,7 +205,7 @@ export default function QuotePreflightReview({
                           vehicleType: event.target.value as QuotePreflightCase['vehicleType'],
                         }))
                       }
-                      className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2.5 text-xs text-foreground outline-none"
+                      className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2.5 text-xs text-foreground outline-none"
                     >
                       <option value="레이">레이</option>
                       <option value="스타렉스">스타렉스</option>
@@ -212,7 +220,7 @@ export default function QuotePreflightReview({
                           scheduleType: event.target.value as QuotePreflightCase['scheduleType'],
                         }))
                       }
-                      className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2.5 text-xs text-foreground outline-none"
+                      className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2.5 text-xs text-foreground outline-none"
                     >
                       <option value="regular">정기</option>
                       <option value="ad-hoc">비정기</option>
@@ -226,7 +234,7 @@ export default function QuotePreflightReview({
                       key={`${stop.address}-${stopIndex}`}
                       className="grid gap-2 p-3 md:grid-cols-[42px_118px_minmax(210px,1fr)_76px_128px_94px]"
                     >
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-muted text-xs font-bold tabular-nums text-foreground">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-container text-xs font-bold tabular-nums text-primary-on-container">
                         {stopIndex + 1}
                       </div>
                       <label>
@@ -239,7 +247,7 @@ export default function QuotePreflightReview({
                               operations: undefined,
                             }))
                           }
-                          className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2 text-[11px] font-semibold text-foreground outline-none"
+                          className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2 text-[11px] font-semibold text-foreground outline-none"
                         >
                           {Object.entries(ROLE_LABEL).map(([value, label]) => (
                             <option key={value} value={value}>{label}</option>
@@ -261,7 +269,7 @@ export default function QuotePreflightReview({
                               address: event.target.value,
                             }))
                           }
-                          className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2.5 text-[11px] text-foreground outline-none"
+                          className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest pl-8 pr-2.5 text-[11px] text-foreground outline-none"
                         />
                       </label>
                       <label className="relative">
@@ -277,7 +285,7 @@ export default function QuotePreflightReview({
                             }));
                           }}
                           placeholder="수량"
-                          className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2 pr-6 text-[11px] tabular-nums text-foreground outline-none placeholder:text-muted-foreground"
+                          className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2 pr-6 text-[11px] tabular-nums text-foreground outline-none placeholder:text-muted-foreground"
                         />
                         <span className="pointer-events-none absolute right-2 top-2.5 text-[10px] text-muted-foreground">개</span>
                       </label>
@@ -294,7 +302,7 @@ export default function QuotePreflightReview({
                                 : undefined,
                             }));
                           }}
-                          className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2 text-[10px] text-foreground outline-none"
+                          className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest pl-8 pr-2 text-[10px] text-foreground outline-none"
                         >
                           <option value="">시각 없음</option>
                           {Object.entries(SCHEDULE_LABEL).map(([value, label]) => (
@@ -314,7 +322,7 @@ export default function QuotePreflightReview({
                               schedule: { ...stop.schedule, time: event.target.value },
                             }))
                           }
-                          className="focus-ring-inset min-h-9 w-full rounded-lg border border-border bg-card px-2 text-[11px] tabular-nums text-foreground outline-none disabled:bg-muted disabled:text-muted-foreground"
+                          className="focus-ring-inset min-h-10 w-full rounded-md border border-outline-variant bg-surface-lowest px-2 text-[11px] tabular-nums text-foreground outline-none disabled:bg-surface-low disabled:text-muted-foreground"
                         />
                       </label>
                     </div>
@@ -322,7 +330,7 @@ export default function QuotePreflightReview({
                 </div>
 
                 {item.assumptions.length > 0 && (
-                  <div className="border-t border-border bg-muted/40 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                  <div className="border-t border-outline-variant bg-tertiary-container/40 px-3 py-2 text-[10px] leading-relaxed text-tertiary-on-container">
                     가정 · {item.assumptions.join(' · ')}
                   </div>
                 )}
@@ -332,11 +340,11 @@ export default function QuotePreflightReview({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 md:px-6">
+      <div className="surface-floating flex items-center justify-between gap-3 rounded-none border-x-0 border-b-0 px-4 py-3 md:px-6">
         <button
           type="button"
           onClick={onCancel}
-          className="focus-ring-inset inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold text-foreground transition hover:bg-muted"
+          className="focus-ring-inset inline-flex min-h-10 items-center gap-2 rounded-full border border-outline px-4 text-xs font-semibold text-foreground transition-colors hover:bg-secondary-container"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           입력으로 돌아가기
@@ -351,7 +359,7 @@ export default function QuotePreflightReview({
             type="button"
             onClick={onConfirm}
             disabled={!draft || loading || Boolean(error) || Boolean(blockingReason)}
-            className="focus-ring-inset inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="focus-ring-inset inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-xs font-semibold text-primary-foreground shadow-1 transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check className="h-3.5 w-3.5" />
             이 조건으로 계산

@@ -4,7 +4,7 @@ import type { Config } from 'tailwindcss'
  * Tailwind 토큰 매핑
  *
  * 시맨틱 토큰은 globals.css의 CSS 변수를 참조한다.
- * 지도 기반 라이트 전용 제품 — 다크모드는 운영하지 않는다(라이트 글래스가 지도 위 가독성 우월).
+ * 지도 기반 라이트 전용 제품. Material 3 Expressive 역할 토큰을 물류 콘솔 밀도로 사용한다.
  *
  * 변경 시: .cursor/rules/30-anti-slop-design.mdc §7 (새 색상 / 시맨틱 토큰 도입 절차) 준수.
  */
@@ -20,6 +20,18 @@ const config: Config = {
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
+        surface: {
+          DEFAULT: 'var(--surface)',
+          dim: 'var(--surface-dim)',
+          bright: 'var(--surface-bright)',
+          lowest: 'var(--surface-container-lowest)',
+          low: 'var(--surface-container-low)',
+          container: 'var(--surface-container)',
+          high: 'var(--surface-container-high)',
+          highest: 'var(--surface-container-highest)',
+          foreground: 'var(--on-surface)',
+          variant: 'var(--on-surface-variant)',
+        },
         card: {
           DEFAULT: 'var(--card)',
           foreground: 'var(--card-foreground)',
@@ -31,6 +43,9 @@ const config: Config = {
         primary: {
           DEFAULT: 'var(--primary)',
           foreground: 'var(--primary-foreground)',
+          hover: 'var(--primary-hover)',
+          container: 'var(--primary-container)',
+          'on-container': 'var(--on-primary-container)',
           50: '#eef2ff',
           100: '#e0e7ff',
           200: '#c7d2fe',
@@ -45,6 +60,8 @@ const config: Config = {
         secondary: {
           DEFAULT: 'var(--secondary)',
           foreground: 'var(--secondary-foreground)',
+          container: 'var(--secondary-container)',
+          'on-container': 'var(--on-secondary-container)',
           50: '#f8fafc',
           100: '#f1f5f9',
           200: '#e2e8f0',
@@ -55,6 +72,12 @@ const config: Config = {
           700: '#334155',
           800: '#1e293b',
           900: '#0f172a',
+        },
+        tertiary: {
+          DEFAULT: 'var(--tertiary)',
+          foreground: 'var(--tertiary-foreground)',
+          container: 'var(--tertiary-container)',
+          'on-container': 'var(--on-tertiary-container)',
         },
         muted: {
           DEFAULT: 'var(--muted)',
@@ -129,6 +152,10 @@ const config: Config = {
           foreground: 'var(--destructive-foreground)',
         },
         border: 'var(--border)',
+        outline: {
+          DEFAULT: 'var(--outline)',
+          variant: 'var(--outline-variant)',
+        },
         input: 'var(--input)',
         ring: 'var(--ring)',
         chart: {
@@ -152,15 +179,22 @@ const config: Config = {
         },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-        xl: 'calc(var(--radius) + 4px)',
+        xs: 'var(--shape-extra-small)',
+        sm: '0.625rem',
+        md: 'var(--shape-small)',
+        lg: 'var(--shape-medium)',
+        xl: 'var(--shape-large)',
+        '2xl': 'var(--shape-extra-large)',
+        '3xl': '2rem',
+      },
+      boxShadow: {
+        1: 'var(--elevation-1)',
+        2: 'var(--elevation-2)',
+        3: 'var(--elevation-3)',
       },
       fontFamily: {
         sans: [
           'var(--font-pretendard)',
-          'var(--font-inter)',
           'system-ui',
           '-apple-system',
           'sans-serif',
@@ -174,6 +208,8 @@ const config: Config = {
       },
       transitionTimingFunction: {
         standard: 'var(--ease-standard)',
+        emphasized: 'var(--ease-emphasized)',
+        exit: 'var(--ease-exit)',
       },
     },
   },

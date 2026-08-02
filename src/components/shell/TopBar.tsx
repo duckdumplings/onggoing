@@ -23,14 +23,14 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
         initial={{ y: -12, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
-        className="pointer-events-auto flex items-center gap-2.5 rounded-2xl glass-launcher px-3 py-2 shadow-sm"
+        className="surface-floating pointer-events-auto flex min-h-12 items-center gap-2.5 rounded-xl px-3 py-2"
       >
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container text-primary-on-container">
           <Compass className="h-4 w-4" />
         </div>
         <div className="flex items-center gap-1.5 leading-none">
           <span className="text-[15px] font-black tracking-tight text-foreground">옹라우팅</span>
-          <span className="rounded-md border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-primary">
+          <span className="rounded-full bg-tertiary-container px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-tertiary-on-container">
             BETA
           </span>
         </div>
@@ -46,7 +46,7 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
         >
           <Link
             href="/quote"
-            className="inline-flex items-center gap-1.5 rounded-2xl glass-launcher px-3 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:bg-muted active:scale-[0.98]"
+            className="surface-floating focus-ring-inset inline-flex min-h-12 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-foreground transition hover:bg-surface-low active:scale-[0.98]"
           >
             <Calculator className="h-4 w-4" />
             간편 견적
@@ -54,7 +54,7 @@ export default function TopBar({ onOpenChat, chatOpen = false }: TopBarProps) {
           <button
             type="button"
             onClick={onOpenChat}
-            className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition hover:bg-primary/90 active:scale-[0.98]"
+            className="focus-ring-inset inline-flex min-h-12 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-2 transition hover:bg-primary-hover active:scale-[0.98]"
           >
             <Sparkles className="h-4 w-4" />
             AI 견적챗

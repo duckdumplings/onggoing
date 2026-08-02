@@ -25,11 +25,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || `input-${uniqueId}`;
 
     return (
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-foreground"
+            className="type-label block text-surface-variant"
           >
             {label}
           </label>
@@ -45,18 +45,17 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             id={inputId}
             className={cn(
               `
-                w-full px-3 py-2 
-                border rounded-lg text-foreground
-                focus:outline-none focus:ring-2 focus:ring-offset-0
+                min-h-11 w-full rounded-xl border bg-surface-lowest px-3.5 text-sm text-foreground
+                focus:outline-none focus:ring-2 focus:ring-ring
                 placeholder:text-muted-foreground
                 disabled:opacity-50 disabled:cursor-not-allowed
-                transition-colors duration-200
+                transition-[border-color,box-shadow,background-color] duration-base ease-standard
               `,
               leftIcon && 'pl-10',
               rightIcon && 'pr-10',
               error
-                ? 'border-error-300 focus:ring-error-500 focus:border-error-500'
-                : 'border-input focus:ring-primary-500 focus:border-primary-500',
+                ? 'border-error focus:border-error focus:ring-error/25'
+                : 'border-outline-variant hover:border-outline/65 focus:border-primary',
               className
             )}
             aria-invalid={error ? 'true' : 'false'}
@@ -74,7 +73,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {error && (
           <p
             id={`${inputId}-error`}
-            className="text-sm text-error-600"
+            className="text-xs text-error"
             role="alert"
           >
             {error}
@@ -83,7 +82,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {helperText && !error && (
           <p
             id={`${inputId}-helper`}
-            className="text-sm text-muted-foreground"
+            className="text-xs text-surface-variant"
           >
             {helperText}
           </p>
@@ -95,4 +94,4 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
 Input.displayName = 'Input';
 
-export default Input; 
+export default Input;

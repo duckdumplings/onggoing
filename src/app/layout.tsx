@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import localFont from 'next/font/local'
 import './globals.css'
 import { RouteOptimizationProvider } from '@/hooks/useRouteOptimization.tsx'
@@ -13,16 +12,6 @@ const pretendard = localFont({
   weight: '45 920',
 })
 
-// 라틴 폴백(특히 영문 보조). Pretendard 미커버 글리프 대비.
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  fallback: ['system-ui', 'arial'],
-  preload: false,
-  adjustFontFallback: true,
-  variable: '--font-inter'
-})
-
 export const metadata: Metadata = {
   title: '옹라우팅',
   description: '최적 동선 및 견적 제공 프로그램',
@@ -34,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko" className={`${pretendard.variable} ${inter.variable}`}>
+    <html lang="ko" className={pretendard.variable}>
       <head>
         <link rel="preconnect" href="https://apis.openapi.sk.com" />
         <link rel="preconnect" href="https://topopentile3.tmap.co.kr" />
@@ -46,4 +35,4 @@ export default function RootLayout({
       </body>
     </html>
   )
-} 
+}

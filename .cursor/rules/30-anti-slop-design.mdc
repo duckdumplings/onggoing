@@ -1,181 +1,78 @@
 ---
-description: AI 슬롭 방지 — 디자인 시스템 가드 (옹고잉 스마트 물류 플랫폼 맞춤)
+description: 옹라우팅 Design System v2 — 정밀한 물류 운영 콘솔을 위한 결과 기반 디자인 가드
 globs: src/**/*.{tsx,ts,css}
 alwaysApply: true
 ---
 
-# Anti-Slop Design Guard
+# Design System v2 Guard
 
-옹고잉 스마트 물류 플랫폼은 **배차·견적 자동화 B2B 운영 도구**다.
-지도/표/숫자가 본문이고, 화려한 hero/그라디언트/이모지 장식은 가독성에 직접 해를 끼친다.
-새 작업에서 **현 시스템을 우회하는 모든 행위가 슬롭**이다.
+옹라우팅은 지도·경로·마감·운임을 빠르게 판단하는 **정밀한 디스패치 데스크**다.
+Google Material 3 Expressive의 역할 기반 색상, 형태, 상태 레이어, 모션 원칙을 활용하되
+소비자 앱처럼 장식적으로 복제하지 않는다. 판단 속도와 견적 신뢰도가 최우선이다.
 
-> **상위 근거**: 정체성 5축과 슬롭 판정 기준은 [`docs/design-system/north-star.md`](../../docs/design-system/north-star.md)에 정의되어 있다.
-> 본 룰은 그 기준을 코드 작성 시점에서 가드하는 절차다.
+상위 기준은 [`docs/design-system/north-star.md`](../../docs/design-system/north-star.md),
+구현 계약은 [`docs/design-system.md`](../../docs/design-system.md)에 있다.
 
-> **Living Document Protocol**
->
-> 본 룰의 **원칙(§1~§8)**은 시점-무관이며, 프로젝트가 Phase 1(MVP) → Phase 2(고도화) → Phase 3(확장)로 진화해도 그대로 유지된다.
-> **시점-종속 정보**(현재 토큰 상태, 레퍼런스 후보)는 마지막의 [현재 상태 스냅샷] 섹션에 격리한다.
->
-> 갱신 트리거:
-> 1. 시맨틱 토큰이 새로 도입됨 → [현재 상태 스냅샷] §A 갱신 + §1 토큰 우회 금지 예시 보강
-> 2. 새 도메인 컴포넌트 추가 (예: 실시간 위치 추적 패널) → §8 레퍼런스에 도메인-특화 후보 추가
-> 3. 다국어 지원 도입 → §6 한국어 카피 톤에 다른 로케일 톤 가이드 추가
-> 4. 신규 그라디언트/효과 사용처 결정 → §5 allowlist 갱신
->
-> 갱신 시 PR 본문에 `[design-rule]` 라벨을 붙이고 *어떤 트리거*가 발동했는지 명시.
+## 1. 시맨틱 역할을 사용한다
 
-## 1. 토큰 우회 금지 (신규 코드)
+- 컴포넌트의 hex/RGB literal 대신 `surface-*`, `primary-*`, `outline`, 상태 역할 토큰을 쓴다.
+- 색 이름이 아니라 의미로 선택한다. 예: 활성 작업은 `primary-container`, 경고는 `warning-subtle`.
+- 경로 핀·차량처럼 데이터 시각화에 고유 색이 필요한 경우 `route-*` 토큰을 먼저 정의한다.
+- 색상만으로 상태를 전달하지 않는다. 아이콘·레이블·문장 중 하나를 함께 둔다.
 
-색상 hex literal 직접 입력 금지. 다음 순서로 처리:
+## 2. 표면과 깊이는 정보 구조를 설명한다
 
-- **이미 정의된 Tailwind 토큰**이 있으면 그것을 사용
-  - 현재: `bg-primary-{50..900}`만 안정적으로 정의됨
-  - 임시 fallback: `bg-blue-600`, `text-slate-700` 같은 Tailwind 기본 팔레트 (시맨틱 토큰 도입 전까지만)
-- **신규 시맨틱 토큰이 필요하면** `tailwind.config.ts`에 `success/warning/error/info/muted` 추가 후 클래스 사용. 컴포넌트에 hex literal을 먼저 박고 "나중에 토큰화"는 슬롭의 시작이다.
-- recharts/지도 등 외부 prop fallback에 한해 `var(--chart-1, #6366f1)` 형태 허용
+- 기본 표면은 불투명한 `surface-lowest/low/base/raised/floating/overlay` 계층이다.
+- blur와 반투명 glass는 지도가 비치는 일시 오버레이 등 맥락이 명확할 때만 허용한다.
+- 모든 카드에 테두리·그림자·둥근 모서리를 중첩하지 않는다. 한 계층에는 한 가지 깊이 신호만 쓴다.
+- 같은 값이나 경로를 카드·사이드바·지도 위에 반복하지 않는다.
 
-**hex literal 금지 예외**: `next/image` placeholder blurDataURL, 외부 라이브러리 인라인 SVG 색상, SEO/OG 이미지 메타 정보.
+## 3. 형태는 동작과 계층을 표현한다
 
-## 2. 글래스모피즘 — `glass-panel`/`glass-card` 유틸리티만
+- 주요 버튼과 필터 칩은 full shape, 패널은 large/extra-large shape, 입력은 small shape를 기본으로 한다.
+- 상태·선택 변화에는 형태 또는 tonal surface 변화를 쓸 수 있지만 레이아웃이 튀지 않아야 한다.
+- 클릭 가능한 행/카드는 hover, focus-visible, selected 상태를 모두 제공한다.
 
-`src/app/globals.css`에 정의된 `.glass-panel` / `.glass-card` / `.glass-overlay`만 사용.
-`bg-white/55 backdrop-blur-xl` 같은 글래스 효과를 컴포넌트에 직접 박지 말 것.
+## 4. 모션은 원인과 결과를 연결한다
 
-```tsx
-// 권장
-<div className="glass-panel">{children}</div>
-<div className="glass-card">{children}</div>
+- 기본 전환은 160~240ms, 강조 전환은 300~400ms 이내로 한다.
+- 지도 선택, 상세 패널 전환, 계산 상태처럼 공간적 관계를 설명할 때만 모션을 쓴다.
+- 무한 장식 애니메이션, 과도한 scale/bounce, 일괄 `transition-all`은 금지한다.
+- `prefers-reduced-motion`에서 애니메이션을 제거하거나 즉시 완료한다.
 
-// 금지 (인라인 글래스)
-<div className="bg-white/80 backdrop-blur-md border border-white/40 shadow-lg rounded-xl">
-```
+## 5. 운영 밀도와 가독성을 지킨다
 
-신규 tier가 필요하면 `globals.css`에 추가한 후 컴포넌트에서 클래스 참조.
+- 금액·거리·분·시각은 `tabular-nums`를 적용하고 단위의 시각적 위계를 낮춘다.
+- 목록은 상태 → 대상 → 핵심 시간 → 금액 순으로 훑을 수 있어야 한다.
+- 다중 라인은 `불가 → 재검토 → 주의 → 정상` 순으로 먼저 보이게 한다.
+- 목록에는 요약만, 선택 상세에는 타임라인·운임 공식·지도 근거를 둔다.
 
-## 3. 폰트 / 타이포
+## 6. 입력과 오류는 발생 위치에서 해결한다
 
-- `--font-inter` 전역 폰트 변수가 `globals.css`에 선언되어 있다 — body 폰트는 그대로 두고, 컴포넌트에서 `font-family` 인라인 지정 금지
-- 신규 폰트 추가 시 `next/font`로 로드하고 CSS 변수로 노출 (인라인 link 금지)
-- 한국어 우선 프로젝트이므로 향후 Pretendard 도입을 권장 — 현재는 시스템 폰트 fallback에 의존
+- 자유문 견적은 계산 전에 AI가 해석한 작업·주소·시각 의미를 확인시킨다.
+- 오류는 전역 배너만 반복하지 말고 잘못된 주소·시각 필드 옆에 수정 행동을 둔다.
+- 버튼 문구는 `다시 생성` 대신 `조건 수정`, `같은 조건으로 재계산`, `설명 다시 작성`처럼 결과를 쓴다.
+- 로딩 중에는 기존 맥락을 지우지 않고 진행 위치와 다음 결과를 알려준다.
 
-## 4. 이모지 — UI와 코드 양쪽 모두 금지
+## 7. 접근성과 적응형 레이아웃
 
-운영 도구의 표/지도 옆에 이모지가 박히면 시야가 갈라진다.
-README, 코드 주석, UI 본문 모두에서 다음 이모지 금지:
+- 핵심 터치 대상은 최소 44px, 보조 아이콘은 최소 36px와 명확한 accessible name을 가진다.
+- 키보드 focus-visible을 제거하지 않는다. modal/sheet는 focus trap과 Escape 닫기를 제공한다.
+- compact는 단일 pane, medium은 목록+상세, expanded는 목록+지도+상세를 기본으로 한다.
+- 모바일에서 데스크톱 표를 축소하지 말고 요약 행과 bottom sheet로 재배치한다.
 
-```
-🚀 🎯 📍 ✅ ❌ ⚡ ✨ 💡 📋 📊 🌟 🔥 ⭐ 🛠️ 🔧 📝 📌 🎉 🌈 📞 📈 📄 🤝 🔄
-```
+## 8. 슬롭 방지
 
-코드 예시:
+- UI/주석에 장식용 이모지를 넣지 않는다. 아이콘은 `lucide-react`를 쓴다.
+- 기본 Tailwind 그라디언트 hero, 컬러 그림자 남발, 인라인 glass 조합을 금지한다.
+- 새로운 공통 스타일은 `globals.css` 역할 토큰 또는 `src/components/ui/`에 먼저 추가한다.
+- 화면을 수정하면 desktop과 compact viewport에서 실제 브라우저로 확인한다.
 
-```ts
-// 금지
-// 🚀 경로 최적화 시작
-// ✅ 견적 계산 완료
+## 완료 조건
 
-// 허용
-// 경로 최적화 시작
-// 견적 계산 완료 — Decimal 누락 시 1원 단위 누적 오차 발생
-```
+- 정보가 중복되지 않고 다음 행동이 한눈에 보인다.
+- 정상뿐 아니라 오류·빈 상태·로딩·긴 한국어·다중 라인에서도 구조가 유지된다.
+- `npm run lint:design:strict`, 타입 검사, 관련 테스트를 통과한다.
+- 토큰을 새로 추가했다면 `docs/design-system.md`와 `tailwind.config.ts`가 함께 갱신된다.
 
-`TODO` / `FIXME` / `HACK` 키워드는 허용(의도가 명시된 메타).
-
-**아이콘은 `lucide-react`를 사용한다**:
-
-```tsx
-import { MapPin, Truck, Calculator } from 'lucide-react';
-```
-
-지도 출발지·경유지·도착지 표시는 lucide 아이콘 + Tailwind 색상으로 표현하고,
-이모지를 핀/마커/버튼/상태 표시 어디에도 사용하지 않는다.
-
-## 5. 그래디언트 — 정당한 사용처만
-
-allowlist:
-- 로그인/온보딩 hero (1개 surface)
-- 스켈레톤 shimmer
-- 지도 상의 경로 폴리라인 시각화 (정보 전달 목적)
-
-**신규 패널/모달/카드/버튼에 그래디언트 hero 추가 금지.**
-배차/견적 도구의 surface는 단색 + `glass-panel`/`glass-card` 위주.
-
-특히 README/페이지 카피에서 `bg-gradient-to-br from-blue-500 to-blue-600` 같은
-"브랜드 그라디언트" 박스 신설은 슬롭이다.
-
-## 6. 한국어 카피 — 토스/채널톡/카카오모빌리티 어드민 톤
-
-| 슬롭(금지) | 대안 |
-|---|---|
-| "확인하시겠습니까?" | "경로를 최적화할까요?" / "견적서를 생성할까요?" |
-| "오류가 발생했습니다" | "Tmap 호출에 실패했어요" / "견적 계산이 중단됐어요" |
-| "잠시만 기다려 주세요" | "경로 최적화 중…" / "견적 계산 중…" |
-| "환영합니다!" | (제거) — 첫 화면은 행동(주소 입력/파일 업로드)을 제시 |
-| "데이터가 없습니다" | "최근 배차 이력이 없어요" / "저장된 견적이 비어 있어요" |
-| "성공적으로 처리되었습니다" | "견적서가 저장됐어요" / "경로 최적화가 끝났어요" |
-
-원칙:
-- **친절체("~요")**, 명령형 지양
-- **도메인 명사** 명시 (배차/견적/경로/배송원/경유지/Tmap)
-- **다음 행동을 제시** (오류 카피에 "다시 시도", "고객센터" 등)
-- README/마케팅 카피의 이모지·과장 표현 ("🚀 더 나은 물류를 위한 AI 솔루션")은 시간이 지나면 슬롭으로 노출되므로 절제
-
-## 7. 새 색상 / 시맨틱 토큰 도입 절차
-
-신규 색상이 필요해 보이면:
-
-1. 먼저 Tailwind 기본 팔레트(`blue/emerald/amber/rose/slate`)로 표현 가능한지 검토
-2. 같은 의미가 반복되면 `tailwind.config.ts`의 `theme.extend.colors`에 시맨틱 그룹 추가
-   - 예: `success: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669' }`
-3. 동시에 `globals.css`의 CSS 변수로도 노출 (`--success: ...`)하여 토큰 시스템 정합성 확보
-4. 컴포넌트에서는 토큰 클래스(`bg-success-500`)만 사용
-
-**컴포넌트에 hex literal을 먼저 박은 뒤 "나중에 토큰화"는 슬롭의 시작이다.**
-
-## 8. 레퍼런스 (도메인 맞춤)
-
-배차/견적/물류 운영 B2B 도구가 본질. 다음 레퍼런스가 적합:
-
-- **카카오모빌리티 어드민** — 라인/권역 관리, 지도 운영 UI
-- **티맵 비즈니스 어드민** — 다중 경유지, ETA 표시
-- **토스페이먼츠 어드민** — 견적·요금제 표 가독성
-- **자비스(Jobis)** — 정산/회계 표
-- **채널톡 어드민** — B2B 정보 밀도, 토큰 시스템
-- **네이버 클로바 노트 / 클로바 OCR** — 한국어 폼 입력 UX
-
-다음 레퍼런스는 **의도적으로 제외**:
-- Linear / Vercel Dashboard / Stripe 대시보드 — 글로벌 dev tool 미감, B2B 물류 도메인과 어긋남
-- shadcn examples / 21st.dev 다크 hero 클론 — AI 슬롭의 직접 출처
-- Apple Maps / Google Maps 일반 사용자 UI — 운영자용 다중 경유지 도구와 정보 밀도 요구치가 다름
-
----
-
-## [현재 상태 스냅샷] — 시점-종속, 정기 갱신
-
-> 본 섹션은 프로젝트 상태에 따라 변한다. 위의 §1~§8 원칙은 유지하면서 이 부분만 갱신.
-> **Last updated**: 2026-07-31
-
-### A. 토큰 시스템 상태
-
-| 항목 | 현재 | 다음 목표 |
-|---|---|---|
-| Tailwind 시맨틱 토큰 | `primary` 팔레트(50~900) + `success/warning/error/info/muted/border/ring` 시맨틱 그룹 | 차트/지도 전용 토큰(`chart-1~5`, `route-line`, `route-pin`) 추가 |
-| OKLCH 토큰 | `src/app/globals.css` `:root` + `.dark` 양쪽 정의 (Phase 2 도입 완료) | 사용자 테마 커스터마이징 (향후) |
-| 다크모드 | 토큰 매핑 도입 (`.dark` 클래스 자동 전환) | 시스템 prefers-color-scheme 자동 감지 토글 |
-| 글래스 유틸리티 | `glass-panel`/`glass-card`/`glass-overlay` (`globals.css`) + `GlassCard` 컴포넌트 tier (`launcher`/`card`/`canvas`) | 사용처 정착 후 통합 결정 |
-
-### B. 거대 부채 (디자인 측면)
-
-- `src/components/AddressAutocomplete.tsx` (501줄): 인라인 스타일 다수 사용 의심 — 토큰 치환 우선 대상
-- `src/components/modals/AIQuoteChatModal.tsx` (1556줄): 메시지 버블/입력 영역의 스타일 일관성 점검 필요
-- README의 이모지 (🚀🎯📍 등): §4 위반. README 갱신 시 일괄 제거.
-
-### C. 갱신 이력
-
-| 날짜 | 변경 | 비고 |
-|---|---|---|
-| 2026-05-29 | 초기 도입 | ongManagement 룰에서 본 프로젝트 도메인으로 적응 |
-| 2026-05-29 | Phase 2 토큰 도입 | OKLCH 시맨틱 토큰 + 다크모드 + GlassCard tier |
-| 2026-07-31 | 견적챗 입력 영역 정돈 | AIQuoteChatModal LOC 스냅샷 갱신 |
+최종 갱신: 2026-08-02 — Design System v2 전환.

@@ -128,7 +128,7 @@ export default function QuoteBookCaseDetail({
   }
 
   return (
-    <article className="overflow-hidden rounded-xl border border-border bg-card">
+    <article className="surface-raised overflow-hidden rounded-xl">
       <header className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -153,7 +153,7 @@ export default function QuoteBookCaseDetail({
         </div>
       </header>
 
-      <div className="grid grid-cols-2 border-b border-border [&>*:nth-child(even)]:border-r-0 [&>*:nth-child(n+3)]:border-b-0">
+      <div className="grid grid-cols-2 border-b border-outline-variant bg-surface-lowest [&>*:nth-child(even)]:border-r-0 [&>*:nth-child(n+3)]:border-b-0">
         <Metric
           label={result.departureWasSuggested ? '권장 상차' : '출발'}
           value={
@@ -202,7 +202,7 @@ export default function QuoteBookCaseDetail({
                     silent: true,
                   })
                 }
-                className="focus-ring-inset inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition hover:border-primary/40 hover:text-primary"
+                className="focus-ring-inset inline-flex min-h-10 items-center gap-1.5 rounded-full bg-secondary-container px-3 py-1.5 text-[11px] font-semibold text-secondary-on-container transition-colors hover:bg-secondary-container/80"
               >
                 <MapIcon className="h-3.5 w-3.5" />
                 지도에 반영
@@ -258,7 +258,7 @@ export default function QuoteBookCaseDetail({
                 return (
                   <li
                     key={`${entry.seq}-${entry.address ?? index}`}
-                    className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-2 rounded-lg px-1.5 py-2 transition hover:bg-muted/70"
+                    className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-2 rounded-lg px-1.5 py-2 transition-colors hover:bg-surface-low"
                   >
                     <span
                       className={`flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-bold tabular-nums ${ROLE_STYLE[role]}`}
@@ -297,7 +297,7 @@ export default function QuoteBookCaseDetail({
               })}
             </ol>
           ) : (
-            <div className="flex min-h-[180px] items-center justify-center rounded-lg bg-muted text-[11px] text-muted-foreground">
+            <div className="flex min-h-[180px] items-center justify-center rounded-lg bg-surface-low text-[11px] text-muted-foreground">
               경유지 타임라인을 계산하지 못했어요.
             </div>
           )}
@@ -305,14 +305,14 @@ export default function QuoteBookCaseDetail({
       </div>
 
       <details className="group border-t border-border">
-        <summary className="focus-ring-inset flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-xs font-semibold text-foreground transition hover:bg-muted/60">
+        <summary className="focus-ring-inset flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary-container/50">
           <span className="inline-flex items-center gap-2">
             <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
             운임·계산 근거
           </span>
           <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
-        <dl className="grid grid-cols-1 gap-x-5 gap-y-2 border-t border-border bg-muted/30 px-4 py-3 text-[11px] sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-5 gap-y-2 border-t border-outline-variant bg-surface-low px-4 py-3 text-[11px] sm:grid-cols-2">
           <CalculationRow
             label="총 소요"
             value={`주행 ${result.driveMinutes ?? '-'}분 · 체류 ${result.dwellMinutes ?? '-'}분${
@@ -363,7 +363,7 @@ export default function QuoteBookCaseDetail({
             </div>
           )}
         </dl>
-        <div className="border-t border-border bg-muted/30 px-4 py-3">
+        <div className="border-t border-outline-variant bg-surface-low px-4 py-3">
           <div className="mb-2 text-[10px] font-semibold text-muted-foreground">
             적용 운임표
           </div>

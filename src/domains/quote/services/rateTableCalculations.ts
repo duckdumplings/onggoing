@@ -30,6 +30,24 @@ export type PerJobRateTablePayload = {
     | { mode: 'factor'; factor: number };
 };
 
+/** 반복 운행 합계에는 1회마다 부과되는 유류할증을 빠뜨리지 않는다. */
+export function calculateRecurringHourlyTotals(params: {
+  baseFare: number;
+  fuelSurcharge: number;
+  visits?: number;
+}): { perVisit: number; recurringTotal: number; visits: number } {
+  const visits = Math.max(0, Math.floor(params.visits ?? 20));
+  const perVisit = Math.round(
+    Math.max(0, Number(params.baseFare) || 0) +
+      Math.max(0, Number(params.fuelSurcharge) || 0),
+  );
+  return {
+    perVisit,
+    recurringTotal: perVisit * visits,
+    visits,
+  };
+}
+
 export function pickHourlyRateFromPayload(
   payload: HourlyRateTablePayload,
   billMinutes: number,
