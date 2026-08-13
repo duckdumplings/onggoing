@@ -22,6 +22,7 @@ import {
   buildRolePayload,
   countIntermediateStops,
 } from '@/domains/dispatch/services/rolePayload';
+import { resolveStopSchedule } from '@/domains/dispatch/services/stopSemantics';
 import { annualizePrice, formatFrequency } from '@/domains/dispatch/utils/frequency';
 import { resolveDeparturePresets } from '@/domains/dispatch/utils/departureMatrix';
 import type { Frequency } from '@/domains/dispatch/types/routePlan';
@@ -194,10 +195,16 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           return address;
         };
         // 출발시각: 사용자가 준 "HH:mm"의 다음 도래 시각(교통 예측 현실성) 우선.
-        // 없으면 컨텍스트(UI 필드)/근미래. forecast_route_timeline과 동일 패턴.
+        // 없으면 컨텍스트(UI 필드) → 마감/예약 역산 seed → 근미래 순.
+        // [방어] 출발 미지정 + 예약(appointment)/마감 스톱이 있으면 근미래(현재)로 두지 않는다. 그러면
+        // 예약시각까지 몇 시간짜리 현장 대기가 잡혀 구속시간이 폭증한다. 마감−리드타임으로 seed 역산해
+        // 대략 예약시각 근처 도착으로 맞춘다(정확 역산은 forecast_route_timeline이 하지만, LLM이 실수로
+        // optimize_route를 써도 병리적 대기를 막는 안전망).
         const departureIso = departureTime
           ? nextIsoAtHHMM(departureTime)
-          : ctx.departureAt ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
+          : ctx.departureAt
+            ?? buildDeadlineSeedDepartureAt({ schedules: domainStops.map((s) => resolveStopSchedule(s)) })
+            ?? new Date(Date.now() + 5 * 60 * 1000).toISOString();
         // 출발지/순서/open-start 규칙은 buildRolePayload로 단일화. 일반 경로는 정확해(fastOrder=false).
         // preserveOrder=true면 입력 순서를 그대로 존중(재정렬/open-start 없음).
         const payload = buildRolePayload({
