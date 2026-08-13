@@ -169,6 +169,7 @@ export default function SimpleQuotePage() {
 
     const result: any = await optimizeRouteWith(override as any);
     if (result && result.success === false) {
+      // 진짜 실패(지오코딩/서버오류 등). 마감 위반은 더 이상 여기로 오지 않는다(아래 best-effort 분기).
       const d = result.details || {};
       const errs: string[] = Array.isArray(d?.details?.errors) ? d.details.errors : Array.isArray(d?.errors) ? d.errors : [];
       const sugg: string[] = Array.isArray(d?.details?.suggestions)
@@ -176,6 +177,16 @@ export default function SimpleQuotePage() {
         : [];
       if (errs.length) setViolation({ errors: errs, suggestions: sugg });
       else setCalcError(result.error || '견적 계산에 실패했어요.');
+    } else if (result && result.success && Array.isArray(result.deadlineViolations) && result.deadlineViolations.length > 0) {
+      // best-effort 성공: 스케줄·견적은 나오되 일부 지점이 마감 초과. 배너로 "N분 초과"와 권장 출발을 알린다.
+      const errs: string[] = result.deadlineViolations
+        .map((v: any) => (typeof v?.message === 'string' ? v.message : null))
+        .filter((m: string | null): m is string => Boolean(m));
+      const rec = result.recommendedDeparture;
+      const sugg: string[] = rec?.label
+        ? [`${rec.label} 출발 권장(현재보다 ${rec.shiftMinutes ?? '?'}분 이른) — 가장 빡빡한 마감을 약 15분 여유로 맞춥니다.`]
+        : [];
+      if (errs.length) setViolation({ errors: errs, suggestions: sugg });
     }
   }, [rows, vehicleType, departureTime, optimizeOrder, optimizeRouteWith]);
 

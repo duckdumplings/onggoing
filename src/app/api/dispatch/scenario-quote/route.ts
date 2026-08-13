@@ -140,6 +140,15 @@ async function resolveMetrics(
     const json = await res.json();
     const summary = json?.data?.summary;
     if (!summary) return { error: '경로 요약 정보를 받지 못했습니다.' };
+    // 마감 위반은 이제 200 + deadlineViolations로 온다(엔진 best-effort). 시나리오 비교에서
+    // 마감 불가 경로가 '최저가'로 뽑히지 않도록, 위반이 있으면 랭킹에서 제외(기존 400 동작과 동일).
+    const deadlineViolations: Array<{ message?: string }> = Array.isArray(json?.deadlineViolations)
+      ? json.deadlineViolations
+      : Array.isArray(summary?.deadlineViolations) ? summary.deadlineViolations : [];
+    if (deadlineViolations.length > 0) {
+      const reason = deadlineViolations.map((v) => v?.message).filter((m): m is string => Boolean(m)).join(' ');
+      return { error: reason || '마감을 지킬 수 없는 경로입니다.' };
+    }
     return {
       metrics: {
         km: Number(summary.totalDistance || 0) / 1000,

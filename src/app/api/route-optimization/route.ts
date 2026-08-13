@@ -106,6 +106,15 @@ interface RouteTimelineEntry {
   schedule?: StopSchedule | null;
 }
 
+/** 마감 위반 1건(구조화). 견적을 실패시키지 않고 best-effort 스케줄과 함께 반환한다. */
+interface DeadlineViolation {
+  stopNumber: number;      // 사용자 입력 기준 경유지 번호(1-based)
+  address: string;
+  previousAddress: string;
+  latenessMinutes: number; // 마감 대비 초과 분
+  message: string;         // 사람이 읽는 설명
+}
+
 interface RouteSegmentSummary {
   seq: number;
   from: string;
@@ -1279,23 +1288,10 @@ export async function POST(request: NextRequest) {
           'tomorrow'
         );
         if (preErrors.length > 0) {
-          // 마감 위반 시 "권장 출발시각"을 역산해 구체적 조정안으로 제시.
-          const rec = computeRecommendedDeparture(departureAt as string, preLateness);
-          const recSuggestion = rec
-            ? [{ type: 'departure_time', title: `출발시간을 ${rec.label}로 앞당기기`, description: `${rec.label} 출발(현재보다 ${rec.shiftMin}분 이른) 권장 — 가장 빡빡한 마감을 약 15분 여유로 맞춥니다.` }]
-            : [{ type: 'departure_time', title: '출발시간 앞당기기', description: '출발을 더 이른 시각으로 설정하면 충돌이 해소될 수 있습니다.' }];
-          const suggestions = [
-            ...recSuggestion,
-            { type: 'delivery_time', title: '문제 경유지 시간 늦추기', description: '안내된 최소 도착시각 이후로 설정하세요.' },
-          ];
-          return NextResponse.json({
-            success: false,
-            error: 'DIRECT_FEASIBILITY_FAILED',
-            message: '직행 기준으로도 시간제약을 만족할 수 없습니다.',
-            recommendedDeparture: rec ? { at: rec.iso, label: rec.label, shiftMinutes: rec.shiftMin } : null,
-            details: { errors: preErrors, suggestions },
-            diagnostics: buildDiagnostics({ code: 'DIRECT_FEASIBILITY_FAILED', errors: preErrors, suggestions }),
-          }, { status: 400 });
+          // 직행 사전검증 실패는 더 이상 하드-실패(400)시키지 않는다. 실제 순서 기반 사후검증
+          // (postOrderViolations)이 정확한 위반 지점·초과분·권장 출발시각을 best-effort 스케줄과
+          // 함께 반환한다. 여기서는 진단 로그만 남기고 계속 진행한다(순서 최적화가 직행보다 나을 수 있음).
+          console.warn(`[precheck] 직행 기준 마감 경고 ${preErrors.length}건(계속 진행, 사후검증이 판정):`, preErrors, `(지각 최대 ${preLateness}분)`);
         }
 
         // 2) 거리기반 휴리스틱 물리 불가능 검증은 비활성화 (Tmap 우선)
@@ -1531,6 +1527,8 @@ export async function POST(request: NextRequest) {
     }
 
     const postOrderViolations: string[] = [];
+    // 마감 위반을 구조화해 보관(견적을 하드-실패시키지 않고 best-effort 스케줄과 함께 반환하기 위함).
+    const deadlineViolations: DeadlineViolation[] = [];
     let maxPostLatenessMin = 0; // 권장 출발 역산용: 가장 많이 지각한 분
 
     const recordConstraintViolation = (input: {
@@ -1556,6 +1554,13 @@ export async function POST(request: NextRequest) {
       });
       if (!violation) return;
       postOrderViolations.push(violation.message);
+      deadlineViolations.push({
+        stopNumber: typeof originIdx === 'number' ? originIdx + 1 : input.routeIndex + 1,
+        address: input.dest.address,
+        previousAddress: input.prevAddress,
+        latenessMinutes: violation.latenessMinutes,
+        message: violation.message,
+      });
       maxPostLatenessMin = Math.max(maxPostLatenessMin, violation.latenessMinutes);
     };
 
@@ -1909,26 +1914,15 @@ export async function POST(request: NextRequest) {
       distanceSaved: calculateDistanceSavings(startLocation, destinationCoords, orderedDestinations),
     } : null;
 
-    // 최적 경로 산출 후, 실제 도착 시각 기준으로 시간제약 위반이 있으면 에러 반환
-    if (postOrderViolations.length > 0) {
-      // 마감 위반 시 "권장 출발시각"을 역산해 구체적 조정안으로 제시.
-      const rec = computeRecommendedDeparture(departureAt as string, maxPostLatenessMin);
-      const recSuggestion = rec
-        ? { type: 'departure_time', title: `출발시간을 ${rec.label}로 앞당기기`, description: `${rec.label} 출발(현재보다 ${rec.shiftMin}분 이른) 권장 — 가장 빡빡한 마감을 약 15분 여유로 맞춥니다.` }
-        : { type: 'departure_time', title: '출발시간을 앞당기기', description: '지각분만큼 앞당기면 충돌을 해소할 수 있습니다.' };
-      const suggestions = [
-        recSuggestion,
-        { type: 'delivery_time', title: '문제 경유지 배송완료시간 늦추기', description: '경유지의 시간을 여유 있게 조정하세요.' },
-      ];
-      return NextResponse.json({
-        success: false,
-        error: 'TIME_CONSTRAINT_VIOLATION',
-        message: '시간제약 충돌이 감지되었습니다.',
-        recommendedDeparture: rec ? { at: rec.iso, label: rec.label, shiftMinutes: rec.shiftMin } : null,
-        details: { errors: postOrderViolations, suggestions },
-        diagnostics: buildDiagnostics({ code: 'TIME_CONSTRAINT_VIOLATION', errors: postOrderViolations, suggestions }),
-      }, { status: 400 });
-    }
+    // 마감 위반이 있어도 견적을 하드-실패(400)시키지 않는다. best-effort 스케줄(타임라인/견적)을
+    // 그대로 반환하고, 어느 지점이 몇 분 초과인지(deadlineViolations)와 권장 출발시각을 함께 실어
+    // 보낸다(응답 하단 + summary). 소비자가 "배송은 성립, X지점만 N분 초과"를 표시할 수 있게 한다.
+    const deadlineRecommendation = postOrderViolations.length > 0
+      ? computeRecommendedDeparture(departureAt as string, maxPostLatenessMin)
+      : null;
+    const deadlineRecommendationPayload = deadlineRecommendation
+      ? { at: deadlineRecommendation.iso, label: deadlineRecommendation.label, shiftMinutes: deadlineRecommendation.shiftMin }
+      : null;
 
     const roadOptions: Array<'time-first' | 'toll-saving' | 'free-road-first'> = [
       'time-first',
@@ -2009,7 +2003,11 @@ export async function POST(request: NextRequest) {
           hasErrors: validationErrors.length > 0,
           errors: validationErrors,
           warnings: validationWarnings
-        }
+        },
+        // 마감 위반(있으면). best-effort 스케줄과 함께 전달 — 견적을 막지 않는다.
+        // summary에 중첩해 useRouteOptimization(top-level sibling을 버림) 경유 UI도 읽게 한다.
+        deadlineViolations: deadlineViolations.length ? deadlineViolations : undefined,
+        recommendedDeparture: deadlineRecommendationPayload ?? undefined,
       },
       waypoints,
       timeline: routeTimeline,
@@ -2019,6 +2017,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: routeData,
+      // 서버측 소비자(tools/caseBoard/scenario)가 최상위에서도 읽을 수 있게 병기.
+      deadlineViolations: deadlineViolations.length ? deadlineViolations : undefined,
+      recommendedDeparture: deadlineRecommendationPayload ?? undefined,
       warnings: validationWarnings.length > 0 ? validationWarnings : undefined
     });
 

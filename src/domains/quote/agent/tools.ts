@@ -249,6 +249,15 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           stopsCount: resolvedStopsCount,
           // 조기배송 금지 현장 대기(분). calculate_quote에 waitMinutes로 그대로 넘겨라(구속시간 과금).
           waitMinutes: Math.round(Number(summary?.waitTime || 0) / 60),
+          // 마감 위반(있으면 best-effort 스케줄은 성립하되 마감 불충족). meetsDeadline=false면 어느 지점이
+          // 몇 분 초과인지(deadlineViolations[].stopNumber/message/latenessMinutes) 답변에 반드시 밝히고,
+          // recommendedDeparture가 있으면 그 구체 출발시각을 안내하라. 임의로 "가능"이라 말하지 마라.
+          deadlineViolations: (Array.isArray(summary?.deadlineViolations)
+            ? summary.deadlineViolations
+            : Array.isArray(json?.deadlineViolations) ? json.deadlineViolations : []),
+          meetsDeadline: !((Array.isArray(summary?.deadlineViolations) && summary.deadlineViolations.length > 0)
+            || (Array.isArray(json?.deadlineViolations) && json.deadlineViolations.length > 0)),
+          recommendedDeparture: summary?.recommendedDeparture ?? json?.recommendedDeparture ?? null,
           // Tmap 경로 실측 통행료(있으면). calculate_quote에 tollAmount/tollSource로 그대로 넘겨라.
           tollAmount,
           tollSource,
@@ -892,6 +901,11 @@ export function buildQuoteAgentTools(ctx: AgentToolContext) {
           deadlineTarget: target,
           meetsDeadline,
           deadlineSlackMinutes,
+          // 엔진이 보고한 마감 위반(스케줄 제약 기반). 비어있지 않으면 스케줄-only 마감도 초과했다는 뜻 —
+          // meetsDeadline이 null/true여도 이 목록이 있으면 그 지점(stopNumber/message)을 초과로 보고하라.
+          deadlineViolations: Array.isArray(summary?.deadlineViolations)
+            ? summary.deadlineViolations
+            : Array.isArray((body as any)?.deadlineViolations) ? (body as any).deadlineViolations : [],
           deadlineNote:
             meetsDeadline === false
               ? `출발 ${kstHHmm(departureIso)} 기준 ${targetLabel}이 ${targetArrivalHHmm}로 마감 ${deadline}을 ${Math.abs(deadlineSlackMinutes ?? 0)}분 초과한다. 출발을 앞당기거나 체류시간 단축/지점 분할이 필요하다(불가능한 마감을 가능한 것처럼 말하지 마라). 대안 출발시간은 compare_departure_times로 확인하라.${hasReturn && target === 'delivery' ? ` 참고: 서초 반납 복귀(업무 종료)는 ${kstHHmm(returnArrivalIso)}이며 마감 대상이 아니다.` : ''}`

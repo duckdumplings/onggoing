@@ -510,7 +510,17 @@ export function RouteOptimizationProvider({ children }: { children: React.ReactN
       } else {
         throw new Error('INVALID_RESPONSE');
       }
-      return { success: true, data: data.data };
+      // 마감 위반은 이제 success:true + data와 함께 온다(엔진 best-effort). 상위 sibling은 여기서
+      // 버려지기 쉬우므로 반환 객체에 명시적으로 실어, /quote 배너 등이 "N분 초과"를 표시하게 한다.
+      const deadlineViolations = Array.isArray((data as any)?.deadlineViolations)
+        ? (data as any).deadlineViolations
+        : Array.isArray((data.data as any)?.summary?.deadlineViolations)
+          ? (data.data as any).summary.deadlineViolations
+          : [];
+      const recommendedDeparture = (data as any)?.recommendedDeparture
+        ?? (data.data as any)?.summary?.recommendedDeparture
+        ?? null;
+      return { success: true, data: data.data, deadlineViolations, recommendedDeparture };
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         // 취소는 cancel()이 CANCEL 전이를 담당하거나, 더 새 요청의 START가 상태를 가져간다.

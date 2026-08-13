@@ -51,12 +51,6 @@ import type { QuotePackage, QuotePackageGroupRollup } from '@/domains/dispatch/t
 
 const CASE_CONCURRENCY = 4;
 
-/** route-optimization이 시간제약 불가로 400을 낼 때의 에러 코드(불투명 실패 대신 infeasible로 유지). */
-const TIME_CONSTRAINT_ERROR_CODES: readonly string[] = [
-  'TIME_CONSTRAINT_VIOLATION',
-  'DIRECT_FEASIBILITY_FAILED',
-  'PHYSICALLY_IMPOSSIBLE_TIME',
-];
 
 /** 케이스 1건 입력 스키마(에이전트 도구가 그대로 재사용). */
 export const CaseBoardCaseInputSchema = z.object({
@@ -355,37 +349,28 @@ async function computeCase(
       }
     }
 
-    let routeRequestPayload = activePayload;
-    let { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, activePayload);
-    // 시간제약 위반 케이스: 불투명 에러로 버리지 않고, 참고가 있는 infeasible 케이스로 유지한다.
+    const routeRequestPayload = activePayload;
+    const { ok, status, json: body } = await postRouteOptimizationCached(baseUrl, activePayload);
+    // 마감 위반은 이제 하드-실패가 아니라 200 + deadlineViolations로 온다(엔진 best-effort 반환).
+    // 따라서 !ok는 진짜 실패(지오코딩/서버오류 등)만 처리하고, 위반은 deadlineViolations로 판정한다.
     let deadlineInfeasible = false;
     let infeasibleReason: string | undefined;
     if (!ok) {
-      const code = typeof body?.error === 'string' ? body.error : undefined;
-      if (status === 400 && code && TIME_CONSTRAINT_ERROR_CODES.includes(code)) {
-        deadlineInfeasible = true;
-        const errs = Array.isArray(body?.details?.errors)
-          ? (body.details.errors as unknown[]).filter((e): e is string => typeof e === 'string')
-          : [];
-        infeasibleReason = errs.length ? errs.join(' ') : describeRouteOptFailure(status, body);
-        // 시각 제약을 모두 비운 페이로드로 1회 재시도해 참고용 summary/waypoints/timeline/가격을 얻는다.
-        const retryPayload = {
-          ...activePayload,
-          deliveryTimes: Array.isArray(activePayload.deliveryTimes)
-            ? activePayload.deliveryTimes.map(() => '')
-            : activePayload.deliveryTimes,
-        };
-        const retry = await postRouteOptimizationCached(baseUrl, retryPayload);
-        if (!retry.ok) {
-          return { ...baseInfo, error: describeRouteOptFailure(retry.status, retry.json) };
-        }
-        routeRequestPayload = retryPayload;
-        ok = retry.ok;
-        status = retry.status;
-        body = retry.json;
-      } else {
-        return { ...baseInfo, error: describeRouteOptFailure(status, body) };
-      }
+      return { ...baseInfo, error: describeRouteOptFailure(status, body) };
+    }
+    // best-effort 스케줄(제약 유지)은 그대로 살리고, 위반이 있으면 판정만 infeasible로 고정한다.
+    // (과거엔 deliveryTimes를 비운 재시도로 참고가를 구했으나, 이제 제약 그대로의 경로가 반환된다.)
+    const deadlineViolations: Array<{ message?: string }> = Array.isArray(body?.deadlineViolations)
+      ? body.deadlineViolations
+      : Array.isArray(body?.data?.summary?.deadlineViolations)
+        ? body.data.summary.deadlineViolations
+        : [];
+    if (deadlineViolations.length > 0) {
+      deadlineInfeasible = true;
+      infeasibleReason = deadlineViolations
+        .map((v) => (typeof v?.message === 'string' ? v.message : null))
+        .filter((m): m is string => Boolean(m))
+        .join(' ');
     }
 
     const summary = body?.data?.summary;
