@@ -502,14 +502,22 @@ function buildDiagnostics(params: {
 function computeRecommendedDeparture(
   departureAtIso: string | undefined | null,
   latenessMin: number,
-  targetBufferMin = 15
+  targetBufferMin = 15,
+  // 출발지 상차 준비 반영 후 가장 이른 출발 가능 시각(ms). 이보다 이르게는 권하지 않는다(준비 전 상차 불가).
+  notBeforeMs?: number | null
 ): { iso: string; label: string; shiftMin: number } | null {
   if (!departureAtIso || !Number.isFinite(latenessMin) || latenessMin <= 0) return null;
   const base = new Date(departureAtIso);
   if (Number.isNaN(base.getTime())) return null;
   const shiftMin = Math.ceil(latenessMin) + Math.max(0, targetBufferMin);
-  const rec = new Date(base.getTime() - shiftMin * 60 * 1000);
-  return { iso: rec.toISOString(), label: formatKstHHmm(rec), shiftMin };
+  let rec = new Date(base.getTime() - shiftMin * 60 * 1000);
+  if (typeof notBeforeMs === 'number' && Number.isFinite(notBeforeMs) && rec.getTime() < notBeforeMs) {
+    // 준비시각보다 이르게는 못 당긴다. floor 적용 시 앞당김 폭을 실제로 가능한 만큼으로 재계산한다.
+    // (그래도 마감을 못 지키면 사후검증의 deadlineViolations가 그대로 남아 '불가'를 정직하게 알린다.)
+    rec = new Date(notBeforeMs);
+  }
+  const actualShiftMin = Math.max(0, Math.round((base.getTime() - rec.getTime()) / 60000));
+  return { iso: rec.toISOString(), label: formatKstHHmm(rec), shiftMin: actualShiftMin };
 }
 
 // 시간제약 검증 및 스마트 제안 생성
@@ -1447,16 +1455,50 @@ export async function POST(request: NextRequest) {
     let current = startLocation;
     let currentTime = departureAt ? new Date(departureAt) : new Date();
     const normalizedOriginDwellMinutes = Number.isFinite(Number(originDwellMinutes)) ? Math.max(0, Number(originDwellMinutes)) : 0;
-    if (normalizedOriginDwellMinutes > 0) {
+
+    // 출발지 상차 준비시각(not-before): originSchedule의 ready/service-start/appointment 시각. 준비 전
+    // 도착이면 준비시각까지 현장 대기 후 상차·출발한다(대기는 구속시간에 포함). 'departure'는 고정 출발
+    // 시각이라 준비 대기 개념이 아니다. departureAt이 이미 준비 이후면 clamp는 무동작 —
+    // builder의 resolveOriginDepartureAt가 이미 반영한 경우와 이중계산되지 않는다.
+    const originNotBefore: Date | null = (() => {
+      const sched = originSchedule && typeof originSchedule === 'object' ? (originSchedule as any) : null;
+      if (!sched || typeof sched.time !== 'string') return null;
+      if (!['ready', 'service-start', 'appointment'].includes(sched.type)) return null;
+      const m = sched.time.trim().match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return null;
+      const d = new Date(currentTime);
+      d.setHours(Number(m[1]), Number(m[2]), 0, 0);
+      if (sched.isNextDay) d.setDate(d.getDate() + 1);
+      return d;
+    })();
+    // 준비 반영 후 출발 가능한 가장 이른 시각(= 준비 + 상차체류). recommendedDeparture의 floor로 쓴다.
+    const originReadyDepartureMs = originNotBefore
+      ? originNotBefore.getTime() + normalizedOriginDwellMinutes * 60 * 1000
+      : null;
+
+    const originArrivalTime = new Date(currentTime.getTime() - normalizedOriginDwellMinutes * 60 * 1000);
+    let originServiceStart = originArrivalTime;
+    let originWaitSec = 0;
+    if (originNotBefore && originArrivalTime.getTime() < originNotBefore.getTime()) {
+      originServiceStart = new Date(originNotBefore.getTime());
+      const newDeparture = new Date(originNotBefore.getTime() + normalizedOriginDwellMinutes * 60 * 1000);
+      originWaitSec = Math.round((newDeparture.getTime() - currentTime.getTime()) / 1000);
+      currentTime = newDeparture; // 준비 대기만큼 전체 스케줄이 뒤로 밀린다(하류 마감은 사후검증이 판정).
+      totalWaitTime += originWaitSec;
+    }
+
+    if (normalizedOriginDwellMinutes > 0 || originWaitSec > 0) {
       routeTimeline.push({
         seq: 1,
         address: startLocation.address,
         role: (typeof originRole === 'string' && (['pickup', 'drop', 'return', 'waypoint'] as string[]).includes(originRole))
           ? (originRole as 'pickup' | 'drop' | 'return' | 'waypoint')
           : 'pickup',
-        arrivalTime: new Date(currentTime.getTime() - normalizedOriginDwellMinutes * 60 * 1000).toISOString(),
+        arrivalTime: originArrivalTime.toISOString(),
         departureTime: currentTime.toISOString(),
         dwellTime: normalizedOriginDwellMinutes,
+        waitMinutes: Math.round(originWaitSec / 60),
+        serviceStartTime: originServiceStart.toISOString(),
         operations: Array.isArray(originOperations) ? originOperations : [],
         schedule: originSchedule && typeof originSchedule === 'object'
           ? originSchedule as StopSchedule
@@ -1918,7 +1960,7 @@ export async function POST(request: NextRequest) {
     // 그대로 반환하고, 어느 지점이 몇 분 초과인지(deadlineViolations)와 권장 출발시각을 함께 실어
     // 보낸다(응답 하단 + summary). 소비자가 "배송은 성립, X지점만 N분 초과"를 표시할 수 있게 한다.
     const deadlineRecommendation = postOrderViolations.length > 0
-      ? computeRecommendedDeparture(departureAt as string, maxPostLatenessMin)
+      ? computeRecommendedDeparture(departureAt as string, maxPostLatenessMin, 15, originReadyDepartureMs)
       : null;
     const deadlineRecommendationPayload = deadlineRecommendation
       ? { at: deadlineRecommendation.iso, label: deadlineRecommendation.label, shiftMinutes: deadlineRecommendation.shiftMin }
