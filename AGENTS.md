@@ -185,11 +185,22 @@ Types → Domain Services → Hooks → Components → API Routes / Server Actio
 | `src/components/modals/` | AIQuoteChatModal, DriverRouteDetailModal |
 | `src/components/AddressAutocomplete.tsx` | 주소 자동완성 (501줄, panels/로 이동 후보) |
 
-## 테스트 (현 상태: 미도입)
+## 팀 견적 실행 도구
+
+- 팀원 진입점: `.claude/skills/ong-quote/SKILL.md` (`/ong-quote`) → `docs/team-quote-guide.md`
+- CLI: `npm run quote:team -- <input.json>` (`--check`는 외부 호출 없는 입력 검증)
+- 계산·검증·보고서: `src/domains/quote/team/` — 전달 완료 마감, 기업별 전달, 맞수거 대기, 안전버퍼 지연시험
+- 실제 운행일 예측 교통과 계산 시점 운임표를 사용한다. fallback·마감 위반을 명시하며 운영 가용성을 확답하지 않는다.
+- 운임표는 기존 DB SELECT 권한으로 읽는다. 팀 견적에 관리자 서비스 역할 키는 필요 없다.
+- 소유자용 설정 추출: `npm run quote:team:export-env`. Tmap·Supabase URL·공개 키만 허용하며 Git 제외 `quote-runs/team-onboarding/.env.local`에 저장한다.
+- 예제 `examples/team-quote.example.json`은 가상 데이터다. 실제 고객 입력·결과·로그·접속 설정은 `quote-runs/`에만 저장하고 공개 저장소에 올리지 않는다.
+- 팀 도구 테스트: `npm test -- src/domains/quote/team`. 신규 파일은 Vitest로 검증한다.
+
+## 테스트
 
 | 패턴 | 권장 |
 |---|---|
-| `*.test.ts` | Vitest 도입 권장 — `src/domains/quote/pricing.ts` 같은 순수 계산은 우선 대상 |
+| `*.test.ts` | Vitest 도입됨 — `npm test`, 팀 견적만은 `npm test -- src/domains/quote/team` |
 | `*.spec.ts` | E2E는 Playwright 권장 |
 
 > 신규 기능에 테스트를 함께 작성하라(`00-karpathy-guidelines.mdc` §4 Goal-Driven Execution).
@@ -249,3 +260,4 @@ PRD §10 마일스톤과 매핑. **현재 Phase가 바뀌면 본 섹션과 룰�
 | 2026-07-31 | 공용 견적 기록·운임표 DB 정합화 | saved_quotes API/UI, 단건 운임 시드, rate_tables 1차 RLS 강화, 마이그레이션 이력 정합화 |
 | 2026-07-31 | 계산 전 확인·보호 파일·운임 근거 | preflight API/확인 UI, 팀 로그인 진입, 비공개 Storage 서명 URL, 운임표 근거 패널 추가 |
 | 2026-08-02 | Design System v2·견적 API 보호 | Material 3 역할 토큰/표면/적응형 pane, 문서 가드 개편, LLM rate limit·캐시·서버 모델 고정, 팀 공용 문서 RLS 강화 |
+| 2026-10-15 | 팀 견적 실행 도구 공유 | `/ong-quote`·CLI·팀원 설치 안내·최소 설정 추출·공개키 전용 운임 조회 등록 |

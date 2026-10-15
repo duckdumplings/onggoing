@@ -93,8 +93,10 @@ export function describeRouteOptFailure(status: number, body: any): string {
 /** route-optimization POST 호출(성공 응답만 TTL 캐시). 응답 JSON과 캐시 적중 여부를 반환. */
 export async function postRouteOptimizationCached(
   baseUrl: string,
-  payload: any
+  payload: any,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; status: number; json: any; cached: boolean }> {
+  signal?.throwIfAborted();
   const key = normalizeRouteKey(payload);
   const now = Date.now();
   const hit = ROUTE_OPT_CACHE.get(key);
@@ -105,8 +107,13 @@ export async function postRouteOptimizationCached(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal,
   });
-  const json = await res.json().catch(() => ({}));
+  const json = await res.json().catch(() => {
+    signal?.throwIfAborted();
+    return {};
+  });
+  signal?.throwIfAborted();
   if (res.ok) {
     if (ROUTE_OPT_CACHE.size >= ROUTE_OPT_CACHE_MAX) {
       const oldestKey = ROUTE_OPT_CACHE.keys().next().value;

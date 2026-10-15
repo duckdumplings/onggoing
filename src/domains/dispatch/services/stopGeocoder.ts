@@ -43,7 +43,8 @@ interface GeoHit {
 }
 
 /** Tmap POI 검색으로 단일 키워드를 좌표로 해석. POI명("노원구청")에 강함. 실패 시 null. */
-export async function geocodeViaTmapPoi(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
+export async function geocodeViaTmapPoi(query: string, appKeyOverride?: string, signal?: AbortSignal): Promise<GeoHit | null> {
+  signal?.throwIfAborted();
   const appKey = getTmapKey(appKeyOverride);
   const keyword = query.trim();
   if (!appKey || !keyword) return null;
@@ -57,6 +58,7 @@ export async function geocodeViaTmapPoi(query: string, appKeyOverride?: string):
     url.searchParams.set('count', '1');
     const res = await fetch(url.toString(), {
       headers: { appKey, 'Content-Type': 'application/json' },
+      signal,
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -74,12 +76,14 @@ export async function geocodeViaTmapPoi(query: string, appKeyOverride?: string):
     const specificJibun = jibun && !isRegionOnlyQuery(jibun) ? jibun : '';
     return { latitude, longitude, address: road || specificJibun || poi.name || keyword };
   } catch {
+    signal?.throwIfAborted();
     return null;
   }
 }
 
 /** Tmap 전체주소 지오코딩. 도로명/지번 주소("마포구 월드컵북로 396")에 강함. 실패 시 null. */
-export async function geocodeViaTmapFullAddr(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
+export async function geocodeViaTmapFullAddr(query: string, appKeyOverride?: string, signal?: AbortSignal): Promise<GeoHit | null> {
+  signal?.throwIfAborted();
   const appKey = getTmapKey(appKeyOverride);
   const fullAddr = query.trim();
   if (!appKey || !fullAddr) return null;
@@ -91,6 +95,7 @@ export async function geocodeViaTmapFullAddr(query: string, appKeyOverride?: str
     url.searchParams.set('fullAddr', fullAddr);
     const res = await fetch(url.toString(), {
       headers: { appKey, 'Content-Type': 'application/json' },
+      signal,
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -108,6 +113,7 @@ export async function geocodeViaTmapFullAddr(query: string, appKeyOverride?: str
     const resolvedAddr = !rebuilt || isRegionOnlyQuery(rebuilt) ? fullAddr : rebuilt;
     return { latitude, longitude, address: resolvedAddr };
   } catch {
+    signal?.throwIfAborted();
     return null;
   }
 }
@@ -125,11 +131,11 @@ function looksLikeStreetAddress(q: string): boolean {
  * 단일 주소/POI를 좌표로 해석한다. 입력 형태에 따라 적합한 엔진을 먼저 시도하고
  * 실패 시 다른 엔진으로 폴백한다(도로명 주소·POI명 양쪽 모두 강건).
  */
-export async function resolveStopAddress(query: string, appKeyOverride?: string): Promise<GeoHit | null> {
+export async function resolveStopAddress(query: string, appKeyOverride?: string, signal?: AbortSignal): Promise<GeoHit | null> {
   if (looksLikeStreetAddress(query)) {
-    return (await geocodeViaTmapFullAddr(query, appKeyOverride)) ?? (await geocodeViaTmapPoi(query, appKeyOverride));
+    return (await geocodeViaTmapFullAddr(query, appKeyOverride, signal)) ?? (await geocodeViaTmapPoi(query, appKeyOverride, signal));
   }
-  return (await geocodeViaTmapPoi(query, appKeyOverride)) ?? (await geocodeViaTmapFullAddr(query, appKeyOverride));
+  return (await geocodeViaTmapPoi(query, appKeyOverride, signal)) ?? (await geocodeViaTmapFullAddr(query, appKeyOverride, signal));
 }
 
 /**
@@ -138,14 +144,16 @@ export async function resolveStopAddress(query: string, appKeyOverride?: string)
  */
 export async function geocodeStopAddresses(
   addresses: string[],
-  cache: Map<string, GeocodedStop> = new Map()
+  cache: Map<string, GeocodedStop> = new Map(),
+  signal?: AbortSignal,
 ): Promise<Map<string, GeocodedStop>> {
+  signal?.throwIfAborted();
   const unique = Array.from(new Set(addresses.map((a) => a.trim()).filter(Boolean)));
   const pending = unique.filter((a) => !cache.has(a));
   await Promise.all(
     pending.map(async (address) => {
       const lowPrecision = isRegionOnlyQuery(address);
-      const hit = await resolveStopAddress(address);
+      const hit = await resolveStopAddress(address, undefined, signal);
       // 좌표는 hit에서 쓰되, 해석 라벨이 원본보다 거칠어졌으면(구/동 단위로 붕괴) 원본을 표시/키 문자열로 보존한다.
       // 이 한 곳이 tools.ts의 toPoint·geocode_addresses·caseBoard가 공유하는 chokepoint라,
       // 같은 구의 두 지점(예: 금천구 상차지 vs 반납지)이 "서울 금천구"로 동일해져 주소-키 맵이 충돌하는 것을 막는다.

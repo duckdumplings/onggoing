@@ -112,3 +112,6 @@ jspm_packages/
 .supabase/ 
 *storybook.log
 storybook-static
+
+# Local quote inputs, results, and private calculation-server logs
+quote-runs/

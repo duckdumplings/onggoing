@@ -1,0 +1,60 @@
+{
+  "title": "형식 확인용 가상 배송라인",
+  "serviceDate": "2026-10-16",
+  "bufferMinutes": 20,
+  "earlyMinutes": 15,
+  "assumptions": [
+    "기업명·주소·물량·금액은 모두 형식 확인용 가상 데이터입니다. --check로만 사용하세요.",
+    "실제 조회는 이 파일을 quote-runs/로 복사하고 정확한 주소·운행일·물량으로 바꾼 뒤 진행합니다.",
+    "예제에서는 09:00 상차와 기업별 전달, 12:10 맞수거 가능시각을 가정했습니다."
+  ],
+  "cases": [
+    {
+      "label": "상차→동일 건물 2개 기업 전달·맞수거→반납",
+      "vehicleType": "레이",
+      "pickupStart": "09:00",
+      "baseline": {
+        "amount": 90000,
+        "vat": "unknown"
+      },
+      "stops": [
+        {
+          "name": "예시 상차장",
+          "address": "서울특별시 예시구 상차로 1",
+          "role": "pickup",
+          "bags": 3,
+          "readyAt": "09:00"
+        },
+        {
+          "name": "예시 공동 사무실",
+          "address": "서울특별시 예시구 배송로 2",
+          "role": "drop",
+          "bags": 3,
+          "deadline": "12:00",
+          "recipients": [
+            {
+              "name": "예시 기업 A",
+              "minutes": 4,
+              "bags": 1
+            },
+            {
+              "name": "예시 기업 B",
+              "minutes": 5,
+              "bags": 2
+            }
+          ],
+          "collection": {
+            "minutes": 5,
+            "readyAt": "12:10"
+          }
+        },
+        {
+          "name": "예시 반납장",
+          "address": "서울특별시 예시구 반납로 3",
+          "role": "return",
+          "deadline": "13:30"
+        }
+      ]
+    }
+  ]
+}

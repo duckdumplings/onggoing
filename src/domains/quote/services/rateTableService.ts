@@ -9,8 +9,8 @@ import {
   STOP_FEE,
   type Vehicle,
 } from '@/domains/quote/pricing';
-import { createServerClient } from '@/libs/supabase-client';
 import { formatKstDate } from '@/domains/dispatch/utils/kstDateTime';
+import { readEffectiveRateTable } from './rateTableReader';
 import {
   calculateFuelSurchargeFromPayload,
   calculatePerJobReferenceFromPayloads,
@@ -180,17 +180,7 @@ async function resolveEffectiveTable<TPayload>(
   }
 
   try {
-    const supabase = createServerClient();
-    const { data, error } = await supabase
-      .from('rate_tables')
-      .select('vehicle_type, pricing_plan, effective_from, effective_to, source_doc, payload')
-      .eq('vehicle_type', vehicle)
-      .eq('pricing_plan', pricingPlan)
-      .lte('effective_from', asOfIso)
-      .or(`effective_to.is.null,effective_to.gte.${asOfIso}`)
-      .order('effective_from', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const { data, error } = await readEffectiveRateTable(vehicle, pricingPlan, asOfIso);
 
     if (error) {
       console.warn(`[rateTableService] ${pricingPlan} DB 조회 실패, 정적 fallback 사용:`, error.message);
